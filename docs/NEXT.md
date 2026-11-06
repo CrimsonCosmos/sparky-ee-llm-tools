@@ -7,6 +7,11 @@ parts catalogue, footprint generators, templates, purchase agent deleted; therma
 DONE since: thermal (pcb-analysis FEM) in every board package with invariant tests; IR drop (kicad-irdrop) in every package, validated against R = L/(sigma w t);
 EMC adapter (pcb-analysis dipole superposition) validated against Ott's small-loop formula to 0.1 dB; heuristic thermal/EMI code deleted.
 
+## Decisions
+* PyOpenMagnetics is NOT adopted: recipes pick catalogue inductors by inductance/Isat/package from the open JLCPCB data (what a designer buys). PyOpenMagnetics designs custom
+  wound magnetics (cores, windings), which is a different job; if custom magnetics are needed, a recipe can call it.
+* The old hand-written motor driver was not ported: buy it (buy-vs-build policy) or have Claude author a recipe from a vendor reference design.
+
 ## Next (in order)
 1. EMC in the flow: each recipe must declare its switching-current model (hot-loop terminals + harmonic amplitude from fsw/rise time/duty) so the adapter can run per board;
    the proper tool for parts joining nets is pcb-analysis' `BoardNetwork`/`network_emission` (the adapter's single straight return element is the simple case).

@@ -116,6 +116,11 @@ def cmd_doctor(a):
     for k, v in toolchain.report().items():
         print(f"{k:<24} {v or 'MISSING'}")
     print(f"{'parts catalogue':<24} {db_path() if db_path().exists() else 'MISSING (sparky download-parts)'}")
+    from .analysis import emc, irdrop, thermal
+    for name, ok, hint in (("IR drop (kicad-irdrop)", irdrop.available(), "pip install into the KiCad Python"),
+                           ("thermal (pcb-analysis)", thermal.available(), "needs pcb-analysis + its compiled kernels"),
+                           ("EMC (pcb-analysis)", emc.available(), "needs pcb-analysis + its compiled kernels")):
+        print(f"{name:<24} {'ok' if ok else 'MISSING (' + hint + '; see docs/DEPENDENCIES.md)'}")
 
 
 def main(argv=None):
