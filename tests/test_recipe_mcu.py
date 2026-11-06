@@ -3,13 +3,14 @@ import sqlite3
 
 import pytest
 
+from conftest import needs_kicad_libs
+
 from sparky import datasheet
 from sparky.picker import Catalog
 from sparky.recipes import build_recipe
 from sparky.recipes.ctx import Ctx
-from sparky.toolchain import kicad_library_dir
 
-pytestmark = pytest.mark.skipif(kicad_library_dir("symbols") is None, reason="KiCad libraries not installed")
+pytestmark = needs_kicad_libs
 SYM = "MCU_ST_STM32F1:STM32F103C8Tx"
 ARGS = dict(symbol=SYM, vdd=3.3, signals={"UART_TX": {"function": "USART2_TX", "kind": "uart"}, "UART_RX": {"function": "USART2_RX", "kind": "uart"},
                                           "DBG_TX": {"pin": "PA9", "kind": "uart"}},

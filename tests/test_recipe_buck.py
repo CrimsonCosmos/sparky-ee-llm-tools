@@ -3,13 +3,14 @@ import sqlite3
 
 import pytest
 
+from conftest import needs_kicad_libs
+
 from sparky import datasheet
 from sparky.picker import Catalog
 from sparky.recipes import build_recipe
 from sparky.recipes.ctx import Ctx
-from sparky.toolchain import kicad_library_dir
 
-pytestmark = pytest.mark.skipif(kicad_library_dir("symbols") is None, reason="KiCad libraries not installed")
+pytestmark = needs_kicad_libs
 
 MLCC, RES, IND, DCDC = ("Multilayer Ceramic Capacitors MLCC - SMD/SMT", "Chip Resistor - Surface Mount", "Power Inductors", "DC-DC Converters")
 

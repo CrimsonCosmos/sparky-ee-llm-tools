@@ -2,6 +2,7 @@
 with sigma = 5.8e7 S/m (copper, as kicad-irdrop assumes) = 9.85 mOhm, so the drop is 19.7 mV."""
 import pytest
 
+from conftest import needs_kicad_libs
 from sparky.analysis import irdrop
 from sparky.analysis.irdrop import Rail
 from sparky.sexpr import Q, dump
@@ -39,6 +40,7 @@ def test_straight_track_matches_L_over_sigma_w_t(tmp_path):
     assert r["worst_drop_mv"] == pytest.approx(2.0 * expected_mohm, rel=0.10)
 
 
+@needs_kicad_libs
 def test_rails_are_derived_from_ports_and_topology():
     from conftest import mcu_circuit
     c = mcu_circuit()

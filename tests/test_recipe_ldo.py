@@ -3,9 +3,14 @@ import sqlite3
 
 import pytest
 
+from conftest import needs_kicad_libs
+
 from sparky.picker import Catalog
 from sparky.recipes import build_recipe, registry
 from sparky.recipes.ctx import Ctx
+
+
+pytestmark = needs_kicad_libs
 
 
 @pytest.fixture

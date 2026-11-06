@@ -5,6 +5,11 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from sparky.footprints import kicad_available  # noqa: E402
+from sparky.kicad_symbols import symbols_available  # noqa: E402
+
+needs_kicad_libs = pytest.mark.skipif(not (symbols_available() and kicad_available()), reason="KiCad symbol/footprint libraries not installed")
+
 def mcu_circuit(lib=None):
     """STM32F103 + bypass caps + header, built with SKiDL from KiCad's libraries (no parts catalogue)."""
     from sparky.circuits import reset, skidl

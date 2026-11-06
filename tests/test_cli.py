@@ -1,7 +1,7 @@
 import pytest
 
 from sparky.cli import main
-from sparky.toolchain import kicad_library_dir
+from conftest import needs_kicad_libs
 
 
 def test_recipes_command_lists_the_shipped_recipes(capsys):
@@ -12,7 +12,7 @@ def test_recipes_command_lists_the_shipped_recipes(capsys):
     assert "auto:" in out and "vout(out)" in out                    # ports and derived parameters are shown
 
 
-@pytest.mark.skipif(kicad_library_dir("symbols") is None, reason="KiCad libraries not installed")
+@needs_kicad_libs
 def test_symbols_command_finds_a_real_symbol(capsys):
     main(["symbols", "TPS5430"])
     assert "Regulator_Switching:TPS5430DDA" in capsys.readouterr().out

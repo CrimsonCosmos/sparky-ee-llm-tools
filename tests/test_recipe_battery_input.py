@@ -3,12 +3,13 @@ import sqlite3
 
 import pytest
 
+from conftest import needs_kicad_libs
+
 from sparky.picker import Catalog
 from sparky.recipes import build_recipe
 from sparky.recipes.ctx import Ctx, NoPart
-from sparky.toolchain import kicad_library_dir
 
-pytestmark = pytest.mark.skipif(kicad_library_dir("symbols") is None, reason="KiCad libraries not installed")
+pytestmark = needs_kicad_libs
 
 ARGS = dict(vbat_nom=48, vbat_max=54.6, vbat_min=39, ibat_max=8, c_bulk=400e-6, connector_symbol="Connector:Screw_Terminal_01x02",
             connector_footprint="Connector_AMASS:AMASS_XT60PW-M_1x02_P7.20mm_Horizontal", connector_rating_a=30)

@@ -1,6 +1,7 @@
 """System layer: the resolver derives recipe parameters from links without knowing any recipe by name. Expected values are hand-computed."""
 import pytest
 
+from conftest import needs_kicad_libs
 from sparky.llm.base import MockLLM
 from sparky.system.plan import SystemPlan
 from sparky.system.planner import SUPERVISOR_PROMPT, PlannerError, plan_request, plan_with_llm
@@ -81,6 +82,7 @@ def test_supervisor_prompt_states_buy_vs_build_policy():
     assert "buy" in t and "unless the user explicitly asks" in t and "necessary to fit the budget" in t and "off-the-shelf" in t and "buy_alternative" in t
 
 
+@needs_kicad_libs
 def test_llm_planner_repair_loop():
     bad = {"name": "x", "boards": [{"id": "b", "blocks": [{"id": "a", "recipe": "warp_drive"}]}], "links": []}
     good = clean_plan().to_dict()

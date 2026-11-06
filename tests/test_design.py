@@ -1,4 +1,10 @@
+import pytest
+
+from conftest import needs_kicad_libs
 from conftest import mcu_circuit
+
+
+pytestmark = needs_kicad_libs
 
 
 def test_pin_electrical_types_come_from_the_kicad_symbol():
