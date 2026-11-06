@@ -6,12 +6,16 @@ argument supplied from the system spec or fab profile - no defaults here."""
 from __future__ import annotations
 
 import csv
+import logging
+import time
 import subprocess
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
 from ..toolchain import kicad_cli
+
+log = logging.getLogger("sparky.thermal")   # pcb-analysis has no debug output of its own; enable DEBUG to see stage timings
 
 
 @dataclass
@@ -24,12 +28,13 @@ class ThermalResult:
 
 
 def available() -> bool:
+    """True only with the library AND its compiled kernels: without them rasterising falls back to pure NumPy (minutes-hours per board)."""
     try:
         import thermal.matrix_free_mpir_fem  # noqa: F401
-        import geometry.cad_import  # noqa: F401
+        from geometry.cad_import.mesh import native_available
     except ImportError:
         return False
-    return kicad_cli() is not None
+    return native_available() and kicad_cli() is not None
 
 
 def _positions(csv_path: Path) -> dict[str, tuple[float, float]]:
@@ -47,9 +52,16 @@ def run_thermal(pcb: str | Path, power_w: dict[str, float], positions_csv: str |
                                      read_kicad_stackup, resolve_bodies)
     from thermal.matrix_free_mpir_fem import ConvectionBoundary, HeatSource, RadiationBoundary, ThermalConductionProblem, solve_thermal_conduction
 
+    if not available():
+        raise RuntimeError("pcb-analysis with compiled kernels (and kicad-cli) is required; see docs/DEPENDENCIES.md")
     exe = kicad_cli()
-    if not exe:
-        raise RuntimeError("kicad-cli not found")
+    t0 = time.perf_counter()
+
+    def lap(what: str) -> None:
+        nonlocal t0
+        log.debug("thermal %s: %.1fs", what, time.perf_counter() - t0)
+        t0 = time.perf_counter()
+
     pcb = Path(pcb).resolve()
     pos = _positions(Path(positions_csv))
     with tempfile.TemporaryDirectory(prefix="therm_") as td:
@@ -59,11 +71,14 @@ def run_thermal(pcb: str | Path, power_w: dict[str, float], positions_csv: str |
                            capture_output=True, text=True, timeout=600)
         if not step.exists():
             raise RuntimeError(f"kicad-cli step export failed: {(r.stderr or r.stdout).strip()[-400:]}")
+        lap("step export")
         layers, top_mm = layers_from_kicad_stackup(read_kicad_stackup(str(pcb)))
         body_map = kicad_step_body_map(layers, board_top_z_mm=top_mm)
         resolved = resolve_bodies(load_step(str(step)), body_map)
         raster = rasterize_board(resolved, body_map.board, pitch_mm=pitch_mm, y_down=True)
+    lap("load+rasterize")
     mesh = board_thermal_mesh(raster).mesh
+    log.debug("thermal mesh nodes %s", mesh.node_shape)
 
     def top_nodes(x_mm: float, y_mm: float):
         row, col = raster.cell_of(x_mm * 1e-3, -y_mm * 1e-3)          # STEP export negates KiCad's y
@@ -79,6 +94,7 @@ def run_thermal(pcb: str | Path, power_w: dict[str, float], positions_csv: str |
     prob = ThermalConductionProblem(mesh, convection=(ConvectionBoundary("top", h_w_m2k, amb), ConvectionBoundary("bottom", h_w_m2k, amb)),
                                     radiation=(RadiationBoundary("top", emissivity, amb),), heat_sources=srcs)
     sol = solve_thermal_conduction(prob)
+    lap("solve")
     top = sol.temperature_k[-1]
     rises = {}
     for s in srcs:

@@ -29,3 +29,9 @@
 | Claude Code CLI | installed | only for the two LLM call sites |
 ## Data
 | jlcparts DB (yaqwsx.github.io/jlcparts/data/cache.zip, multi-part zip, ~12.7 MB first part verified reachable) · KiCad libraries (ship with KiCad) |
+
+## Analysis (open source)
+| Tool | Use | License | Notes |
+|---|---|---|---|
+| kicad-irdrop | DC IR drop on real copper | Apache-2.0 | `pip install` into the interpreter that can import pcbnew |
+| pcb-analysis 0.12.1 | thermal FEM, EMC (CISPR 32/FCC) | MIT | beta. **Needs its C++ kernels**: without them rasterising is pure NumPy (80 s at a 1 mm grid, ~20 min at 0.25 mm); with them 0.3 s. Build: clone AFLOY/pcb-analysis at the tag, `pip install pybind11`, `cmake -S . -B build/native -G Ninja -Dpybind11_DIR=$(python -m pybind11 --cmakedir)` and `cmake --build build/native`; the build FetchContents SuperLU 7.0.1 and pocketfft (pass `-DFETCHCONTENT_SOURCE_DIR_SUPERLU=` / `_POCKETFFT=` to use local clones if tarball downloads are blocked). Needs cmake, ninja, a C++17 compiler (OpenMP). Heavy install on Windows/macOS: expect to ship prebuilt wheels or document it. |
