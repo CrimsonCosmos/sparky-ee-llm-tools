@@ -15,14 +15,14 @@ def test_rail_spec():
 
 
 def _straight_track_board(path, length=20.0, width=1.0, t=0.035):
-    from sparky.export.kicad import _stackup
+    from sparky.export.kicad import _layers_def, _stackup
     from sparky.pcb.rules import Rules
     rules = Rules(layers=2)
     def fp(ref, x):
         return ["footprint", Q("T:pad"), ["layer", Q("F.Cu")], ["at", x, 0], ["property", Q("Reference"), Q(ref)],
                 ["pad", Q("1"), "smd", "rect", ["at", 0, 0], ["size", 1.0, 1.0], ["layers", Q("F.Cu"), Q("F.Mask")], ["net", 1, Q("N1")]]]
     root = ["kicad_pcb", ["version", 20221018], ["generator", Q("test")], ["general", ["thickness", 1.6]], ["paper", Q("A4")],
-            ["layers", [0, Q("F.Cu"), "signal"], [31, Q("B.Cu"), "signal"], [44, Q("Edge.Cuts"), "user"]],
+            _layers_def(2),
             ["setup", _stackup(rules, 2)], ["net", 0, Q("")], ["net", 1, Q("N1")], fp("J1", 0.0), fp("J2", length),
             ["segment", ["start", 0, 0], ["end", length, 0], ["width", width], ["layer", Q("F.Cu")], ["net", 1]]]
     path.write_text(dump(root) + "\n")
