@@ -42,6 +42,7 @@ def test_symbol_index_finds_kicad_symbols():
     assert find_symbols("Conn_01x08", pins=8)[0].lib_id == "Connector_Generic:Conn_01x08"
 
 
+@pytest.mark.slow
 def test_generic_parts_pick_kicad_symbols(lib):
     assert symbol_for_part(lib.resistor(4700, "0402")) == "Device:R"
     assert symbol_for_part(lib.mlcc(10e-6, 25)) == "Device:C"
@@ -91,6 +92,7 @@ def test_netlist_connectivity_matches_circuit(lib, tmp_path):
 
 
 @pytest.mark.skipif(CLI is None, reason="kicad-cli missing")
+@pytest.mark.slow
 def test_erc_when_available(lib, tmp_path):
     h = subprocess.run([CLI, "sch", "--help"], capture_output=True, text=True).stdout
     if "erc" not in h:

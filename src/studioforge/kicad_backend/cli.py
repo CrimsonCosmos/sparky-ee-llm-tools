@@ -214,7 +214,52 @@ def parse_drc_text(text: str) -> DrcReport:
     return rep
 
 
+def parse_drc_json(text: str) -> DrcReport:
+    """KiCad >= 8 `kicad-cli pcb drc --format json` report -> DrcReport (same shape the text parser produces)."""
+    d = json.loads(text)
+
+    def norm(v: dict) -> dict:
+        return {"type": v.get("type", ""), "description": v.get("description", ""), "severity": v.get("severity", "error"),
+                "rule": "", "items": [{"x": (it.get("pos") or {}).get("x", 0.0), "y": (it.get("pos") or {}).get("y", 0.0),
+                                       "desc": it.get("description", "")} for it in v.get("items", [])]}
+    rep = DrcReport(raw=text, version=d.get("kicad_version"))
+    rep.violations = [norm(v) for v in d.get("violations", [])]
+    rep.unconnected = [norm(v) for v in d.get("unconnected_items", [])]
+    rep.footprint_errors = [norm(v) for v in d.get("schematic_parity", [])]
+    return rep
+
+
+def _run_drc_native(pcb: Path, refill: bool, rules) -> DrcReport:
+    """KiCad >= 8: the CLI does everything (zone refill included)."""
+    exe = find_kicad_cli()
+    with tempfile.TemporaryDirectory(prefix="kidrc_") as td:
+        work = Path(td) / pcb.name
+        shutil.copy(pcb, work)
+        pro = pcb.with_suffix(".kicad_pro")
+        shutil.copy(pro, work.with_suffix(".kicad_pro")) if pro.exists() else write_kicad_pro(work.with_suffix(".kicad_pro"), rules)
+        out = Path(td) / "drc.json"
+        cmd = [exe, "pcb", "drc", "--format", "json", "--severity-all", "--all-track-errors", "--output", str(out)]
+        if refill:
+            cmd.append("--refill-zones")
+        r = subprocess.run(cmd + [str(work)], capture_output=True, text=True, timeout=600)
+        if not out.exists():
+            raise RuntimeError(f"kicad-cli pcb drc failed (rc={r.returncode}): {(r.stderr or r.stdout).strip()[-600:]}")
+        rep = parse_drc_json(out.read_text(errors="replace"))
+    rep.refilled = refill
+    return rep
+
+
 def run_drc(pcb_path: str | Path, refill: bool = True, rules=None, report_path: str | Path | None = None) -> DrcReport:
+    from ..toolchain import kicad_has
+    if kicad_has("pcb_drc"):
+        rep = _run_drc_native(Path(pcb_path).resolve(), refill, rules)
+        if report_path:
+            Path(report_path).write_text(json.dumps(rep.to_dict(), indent=1))
+        return rep
+    return _run_drc_pcbnew(pcb_path, refill, rules, report_path)       # KiCad 7 fallback (to be deleted)
+
+
+def _run_drc_pcbnew(pcb_path: str | Path, refill: bool = True, rules=None, report_path: str | Path | None = None) -> DrcReport:
     """Run KiCad's DRC on a .kicad_pcb. Zones are refilled in memory first (KiCad DRC needs a valid fill).
 
     If `rules` is given and no <board>.kicad_pro exists, one is written beside the board (in a temp copy, the

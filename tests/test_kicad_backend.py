@@ -10,8 +10,8 @@ from studioforge.export.kicad import to_kicad_pcb
 from studioforge.export.package import write_package
 from studioforge.pcb.flow import BoardSpec, build_board
 
-pytestmark = pytest.mark.skipif(not kb.available() or kb.capabilities()["pcbnew_python"] is None,
-                                reason="kicad-cli / pcbnew not installed")
+pytestmark = [pytest.mark.slow, pytest.mark.skipif(not kb.available() or kb.capabilities()["pcbnew_python"] is None,
+                                reason="kicad-cli / pcbnew not installed")]
 
 
 @pytest.fixture(scope="module")
