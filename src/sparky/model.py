@@ -55,9 +55,6 @@ class Pad:
     def thru(self) -> bool:
         return self.drill > 0
 
-    def to_dict(self) -> dict:
-        return asdict(self)
-
 
 @dataclass
 class Footprint:
@@ -68,17 +65,6 @@ class Footprint:
     height: float = 1.0
     source: str = "generator:ipc-nominal"
     lib_id: str = ""             # 'Library:Name' in KiCad's footprint libraries ('' = not a KiCad library footprint)
-
-    def to_dict(self) -> dict:
-        return {"name": self.name, "pads": [p.to_dict() for p in self.pads],
-                "courtyard": list(self.courtyard), "silk": [list(s) for s in self.silk],
-                "height": self.height, "source": self.source, "lib_id": self.lib_id}
-
-    @staticmethod
-    def from_dict(d: dict) -> "Footprint":
-        return Footprint(d["name"], [Pad(**p) for p in d["pads"]], tuple(d["courtyard"]),
-                         [tuple(s) for s in d.get("silk", [])], d.get("height", 1.0),
-                         d.get("source", "unknown"), d.get("lib_id", ""))
 
     def pad_numbers(self) -> set[str]:
         return {p.number for p in self.pads if p.number}
@@ -110,46 +96,6 @@ class PinDef:
     etype: str = "passive"
     alt: tuple[str, ...] = ()
 
-    def to_dict(self) -> dict:
-        d = asdict(self)
-        d["alt"] = list(self.alt)
-        return d
-
-
-@dataclass
-class Offer:
-    supplier: str                  # digikey | mouser | lcsc | arrow | ...
-    sku: str = ""
-    url: str = ""
-    unit_price: float | None = None    # USD at qty 1 (or first price break)
-    price_breaks: list[tuple[int, float]] = field(default_factory=list)
-    moq: int = 1
-    stock: int | None = None
-    estimated: bool = False        # True => indicative number, not a live quote
-    checked_at: str = ""
-
-    def price_at(self, qty: int) -> float | None:
-        if self.price_breaks:
-            best = None
-            for q, p in sorted(self.price_breaks):
-                if qty >= q:
-                    best = p
-            if best is not None:
-                return best
-            return self.price_breaks[0][1]
-        return self.unit_price
-
-    def to_dict(self) -> dict:
-        d = asdict(self)
-        d["price_breaks"] = [list(x) for x in self.price_breaks]
-        return d
-
-    @staticmethod
-    def from_dict(d: dict) -> "Offer":
-        d = dict(d)
-        d["price_breaks"] = [tuple(x) for x in d.get("price_breaks", [])]
-        return Offer(**d)
-
 
 @dataclass
 class PartDef:
@@ -166,12 +112,6 @@ class PartDef:
     heat: str = "cool"             # hot | warm | cool (qualitative)
     height: float = 0.0
     datasheet_url: str = ""
-    docs: list[str] = field(default_factory=list)       # cached doc paths (relative to cache root)
-    offers: list[Offer] = field(default_factory=list)
-    aliases: list[str] = field(default_factory=list)
-    tags: list[str] = field(default_factory=list)
-    provenance: str = "seed"       # seed | generic | researched | imported
-    verified: bool = False         # pinout/footprint checked against the datasheet
     notes: str = ""
 
     def pin(self, ident: str) -> PinDef:
@@ -183,37 +123,7 @@ class PartDef:
     def pins_named(self, name: str) -> list[PinDef]:
         return [p for p in self.pins if p.name == name]
 
-    def best_offer(self, qty: int = 1) -> Offer | None:
-        priced = [o for o in self.offers if o.price_at(qty) is not None]
-        if not priced:
-            return self.offers[0] if self.offers else None
-        return min(priced, key=lambda o: o.price_at(qty))
 
-    def to_dict(self) -> dict:
-        d = {k: getattr(self, k) for k in (
-            "mpn", "manufacturer", "description", "category", "package", "params", "value",
-            "emi", "heat", "height", "datasheet_url", "docs", "aliases", "tags",
-            "provenance", "verified", "notes")}
-        d["pins"] = [p.to_dict() for p in self.pins]
-        d["offers"] = [o.to_dict() for o in self.offers]
-        d["footprint"] = self.footprint.to_dict() if isinstance(self.footprint, Footprint) else self.footprint
-        return d
-
-    @staticmethod
-    def from_dict(d: dict) -> "PartDef":
-        d = dict(d)
-        pins = [PinDef(p["number"], p["name"], p.get("etype", "passive"), tuple(p.get("alt", ())))
-                for p in d.pop("pins", [])]
-        offers = [Offer.from_dict(o) for o in d.pop("offers", [])]
-        fp = d.pop("footprint", "")
-        if isinstance(fp, dict):
-            fp = Footprint.from_dict(fp)
-        return PartDef(pins=pins, offers=offers, footprint=fp, **d)
-
-
-# --------------------------------------------------------------------------
-# Circuit
-# --------------------------------------------------------------------------
 @dataclass
 class Component:
     ref: str

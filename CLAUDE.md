@@ -21,15 +21,19 @@ verified" / "tool unavailable" instead of a pass when a check could not really r
 validated open-source checker over our own. A heuristic with no validation must say so in its output.
 
 ## Workflow for "build me <X>, budget $<Y>"
-1. Call `forge_list_blocks` to see the builders. Restate requirements and assumptions.
-2. Decompose recursively into subsystems -> leaves that are blocks or purchased items. Research unknowns on the web
+1. Call `sparky_list_recipes` to see the circuit builders (recipes), their ports and parameters. Restate requirements and assumptions.
+2. Decompose recursively into subsystems -> leaves that are recipes or purchased items. Research unknowns on the web
    (prices, COTS modules, datasheets). Keep a running cost estimate against the budget.
-3. Write a SystemPlan JSON (schema: `src/sparky/system/planner.py::SCHEMA`; worked example: `system/templates.py`).
-4. `forge_validate_plan` -> fix every error it reports (it runs the interface resolver: demand, voltage windows, pin-mux, kinds).
-5. `forge_build_system` -> read `SYSTEM.md` (cost vs budget, buy/build decisions, power tree, harness) and the per-board
-   `REPORT.md` (DRC, thermal, EMI, checklist). Iterate on the plan if over budget or if DRC/ampacity/thermal warnings matter.
-6. Parts not in the catalog: the tools research them automatically (official datasheet cached, buy links recorded), or call `forge_research_part`.
-7. Give the user: output directory, cost vs budget, what was bought vs built and why, open warnings, and the shopping list.
+3. Choose parts: `sparky_search_symbols` finds KiCad symbols (pins + default footprint); `sparky_pick_parts` searches the JLCPCB/LCSC catalogue
+   for discretes. Symbols/footprints come from KiCad's reviewed libraries, never from name guessing.
+4. Write a SystemPlan JSON (schema: `src/sparky/system/planner.py::SCHEMA`). Links connect ports; the resolver derives every recipe parameter
+   listed under `auto_params` (demand upstream, voltage windows downstream).
+5. `sparky_validate_plan` -> fix every error it reports. A recipe that raises NeedsDatasheet needs numbers from the OFFICIAL datasheet:
+   read it and store them with `sparky_save_spec` (with the source). Never guess a number.
+6. No recipe fits? Write one (`sparky_write_recipe`, see docs/RECIPES.md) from a datasheet typical-application circuit. Recipes are files, cached and reused.
+7. `sparky_build_system` -> read `SYSTEM.md` (cost vs budget, buy/build decisions, power tree) and each board's `REPORT.md` (KiCad DRC, checklist).
+8. Give the user: output directory, cost vs budget (PCB fab and assembly are NOT estimated - quote them from the fab package), what was bought vs built,
+   open warnings (unsourced / vendor-imported parts, anything not verified), and the shopping list. The user buys; automatic purchasing is out of scope.
 
 ## BUY vs BUILD policy (important)
 Unless the user explicitly asks to design something from scratch, or building is NECESSARY to fit the budget or no suitable product
@@ -41,5 +45,5 @@ real computed build cost with it. (Same text as `SUPERVISOR_PROMPT` in `planner.
 
 ## Rules
 - Never write netlists, coordinates or routes by hand; never invent MPNs, pinouts or prices - research or mark as estimate.
-- Use `custom_netlist` only when no block fits, with parts resolved through the library and a datasheet typical-application circuit.
+- If no recipe fits, write a new recipe from a datasheet typical-application circuit (docs/RECIPES.md); do not hand-write netlists in the plan.
 - Everything the pipeline cannot verify (stability, EMC, enclosure thermals, mechanical fit, firmware) must be listed as a risk to the user.
