@@ -97,6 +97,7 @@ class DiffPair(_NetRemap):
     width_mm: float
     gap_mm: float
     skew_mm: float
+    impedance_ohm: float | None = None      # differential target; when set the router solves the width from the stackup and width_mm is only the floor
     _net_fields = ("p", "n")
 
 
@@ -105,6 +106,16 @@ class LengthGroup(_NetRemap):
     """Nets whose routed lengths must agree within tolerance_mm (e.g. a parallel bus)."""
     nets: list[str]
     tolerance_mm: float
+    _net_fields = ("nets",)
+
+
+@dataclass
+class ControlledImpedance(_NetRemap):
+    """Single-ended nets with a target impedance (e.g. 50 ohm): the router solves each layer's width from the board stackup. tolerance_pct is the acceptable error
+    when the routed widths are checked against the independent IPC-2141 microstrip formula (that formula is itself only accurate to a few percent)."""
+    nets: list[str]
+    impedance_ohm: float
+    tolerance_pct: float
     _net_fields = ("nets",)
 
 

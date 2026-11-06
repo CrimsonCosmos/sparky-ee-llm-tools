@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import sexpr
-from .constraints import DiffPair, Fanout, LengthGroup
+from .constraints import ControlledImpedance, DiffPair, Fanout, LengthGroup
 from .toolchain import krt_dir
 
 _PAIR = [(r"^(.*)_P$", r"\1_N"), (r"^(.*)\+$", r"\1-"), (r"^(.*[0-9_A-Z])P$", r"\1N")]
@@ -59,6 +59,52 @@ def net_lengths(pcb_text: str, layer_z: dict[str, float] | None = None) -> dict[
                 net = names.get(str(nt[1]), str(nt[1]))
                 out[net] = out.get(net, 0.0) + abs(layer_z[str(ly[1])] - layer_z[str(ly[2])])
     return out
+
+
+def microstrip_z0(w_mm: float, h_mm: float, t_mm: float, er: float) -> float:
+    """IPC-2141 surface microstrip: Z0 = 87/sqrt(er+1.41) * ln(5.98 h / (0.8 w + t)); accurate to a few percent for 0.1 < w/h < 2 (not a field solver)."""
+    import math
+    return 87.0 / math.sqrt(er + 1.41) * math.log(5.98 * h_mm / (0.8 * w_mm + t_mm))
+
+
+def check_impedance(pcb_text: str, constraints: list, rules) -> list[dict]:
+    """Independent check of ControlledImpedance nets: every OUTER-layer track width is converted to an impedance with the IPC-2141 microstrip formula and the
+    stackup the exporter wrote (dielectric to the next copper layer). Inner layers and differential pairs are NOT verified (no independent formula here): reported as such."""
+    from .export.kicad import layer_z_mm
+    root = sexpr.parse(pcb_text)
+    names = {str(n[1]): str(n[2]) for n in root if isinstance(n, list) and len(n) >= 3 and n[0] == "net"}
+    n = rules.layers
+    z = layer_z_mm(rules, n)
+    ordered = sorted(z.items(), key=lambda kv: kv[1])
+    from .pcb.rules import OZ_CU_MM
+    t = rules.copper_oz_outer * OZ_CU_MM
+    rows = []
+    for c in constraints:
+        if isinstance(c, DiffPair) and c.impedance_ohm:
+            rows.append({"kind": "impedance", "name": f"{c.p}/{c.n}", "ok": None, "note": "differential impedance NOT verified (no independent formula); width solved by the router from the stackup"})
+        if not isinstance(c, ControlledImpedance):
+            continue
+        widths: dict[str, list[float]] = {}
+        for node in root:
+            if isinstance(node, list) and node and node[0] == "segment":
+                nt, w, ly = sexpr.find(node, "net"), sexpr.find(node, "width"), sexpr.find(node, "layer")
+                net = names.get(str(nt[1]), str(nt[1])) if nt else None
+                if net in c.nets and w and ly and str(ly[1]) in (ordered[0][0], ordered[-1][0]):
+                    widths.setdefault(str(ly[1]), []).append(float(w[1]))
+        zs = []
+        for layer, ws in widths.items():
+            k = 0 if layer == ordered[0][0] else -1
+            nxt = 1 if k == 0 else -2
+            cu_next = (rules.copper_oz_outer if n == 2 else rules.copper_oz_inner) * OZ_CU_MM
+            h = abs(ordered[k][1] - ordered[nxt][1]) - (t + cu_next) / 2             # dielectric thickness between the outer copper and the next copper layer
+            zs += [microstrip_z0(w, h, t, rules.dielectric_er) for w in ws]
+        if not zs:
+            rows.append({"kind": "impedance", "name": "+".join(c.nets), "ok": None, "note": "no outer-layer tracks to check (inner layers are not verified)"})
+            continue
+        err = max(abs(v / c.impedance_ohm - 1) * 100 for v in zs)
+        rows.append({"kind": "impedance", "name": "+".join(c.nets), "ok": err <= c.tolerance_pct, "z_ohm": [round(min(zs), 1), round(max(zs), 1)], "target_ohm": c.impedance_ohm,
+                     "error_pct": round(err, 1), "limit_pct": c.tolerance_pct, "note": "IPC-2141 microstrip over the next copper layer (assumed a reference plane)"})
+    return rows
 
 
 def _hit(viol: list[dict], i: int) -> bool:
@@ -143,8 +189,11 @@ def route(raw: Path, out: Path, *, rules, constraints: list, all_nets: list[str]
             raise ValueError(f"pair {d.p}/{d.n}: width {d.width_mm:g} / gap {d.gap_mm:g} mm is below this fab profile's limits (min track {min_track:g}, clearance {clearance:g}); "
                              "use a finer fab profile (rule_overrides, fab_tier='advanced') or change the pair")
         step(f"diff_{i}", ["route_diff.py", "--nets", d.p, d.n, "--diff-pair-gap", f"{d.gap_mm:g}", "--track-width", f"{d.width_mm:g}", "--clearance", f"{clearance:g}",
-                           "--length-match-tolerance", f"{d.skew_mm:g}", "--diff-pair-intra-match"])
+                           "--length-match-tolerance", f"{d.skew_mm:g}", "--diff-pair-intra-match", *(["--impedance", f"{d.impedance_ohm:g}"] if d.impedance_ohm else [])])
         routed |= {d.p, d.n}
+    for j, z in enumerate(c for c in constraints if isinstance(c, ControlledImpedance)):
+        step(f"impedance_{j}", ["route.py", "--nets", *z.nets, "--impedance", f"{z.impedance_ohm:g}", "--clearance", f"{clearance:g}"])
+        routed |= set(z.nets)
     rest = [n for n in all_nets if n not in routed]
     args = ["route.py", "--nets", *rest, "--clearance", f"{clearance:g}"]
     wide = [(n, c["track_width"]) for c in net_classes for n in c["nets"] if n in rest]

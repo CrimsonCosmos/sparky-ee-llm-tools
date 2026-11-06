@@ -8,7 +8,7 @@ from pathlib import Path
 
 from .. import krt
 from ..export.kicad import layer_z_mm
-from ..constraints import DiffPair, Fanout, LengthGroup
+from ..constraints import ControlledImpedance, DiffPair, Fanout, LengthGroup
 from ..model import Circuit
 from . import analysis
 from .board import Board
@@ -75,9 +75,9 @@ def build_board(circuit: Circuit, spec: BoardSpec | None = None, log=print) -> B
             tag = f"{layers}L_u{util}"
             raw, routed = work / f"{tag}.kicad_pcb", work / f"{tag}_routed.kicad_pcb"
             raw.write_text(to_kicad_pcb(board, circuit.name))
-            special = [c for c in circuit.constraints if isinstance(c, (DiffPair, LengthGroup, Fanout))]
+            special = [c for c in circuit.constraints if isinstance(c, (DiffPair, LengthGroup, Fanout, ControlledImpedance))]
             if special:                                    # KiCad grades length/skew itself from this rules file (router and DRC both read it)
-                raw.with_suffix(".kicad_dru").write_text(krt.dru_text([c for c in special if not isinstance(c, Fanout)]))
+                raw.with_suffix(".kicad_dru").write_text(krt.dru_text([c for c in special if isinstance(c, (DiffPair, LengthGroup))]))
             kicad_backend.write_kicad_pro(raw.with_suffix(".kicad_pro"), rules, net_classes=net_classes_for(circuit, rules))
             say(f"{layers}L util={util}: board {board.width}x{board.height} mm; routing with {'KiCadRoutingTools (' + str(len(special)) + ' routing constraints)' if special else 'Freerouting'}")
             try:
@@ -104,8 +104,8 @@ def build_board(circuit: Circuit, spec: BoardSpec | None = None, log=print) -> B
             filled = work / f"{tag}_final.kicad_pcb"
             drc = kicad_backend.run_drc(routed, refill=True, rules=rules, save_to=filled)
             filled.with_suffix(".kicad_pro").write_bytes(raw.with_suffix(".kicad_pro").read_bytes())
-            checks = krt.verify(routed.read_text(), [c for c in special if not isinstance(c, Fanout)], layer_z_mm(rules, layers), drc.violations) if special else []
-            miss = [c["name"] for c in checks if not c["ok"]]
+            checks = (krt.verify(routed.read_text(), [c for c in special if isinstance(c, (DiffPair, LengthGroup))], layer_z_mm(rules, layers), drc.violations) + krt.check_impedance(routed.read_text(), special, rules)) if special else []
+            miss = [c["name"] for c in checks if c["ok"] is False]
             if miss:
                 say(f"   routing constraints NOT met (re-measured): {', '.join(miss)}")
             ok = not drc.errors and not drc.unconnected and not miss

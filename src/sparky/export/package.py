@@ -34,8 +34,14 @@ def write_package(res: BuildResult, outdir: str | Path, project: str, extra: dic
 
     pol = policy or Policy()
     if res.routing_checks:
-        rows = ["| Constraint | Routed lengths (mm) | Skew / spread (mm) | Limit (mm) | Met |", "|--|--|--|--|--|"]
-        rows += [f"| {c['kind']}: {c['name']} | {', '.join(map(str, c['lengths_mm']))} | {c['skew_mm']} | {c['limit_mm']} | {'yes' if c['ok'] else '**NO**'} |" for c in res.routing_checks]
+        rows = ["| Constraint | Measured | Limit | Met | Note |", "|--|--|--|--|--|"]
+        for c in res.routing_checks:
+            if c["kind"] == "impedance":
+                meas = f"{c['z_ohm'][0]}-{c['z_ohm'][1]} ohm vs {c['target_ohm']:g}" if c.get("z_ohm") else "-"
+                rows.append(f"| impedance: {c['name']} | {meas} | {c.get('limit_pct', '-')} % | {'NOT VERIFIED' if c['ok'] is None else 'yes' if c['ok'] else '**NO**'} | {c['note']} |")
+            else:
+                k = f" (KiCad: {c['kicad']:.3f} mm)" if c.get("kicad") is not None else ""
+                rows.append(f"| {c['kind']}: {c['name']} | lengths {', '.join(map(str, c['lengths_mm']))} mm, skew {c['skew_mm']} mm{k} | {c['limit_mm']} mm | {'yes' if c['ok'] else '**NO**'} | KiCad DRC rule; our measurement is a cross-check |")
         extra["Routing constraints (re-measured from the routed copper, tracks + via barrels)"] = "\n".join(rows)
     extra["DC IR drop (open-source: kicad-irdrop)"] = _irdrop(res, out, files, pol)
     extra["Thermal (open-source FEM: pcb-analysis)"] = _thermal(res, out, files, pol)

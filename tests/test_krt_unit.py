@@ -44,3 +44,10 @@ def test_constraints_follow_net_renames_and_merges():
     g = LengthGroup(["a", "b"], 0.5)
     g.remap({}, {"a": "blk.a", "b": "blk.b"})
     assert (d.p, d.n) == ("mcu.X_P", "mcu.X_N") and g.nets == ["blk.a", "blk.b"]
+
+
+def test_microstrip_formula_by_hand():
+    # IPC-2141: Z0 = 87/sqrt(er+1.41) * ln(5.98 h / (0.8 w + t)); er 4.5, h 0.4917, w 0.9104, t 0.035
+    # sqrt(5.91) = 2.4310 ; 87/2.4310 = 35.787 ; 5.98*0.4917 = 2.9404 ; 0.8*0.9104+0.035 = 0.76332 ; ln(3.8520) = 1.3484 ; Z0 = 48.25 ohm
+    assert krt.microstrip_z0(0.9104, 0.4917, 0.035, 4.5) == pytest.approx(48.25, abs=0.05)
+    assert krt.microstrip_z0(0.5, 0.4917, 0.035, 4.5) > krt.microstrip_z0(0.9, 0.4917, 0.035, 4.5)     # narrower trace -> higher impedance

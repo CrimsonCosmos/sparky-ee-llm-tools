@@ -58,3 +58,13 @@ def test_net_names_must_follow_a_pairing_convention():
     with pytest.raises(ValueError):
         krt.check_pair_names("A", "B")
     krt.check_pair_names("LVDS_CLK_P", "LVDS_CLK_N")
+
+
+def test_controlled_impedance_net_is_checked_against_the_independent_formula():
+    from sparky.constraints import ControlledImpedance
+    from sparky.pcb.flow import BoardSpec, build_board
+    c = make_circuit()
+    c.constrain(ControlledImpedance(["S4"], 50.0, 10.0))
+    res = build_board(c, BoardSpec(layers=4, time_budget_s=200), log=None)
+    row = next(r for r in res.routing_checks if r["kind"] == "impedance")
+    assert row["ok"] and row["z_ohm"][0] > 42 and row["z_ohm"][1] < 58                    # IPC-2141 on the routed widths lands near 50 ohm
