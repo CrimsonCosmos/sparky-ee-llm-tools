@@ -44,14 +44,6 @@ class BuildResult:
     routing_checks: list = field(default_factory=list)     # diff-pair skew / length-group spread re-measured from the copper (krt.verify)
 
 
-def suggest_layers(circuit: Circuit) -> int:
-    n = len(circuit.components)
-    hot = sum(1 for c in circuit.components.values() if c.power_w >= 0.5)
-    high_i = any(a.current_a >= 5 for a in circuit.net_attrs.values())
-    fine = any(p.part.category.startswith("ic.mcu") for p in circuit.components.values())
-    return 4 if (hot or high_i or n > 45 or fine) else 2
-
-
 def build_board(circuit: Circuit, spec: BoardSpec | None = None, log=print) -> BuildResult:
     from .. import kicad_backend, routing
     from ..export.kicad import add_pours, to_kicad_pcb
@@ -65,7 +57,8 @@ def build_board(circuit: Circuit, spec: BoardSpec | None = None, log=print) -> B
         msgs.append(s)
         if log:
             log(f"[{circuit.name}] {s}")
-    layer_options = [spec.layers] if spec.layers else list(dict.fromkeys(l for l in (suggest_layers(circuit), 4, 6) if l <= spec.max_layers))
+    # layer count is a design input (spec.layers); otherwise start at 2 and escalate through the even counts a fab offers until the board routes cleanly
+    layer_options = [spec.layers] if spec.layers else list(range(2, spec.max_layers + 1, 2))
     utils = spec.utilizations if not (spec.width and spec.height) else (1.0,)
     best: BuildResult | None = None
     best_score = None

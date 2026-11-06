@@ -31,25 +31,26 @@ def capabilities() -> dict:
             "ipc2581": kicad_has("ipc2581")}
 
 
-def write_kicad_pro(path: str | Path, rules=None, name: str | None = None, net_classes: list[dict] | None = None) -> Path:
+def write_kicad_pro(path: str | Path, rules, name: str | None = None, net_classes: list[dict] | None = None) -> Path:
     """Write a minimal .kicad_pro so KiCad's DRC uses OUR fab rules instead of its defaults.
 
     `rules` is a sparky `pcb.rules.Rules` (or any object with the same attribute names). `net_classes`: [{name, track_width, clearance, nets: [...]}] - extra classes
     (wider tracks for current, larger spacing for voltage); the router and KiCad's DRC both honour them."""
     path = Path(path)
-    g = (lambda k, d: getattr(rules, k, d)) if rules is not None else (lambda k, d: d)
-    clr, trk, via, drl = g("clearance", 0.2), g("track", 0.2), g("via_dia", 0.6), g("via_drill", 0.3)
+    g = lambda k: getattr(rules, k)            # every engineering value comes from the Rules object: no fallbacks here
+    clr, trk, via, drl = g("clearance"), g("track"), g("via_dia"), g("via_drill")
     pro = {
         "board": {"design_settings": {
+            # KiCad's own cosmetic defaults (graphics/text sizes): not engineering values
             "defaults": {"board_outline_line_width": 0.1, "copper_line_width": 0.2, "copper_text_size_h": 1.5,
                          "copper_text_size_v": 1.5, "copper_text_thickness": 0.3, "other_line_width": 0.1,
                          "silk_line_width": 0.12, "silk_text_size_h": 0.8, "silk_text_size_v": 0.8,
                          "silk_text_thickness": 0.12},
-            "rules": {"min_clearance": clr, "min_track_width": g("min_track", 0.127),
-                      "min_via_diameter": max(g("min_drill", 0.3) + 2 * g("min_annular", 0.13), 0.0),
-                      "min_through_hole_diameter": g("min_drill", 0.3), "min_via_annular_width": g("min_annular", 0.13),
-                      "min_hole_to_hole": g("hole_to_hole", 0.35), "min_copper_edge_clearance": g("edge_clearance", 0.4),
-                      "min_hole_clearance": 0.25, "min_microvia_diameter": 0.2, "min_microvia_drill": 0.1,
+            "rules": {"min_clearance": clr, "min_track_width": g("min_track"),
+                      "min_via_diameter": g("min_drill") + 2 * g("min_annular"),
+                      "min_through_hole_diameter": g("min_drill"), "min_via_annular_width": g("min_annular"),
+                      "min_hole_to_hole": g("hole_to_hole"), "min_copper_edge_clearance": g("edge_clearance"),
+                      "min_hole_clearance": g("hole_clearance"), "min_microvia_diameter": g("microvia_dia"), "min_microvia_drill": g("microvia_drill"),
                       "min_silk_clearance": 0.0, "min_text_height": 0.8, "min_text_thickness": 0.08,
                       "min_resolved_spokes": 2, "min_connection_width": 0.0, "solder_mask_to_copper_clearance": 0.0},
             # footprints come from the project's own generator, not a KiCad library table
@@ -57,8 +58,8 @@ def write_kicad_pro(path: str | Path, rules=None, name: str | None = None, net_c
         }},
         "meta": {"filename": name or path.name, "version": 1},
         "net_settings": {"classes": [{"name": "Default", "clearance": clr, "track_width": trk, "via_diameter": via,
-                                      "via_drill": drl, "diff_pair_gap": 0.25, "diff_pair_via_gap": 0.25,
-                                      "diff_pair_width": 0.2, "microvia_diameter": 0.3, "microvia_drill": 0.1,
+                                      "via_drill": drl, "diff_pair_gap": clr, "diff_pair_via_gap": clr,
+                                      "diff_pair_width": trk, "microvia_diameter": g("microvia_dia"), "microvia_drill": g("microvia_drill"),
                                       "wire_width": 6, "bus_width": 12, "line_style": 0, "pcb_color": "rgba(0, 0, 0, 0.000)",
                                       "schematic_color": "rgba(0, 0, 0, 0.000)"}],
                          "meta": {"version": 3}, "net_colors": None},
@@ -134,6 +135,12 @@ def _need_cli() -> str:
     return exe
 
 
+def _need_rules(rules):
+    if rules is None:
+        raise ValueError("run_drc needs `rules` (or a .kicad_pro beside the board): there are no built-in fab limits")
+    return rules
+
+
 def run_drc(pcb_path: str | Path, refill: bool = True, rules=None, report_path: str | Path | None = None,
             save_to: str | Path | None = None) -> DrcReport:
     """KiCad DRC. Zones are refilled first (`--refill-zones`); with `save_to` the refilled board is written there for plotting."""
@@ -143,7 +150,7 @@ def run_drc(pcb_path: str | Path, refill: bool = True, rules=None, report_path: 
         work = Path(td) / pcb.name
         shutil.copy(pcb, work)
         pro = pcb.with_suffix(".kicad_pro")
-        shutil.copy(pro, work.with_suffix(".kicad_pro")) if pro.exists() else write_kicad_pro(work.with_suffix(".kicad_pro"), rules)
+        shutil.copy(pro, work.with_suffix(".kicad_pro")) if pro.exists() else write_kicad_pro(work.with_suffix(".kicad_pro"), _need_rules(rules))
         out = Path(td) / "drc.json"
         cmd = [exe, "pcb", "drc", "--format", "json", "--severity-all", "--all-track-errors", "--output", str(out)]
         if refill:

@@ -29,6 +29,9 @@ class Rules:
     mask_bridge: float = 0.1
     silk_width: float = 0.15
     temp_rise_c: float = 20.0
+    hole_clearance: float = 0.25     # copper to drill hole (KiCad min_hole_clearance); fab-profile value
+    microvia_dia: float = 0.2        # only used by HDI/advanced profiles; recorded so DRC has an explicit value
+    microvia_drill: float = 0.1
     plane_thermal_gap: float = 0.3
     plane_spoke: float = 0.35
     profile: str = "generic"
