@@ -1,77 +1,59 @@
-"""forge command line."""
+"""sparky command line."""
 from __future__ import annotations
 
 import argparse
 import json
-import sys
 from pathlib import Path
 
 
-def _lib(args, research=True):
+def _llm(args):
     from .llm.base import OfflineLLM, get_llm
-    from .parts.db import PartsLibrary
-    llm = None
-    if research and not getattr(args, "offline", False):
-        try:
-            llm = get_llm(getattr(args, "llm", None))
-            if isinstance(llm, OfflineLLM):
-                llm = None
-        except Exception:
-            llm = None
-    return PartsLibrary(getattr(args, "home", None), llm=llm, auto_research=llm is not None), llm
+    if getattr(args, "offline", False):
+        return None
+    try:
+        llm = get_llm(getattr(args, "llm", None))
+        return None if isinstance(llm, OfflineLLM) else llm
+    except Exception:
+        return None
 
 
-def cmd_blocks(a):
-    from .blocks.registry import describe_blocks
-    for b in describe_blocks():
-        print(f"{b['name']:<20} {b['summary'][:110]}")
-        for p in b["params"]:
-            print(f"    {p['name']:<18} {p['type']:<7} default={p['default']!r:<10} {p['doc']}")
+def cmd_recipes(a):
+    from .recipes import describe
+    for r in describe():
+        print(f"{r['name']:<20} {r['summary'][:110]}")
+        print(f"    ports: {', '.join(p['name'] + '(' + p['direction'] + ')' for p in r['ports'])}   auto: {r['auto_params']}")
+        for p in r["params"]:
+            print(f"    {p['name']:<22} {p['type']:<7} {'required' if p['required'] else 'default=' + repr(p['default']):<18} {p['doc']}")
 
 
-def cmd_parts(a):
-    lib, llm = _lib(a)
-    if a.action == "search":
-        for p in lib.search(a.arg, 30):
-            o = p.best_offer()
-            print(f"{p.mpn:<22} {p.category:<22} {p.package:<12} {p.provenance:<10} {'verified' if p.verified else 'unverified':<10} {p.description[:60]}")
-    elif a.action == "show":
-        p = lib.get(a.arg)
-        print(json.dumps(p.to_dict(), indent=1) if p else "not found")
-    elif a.action == "research":
-        part = lib.research(a.arg)
-        print(f"researched {part.mpn}: verified={part.verified} docs={part.docs}\n{part.notes}")
-    elif a.action == "verify":
-        from .parts.verify import verify_part
-        targets = [lib.get(a.arg)] if a.arg else [p for p in lib.all() if p.datasheet_url]
-        for p in targets:
-            print(verify_part(lib, p))
-    elif a.action == "stats":
-        print(f"{lib.count()} parts in catalog at {lib.root}; pending research misses: {lib.pending_misses()}")
-    elif a.action == "import-jlcpcb":
-        from .parts.importers import import_jlcpcb_csv
-        print(f"imported {import_jlcpcb_csv(lib, a.arg)} parts")
+def cmd_symbols(a):
+    from .kicad_symbols import find_symbols
+    for s in find_symbols(a.query, limit=a.limit):
+        print(f"{s.lib_id:<48} fp={s.footprint or '-':<50} {s.description[:60]}")
+
+
+def cmd_save_spec(a):
+    from . import datasheet
+    vals = {k: float(v) for k, v in (x.split("=", 1) for x in a.values)}
+    print(datasheet.save(a.part, vals, a.source))
 
 
 def cmd_board(a):
-    from .blocks.registry import build_block
     from .export.package import write_package
     from .pcb.flow import BoardSpec, build_board
-    lib, _ = _lib(a)
-    c = build_block(lib, a.block, json.loads(a.params or "{}"))
+    from .recipes import build_recipe
+    c = build_recipe(a.recipe, json.loads(a.params or "{}"))
     res = build_board(c, BoardSpec(layers=a.layers, copper_oz=a.copper_oz))
     out = Path(a.out)
-    files = write_package(res, out, a.block)
+    write_package(res, out, a.recipe)
     print(f"{'OK' if res.success else 'INCOMPLETE'}: {res.board.width}x{res.board.height} mm, {res.board.rules.layers}L, DRC {res.drc.summary()}; files in {out}")
     for k, v in c.calcs.items():
         print("  calc", k, ":", v)
 
 
 def cmd_plan(a):
-    from .blocks.registry import REGISTRY, _load
     from .system.planner import plan_request
-    lib, llm = _lib(a)
-    plan = plan_request(a.request, a.budget, lib, llm)
+    plan = plan_request(a.request, a.budget, _llm(a))
     Path(a.out).write_text(plan.to_json())
     print(f"plan written to {a.out} ({len(plan.boards)} board types, {len(plan.purchased)} purchased items, {len(plan.links)} links)")
 
@@ -79,22 +61,19 @@ def cmd_plan(a):
 def _build(plan, a):
     from .purchase.plan import build_purchase_files
     from .system.build import build_system
-    lib, _ = _lib(a)
-    sb = build_system(plan, lib, a.out, build_pcbs=not a.no_pcb, pcb_time_s=a.pcb_time)
-    pf = build_purchase_files(sb, lib)
+    sb = build_system(plan, a.out, build_pcbs=not a.no_pcb, pcb_time_s=a.pcb_time)
+    build_purchase_files(sb)
     c = sb.cost
     print("\n=== SYSTEM BUILD COMPLETE ===")
     print(f"output: {a.out}")
-    print(f"cost: boards ${c['boards_usd']:,.0f} + purchased ${c['purchased_usd']:,.0f} + harness ${c['harness_usd']:,.0f} + contingency ${c['contingency_usd']:,.0f} = ${c['total_usd']:,.0f}"
-          + (f" vs budget ${c['budget_usd']:,.0f} -> {'WITHIN' if c['within_budget'] else 'OVER'} budget" if c.get('budget_usd') else ""))
+    print(f"cost (excl. PCB fab + assembly): boards' parts ${c['boards_usd']:,.0f} + purchased ${c['purchased_usd']:,.0f} + contingency ${c['contingency_usd']:,.0f} = ${c['total_usd']:,.0f}"
+          + (f" vs budget ${c['budget_usd']:,.0f} -> {'WITHIN' if c['within_budget'] else 'OVER'} budget" if c.get("budget_usd") else ""))
     print(f"read: {a.out}/SYSTEM.md, {a.out}/purchase/shopping_list.md, per-board packages under {a.out}/boards/")
-    return sb
 
 
 def cmd_build(a):
     from .system.planner import plan_request
-    lib, llm = _lib(a)
-    plan = plan_request(a.request, a.budget, lib, llm)
+    plan = plan_request(a.request, a.budget, _llm(a))
     Path(a.out).mkdir(parents=True, exist_ok=True)
     (Path(a.out) / "plan.json").write_text(plan.to_json())
     _build(plan, a)
@@ -108,36 +87,16 @@ def cmd_build_plan(a):
     _build(plan, a)
 
 
-def cmd_buy(a):
-    from .llm.base import get_llm
-    from .purchase.agent import CONFIRM, auto_buy
-    llm = get_llm()
-    res = auto_buy(Path(a.out) / "purchase" / "purchase_plan.json", llm, a.supplier, a.checkout, a.confirm)
-    print(json.dumps(res, indent=1))
-    if not a.checkout:
-        print(f"\n(cart-fill only. To authorize checkout: --checkout --confirm \"{CONFIRM}\")")
-
-
-def cmd_footprints(a):
-    from .footprint_sync import apply_official, verify_all
-    rows = verify_all()
-    for r in rows:
-        print(f"{r['name']:<12} {r['status']:<20} {'; '.join(r['diffs'])[:150]}")
-    print(f"\n{sum(r['status'] == 'match' for r in rows)}/{len(rows)} generator footprints match the official KiCad library; "
-          f"official geometry is cached and used automatically by builds ({apply_official()} cached).")
-
-
 def cmd_pick(a):
-    """sparky pick inductor henries=4.7e-6 isat_min=4.7 [--qty 10]  (recipes live in sparky.picker.recipes)"""
+    """sparky pick inductor henries=4.7e-6 isat_min=4.7 [--qty 10]  (needs live in sparky.picker.recipes)"""
     from .picker import Catalog, recipes
-    fn = getattr(recipes, a.recipe, None)
+    fn = getattr(recipes, a.need, None)
     if fn is None:
-        raise SystemExit(f"unknown recipe '{a.recipe}'. Available: " + ", ".join(n for n in dir(recipes) if not n.startswith("_") and callable(getattr(recipes, n))
-                                                                               and getattr(getattr(recipes, n), "__module__", "") == recipes.__name__))
+        raise SystemExit(f"unknown need '{a.need}'. Available: " + ", ".join(n for n in dir(recipes) if not n.startswith("_") and callable(getattr(recipes, n))
+                                                                           and getattr(getattr(recipes, n), "__module__", "") == recipes.__name__))
     kw = {k: float(v) for k, v in (x.split("=", 1) for x in a.args)}
     for c in Catalog().pick(fn(**kw), qty=a.qty, limit=a.limit):
-        print(f"{c.lcsc:10} {c.mpn:24} {c.package:14} {'basic' if c.library_type == 'base' else 'pref ' if c.preferred else '     '} stock={c.stock:<8} "
-              f"${c.unit_price}  {c.url}")
+        print(f"{c.lcsc:10} {c.mpn:24} {c.package:14} {'basic' if c.library_type == 'base' else 'pref ' if c.preferred else '     '} stock={c.stock:<8} ${c.unit_price}  {c.url}")
 
 
 def cmd_download_parts(a):
@@ -153,36 +112,33 @@ def cmd_mcp(a):
 
 def cmd_doctor(a):
     from . import toolchain
-    from .parts.db import PartsLibrary
+    from .picker.catalog import db_path
     for k, v in toolchain.report().items():
         print(f"{k:<24} {v or 'MISSING'}")
-    lib = PartsLibrary(getattr(a, "home", None), auto_research=False)
-    print(f"{'catalog':<24} {lib.count()} parts at {lib.root}")
+    print(f"{'parts catalogue':<24} {db_path() if db_path().exists() else 'MISSING (sparky download-parts)'}")
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(prog="sparky", description="Claude Code + deterministic EDA: request -> boards -> fab files -> purchasing")
-    ap.add_argument("--home", help="cache dir (default ~/.sparky)")
-    ap.add_argument("--offline", action="store_true", help="never call an LLM (templates + catalog only)")
+    ap = argparse.ArgumentParser(prog="sparky", description="Claude Code + deterministic EDA: system description -> KiCad boards -> fab files -> shopping list")
+    ap.add_argument("--offline", action="store_true", help="never call an LLM")
     ap.add_argument("--llm", choices=["claude-code", "anthropic", "offline"], help="LLM backend")
     sub = ap.add_subparsers(dest="cmd", required=True)
-    s = sub.add_parser("blocks"); s.set_defaults(fn=cmd_blocks)
-    s = sub.add_parser("parts"); s.add_argument("action", choices=["search", "show", "research", "verify", "stats", "import-jlcpcb"]); s.add_argument("arg", nargs="?", default=""); s.set_defaults(fn=cmd_parts)
-    s = sub.add_parser("board", help="build one block into a board")
-    s.add_argument("block"); s.add_argument("--params"); s.add_argument("--layers", type=int); s.add_argument("--copper-oz", type=float, default=1.0); s.add_argument("--out", default="forge_out/board"); s.set_defaults(fn=cmd_board)
+    s = sub.add_parser("recipes", help="list recipes (circuit builders), their ports and parameters"); s.set_defaults(fn=cmd_recipes)
+    s = sub.add_parser("symbols", help="search KiCad's symbol libraries"); s.add_argument("query"); s.add_argument("--limit", type=int, default=15); s.set_defaults(fn=cmd_symbols)
+    s = sub.add_parser("save-spec", help="store datasheet numbers a recipe asked for"); s.add_argument("part"); s.add_argument("values", nargs="+", help="name=value (SI units)")
+    s.add_argument("--source", required=True, help="datasheet URL/page the numbers came from"); s.set_defaults(fn=cmd_save_spec)
+    s = sub.add_parser("board", help="build one recipe into a routed board package")
+    s.add_argument("recipe"); s.add_argument("--params"); s.add_argument("--layers", type=int); s.add_argument("--copper-oz", type=float, default=1.0)
+    s.add_argument("--out", default="sparky_out/board"); s.set_defaults(fn=cmd_board)
     s = sub.add_parser("plan"); s.add_argument("request"); s.add_argument("--budget", type=float); s.add_argument("--out", default="plan.json"); s.set_defaults(fn=cmd_plan)
     for name, fn in (("build", cmd_build), ("build-plan", cmd_build_plan)):
         s = sub.add_parser(name)
         s.add_argument("request" if name == "build" else "plan")
-        s.add_argument("--budget", type=float); s.add_argument("--out", default="forge_out/system")
+        s.add_argument("--budget", type=float); s.add_argument("--out", default="sparky_out/system")
         s.add_argument("--no-pcb", action="store_true", help="resolve/cost only; skip placement+routing"); s.add_argument("--pcb-time", type=float, default=900.0)
         s.set_defaults(fn=fn)
-    s = sub.add_parser("buy", help="agent cart-fill from a built system's purchase plan")
-    s.add_argument("--out", default="forge_out/system"); s.add_argument("--supplier"); s.add_argument("--checkout", action="store_true"); s.add_argument("--confirm", default="")
-    s.set_defaults(fn=cmd_buy)
-    s = sub.add_parser("footprints", help="compare/sync generator footprints with KiCad's official library"); s.set_defaults(fn=cmd_footprints)
     s = sub.add_parser("pick", help="deterministic part picker over the open JLCPCB/LCSC catalogue")
-    s.add_argument("recipe"); s.add_argument("args", nargs="*", help="key=value requirement parameters"); s.add_argument("--qty", type=int, default=1)
+    s.add_argument("need"); s.add_argument("args", nargs="*", help="key=value requirement parameters"); s.add_argument("--qty", type=int, default=1)
     s.add_argument("--limit", type=int, default=5); s.set_defaults(fn=cmd_pick)
     s = sub.add_parser("download-parts", help="download the parts catalogue (~400 MB, resumable)"); s.set_defaults(fn=cmd_download_parts)
     s = sub.add_parser("mcp"); s.set_defaults(fn=cmd_mcp)

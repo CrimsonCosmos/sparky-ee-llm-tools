@@ -1,6 +1,6 @@
 """System plan: the contract between the supervisor LLM (or a template) and the deterministic pipeline.
 
-A plan lists *boards* (each a set of block instances), *purchased* items (anything bought rather
+A plan lists *boards* (each a set of recipe instances), *purchased* items (anything bought rather
 than built: modules, motors, batteries, power supplies, structure) and *links* between ports.
 The plan deliberately holds NO netlists and NO coordinates - those are produced by the
 deterministic engines from the constraints the links imply.
@@ -17,7 +17,7 @@ _ID = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
 
 @dataclass
 class BuyAlternative:
-    """A purchasable substitute for a block (e.g. a pre-built DC-DC module). Ports are inherited from the block."""
+    """A purchasable substitute for a recipe (e.g. a pre-built DC-DC module). Ports are inherited from the block."""
     title: str
     unit_cost_usd: float
     url: str = ""
@@ -28,7 +28,7 @@ class BuyAlternative:
 @dataclass
 class BlockInst:
     id: str
-    block: str
+    recipe: str
     params: dict[str, Any] = field(default_factory=dict)
     buy_alternative: BuyAlternative | None = None
     prefer: str = "auto"                 # auto | build | buy
@@ -94,7 +94,7 @@ class SystemPlan:
             blocks = []
             for bi in b.get("blocks", []):
                 alt = bi.get("buy_alternative")
-                blocks.append(BlockInst(bi["id"], bi["block"], dict(bi.get("params") or {}),
+                blocks.append(BlockInst(bi["id"], bi.get("recipe") or bi["block"], dict(bi.get("params") or {}),
                                         BuyAlternative(**alt) if alt else None, bi.get("prefer", "auto")))
             kw = {k: v for k, v in b.items() if k != "blocks" and k in BoardNode.__dataclass_fields__}
             boards.append(BoardNode(blocks=blocks, **kw))
@@ -103,7 +103,7 @@ class SystemPlan:
         return SystemPlan(d.get("name", "system"), d.get("request", ""), d.get("budget_usd"), boards, items, links, list(d.get("assumptions", [])))
 
     # ---- validation -----------------------------------------------------------------------------
-    def validate(self, known_blocks: set[str]) -> list[str]:
+    def validate(self, known_recipes: set[str]) -> list[str]:
         errs: list[str] = []
         ids: set[str] = set()
         for b in self.boards:
@@ -119,8 +119,8 @@ class SystemPlan:
                 if bi.id in bids:
                     errs.append(f"{b.id}: duplicate block id '{bi.id}'")
                 bids.add(bi.id)
-                if bi.block not in known_blocks:
-                    errs.append(f"{b.id}.{bi.id}: unknown block '{bi.block}' (known: {sorted(known_blocks)})")
+                if bi.recipe not in known_recipes:
+                    errs.append(f"{b.id}.{bi.id}: unknown recipe '{bi.recipe}' (known: {sorted(known_recipes)}); write a new recipe file if none fits")
             if b.qty < 1:
                 errs.append(f"{b.id}: qty must be >= 1")
         for p in self.purchased:

@@ -105,7 +105,8 @@ def to_kicad_sch(circuit: Circuit, title: str | None = None, use_kicad_symbols: 
     comp_sym: dict[str, tuple[str, list[dict], list]] = {}
     for ref, comp in circuit.components.items():
         part = comp.part
-        lid = ks.symbol_for_part(part) if use_kicad_symbols else None
+        sym = part.params.get("symbol")                  # the exact KiCad symbol the part was built from (recorded by design.from_skidl); never guessed
+        lid = sym if (use_kicad_symbols and sym and ks.info(sym) is not None) else None
         node = ks.symbol_node(lid) if lid else None
         if node is not None:
             pins = ks.symbol_pins(lid)

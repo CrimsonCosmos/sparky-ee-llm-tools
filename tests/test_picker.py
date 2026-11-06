@@ -69,10 +69,10 @@ def test_tvs_standoff_window(tmp_path):
     db = sqlite3.connect(p)
     db.execute("""create table jlc_components (lcsc INTEGER PRIMARY KEY, category TEXT, subcategory TEXT, mfr TEXT, package TEXT, manufacturer TEXT,
                  library_type TEXT, preferred INTEGER, description TEXT, datasheet TEXT, stock INTEGER, price TEXT, attributes TEXT)""")
-    for i, (v, price) in enumerate([(58, 0.10), (90, 0.02), (64, 0.05), (36, 0.01)], 1):
+    for i, (v, price) in enumerate([(58, 0.10), (90, 0.02), (64, 0.05), (36, 0.01), (60, 0.001)], 1):
         db.execute("insert into jlc_components values (?,?,?,?,?,?,?,?,?,?,?,?,?)", (i, "Circuit Protection", "ESD And Surge Protection (TVS/ESD)", f"T{v}", "SMB", "x", "expand", 0, "", "", 5000,
-                                                                                    f"1-:{price}", json.dumps({"Reverse Stand-Off Voltage (Vrwm)": f"{v}V"})))
+                                                                                    f"1-:{price}", json.dumps({"Reverse Stand-Off Voltage (Vrwm)": f"{v}V", "Polarity": "Bidirectional" if v == 60 else "Unidirectional"})))
     db.commit()
     db.close()
     got = [c.mpn for c in Catalog(p).pick(recipes.tvs(58))]
-    assert got == ["T64", "T58"]                      # 90 V excluded (too loose), 36 V excluded (too low); cheaper in-window first
+    assert got == ["T64", "T58"]                      # 90 V too loose, 36 V too low, the cheapest in-window part (60 V) is bidirectional and excluded; cheaper in-window first

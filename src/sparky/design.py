@@ -21,6 +21,13 @@ _ETYPE = {"input": "input", "output": "output", "bidir": "bidir", "tristate": "b
           "openc": "output", "opene": "output", "nc": "nc", "free": "passive", "unspec": "passive"}
 
 
+def _symbol_id(p: Any) -> str:
+    """'Library:Name' of the KiCad symbol a SKiDL part was created from (SKiDL records the library file name on the part's lib)."""
+    from pathlib import Path
+    fn = getattr(getattr(p, "lib", None), "filename", None)
+    return f"{Path(str(fn)).stem}:{p.name}" if fn else str(p.name)
+
+
 def _category(ref: str) -> str:
     for pat, cat in _CATEGORY:
         if re.match(pat, ref):
@@ -49,7 +56,7 @@ def from_skidl(circ: Any | None = None, name: str = "design") -> Circuit:
         pins = [PinDef(str(pin.num), str(pin.name), _etype(pin)) for pin in p.pins]
         cat = str(p.fields.get("category") or _category(ref))
         part = PartDef(mpn=mpn, description=str(getattr(p, "description", "") or ""), category=cat, package=fid.split(":")[-1], pins=pins, footprint=fid,
-                       value=str(p.value or ""), datasheet_url=str(getattr(p, "datasheet", "") or ""), params={"symbol": f"{p.lib}:{p.name}" if getattr(p, "lib", None) else p.name})
+                       value=str(p.value or ""), datasheet_url=str(getattr(p, "datasheet", "") or ""), params={"symbol": _symbol_id(p)})
         out.add(part, ref=ref, value=str(p.value or ""), **{k: v for k, v in p.fields.items() if k not in ("MPN", "mpn", "category")})
     for net in circ.nets:
         pins = [f"{pin.part.ref}.{pin.num}" for pin in net.pins]

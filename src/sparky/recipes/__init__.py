@@ -59,7 +59,9 @@ class Recipe:
     path: str = ""
 
     def describe(self) -> dict:
-        return {"name": self.name, "summary": self.summary, "category": self.category, "auto_params": {k: list(v) for k, v in self.auto.items()}, "source": self.path,
+        from .policy import Policy
+        ports = [{"name": p.name, "kind": p.kind, "direction": p.direction} for p in self.ports(Policy())] if self.ports else []
+        return {"name": self.name, "summary": self.summary, "ports": ports, "category": self.category, "auto_params": {k: list(v) for k, v in self.auto.items()}, "source": self.path,
                 "params": [{"name": p.name, "type": p.type, "default": p.default, "doc": p.doc, "required": p.required} for p in self.params]}
 
 

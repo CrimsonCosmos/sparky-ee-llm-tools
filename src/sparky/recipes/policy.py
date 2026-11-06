@@ -32,3 +32,12 @@ class Policy:
     connector_derating: float = 0.8          # continuous current <= this x the connector's contact rating
     demand_margin: float = 1.1               # a regulator is sized for the downstream demand x this
     converter_efficiency: float = 0.9        # assumed when estimating a converter's INPUT current from its output (replace with the datasheet curve for tight budgets)
+    logic_level_tolerance_v: float = 0.55   # logic-level mismatch above this needs a level shifter
+    capacity_warn_fraction: float = 0.8      # warn when a supply is loaded beyond this fraction of its rating
+    contingency_fraction: float = 0.10       # added to the system cost roll-up
+    buy_ratio: float = 1.15                  # buy instead of build when the purchased price <= build BOM x this + buy_abs_usd (buy-vs-build policy)
+    buy_abs_usd: float = 3.0
+    spare_passive_fraction: float = 0.10     # ordering overage: passives +this fraction (at least spare_passive_min), other parts +spare_other_min or this fraction x qty
+    spare_passive_min: int = 5
+    spare_other_fraction: float = 0.04
+    spare_other_min: int = 1

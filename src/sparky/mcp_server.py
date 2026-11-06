@@ -16,83 +16,79 @@ from pathlib import Path
 PROTOCOL = "2024-11-05"
 
 
-def _lib(auto_research: bool = True):
-    from .llm.base import get_llm
-    from .parts.db import PartsLibrary
-    llm = None
-    if auto_research:
-        try:
-            llm = get_llm()
-            if llm.name == "offline":
-                llm = None
-        except Exception:
-            llm = None
-    return PartsLibrary(llm=llm, auto_research=llm is not None)
-
-
 def _outdir(name: str) -> Path:
-    base = Path(os.environ.get("SPARKY_OUT") or Path.cwd() / "forge_out")
+    base = Path(os.environ.get("SPARKY_OUT") or Path.cwd() / "sparky_out")
     d = base / name
     d.mkdir(parents=True, exist_ok=True)
     return d
 
 
-def tool_list_blocks(args: dict):
-    from .blocks.registry import describe_blocks
-    return describe_blocks()
+def tool_list_recipes(args: dict):
+    from .recipes import describe
+    return describe()
 
 
-def tool_search_parts(args: dict):
-    lib = _lib(False)
-    q = args["query"]
-    hits = lib.search(q, int(args.get("limit", 15)))
-    return [{"mpn": p.mpn, "category": p.category, "package": p.package, "description": p.description, "params": p.params,
-             "verified": p.verified, "datasheet_cached": bool(p.docs), "offers": [{"supplier": o.supplier, "url": o.url, "price": o.unit_price} for o in p.offers]}
-            for p in hits]
+def tool_search_symbols(args: dict):
+    from .kicad_symbols import find_symbols
+    return [{"symbol": s.lib_id, "footprint": s.footprint, "description": s.description, "pins": s.pins} for s in find_symbols(args["query"], limit=int(args.get("limit", 15)))]
 
 
-def tool_get_part(args: dict):
-    lib = _lib(False)
-    p = lib.get(args["mpn"])
-    return p.to_dict() if p else {"error": "not in catalog; call forge_research_part"}
+def tool_pick_parts(args: dict):
+    from .picker import Catalog, recipes
+    fn = getattr(recipes, args["need"])
+    out = Catalog().pick(fn(**{k: float(v) for k, v in (args.get("params") or {}).items()}), qty=int(args.get("qty", 1)), limit=int(args.get("limit", 5)))
+    return [{"lcsc": c.lcsc, "mpn": c.mpn, "package": c.package, "stock": c.stock, "unit_price": c.unit_price, "url": c.url, "datasheet": c.datasheet,
+             "attributes": c.attributes} for c in out]
 
 
-def tool_research_part(args: dict):
-    lib = _lib(True)
-    if lib.llm is None:
-        return {"error": "no LLM backend for research; this tool needs the `claude` CLI"}
-    part = lib.research(args["spec"], category_hint=args.get("category", ""))
-    return {"mpn": part.mpn, "verified": part.verified, "docs": part.docs, "offers": [o.to_dict() for o in part.offers], "notes": part.notes}
+def tool_save_spec(args: dict):
+    from . import datasheet
+    return str(datasheet.save(args["part"], args["values"], args["source"]))
+
+
+def tool_write_recipe(args: dict):
+    """Validate (import + META/PARAMS/build present) and store a recipe file authored by the supervisor, so it is cached and reusable."""
+    import re
+    from .paths import data_dir
+    from .recipes import _load_file
+    name = args["name"]
+    if not re.fullmatch(r"[a-z][a-z0-9_]*", name):
+        return {"error": "name must be snake_case"}
+    d = data_dir() / "recipes"
+    d.mkdir(parents=True, exist_ok=True)
+    f = d / f"{name}.py"
+    f.write_text(args["source"])
+    try:
+        r = _load_file(f)
+        if r is None or r.name != name:
+            raise ValueError("file must define META (with name == file name), PARAMS and build(ctx, **params)")
+    except Exception as e:
+        f.unlink(missing_ok=True)
+        return {"error": f"{type(e).__name__}: {e}"}
+    return {"stored": str(f), "recipe": r.describe()}
 
 
 def tool_validate_plan(args: dict):
-    from .blocks.registry import REGISTRY, _load
+    from .recipes import registry
     from .system.plan import SystemPlan
     from .system.resolver import Resolver
-    _load()
     plan = SystemPlan.from_dict(args["plan"] if isinstance(args["plan"], dict) else json.loads(args["plan"]))
-    errs = plan.validate(set(REGISTRY))
+    errs = plan.validate(set(registry()))
     if errs:
         return {"valid": False, "errors": errs}
-    lib = _lib(args.get("research", False))
-    try:
-        res = Resolver(lib, plan, log=None).resolve()
-    except Exception as e:
-        return {"valid": False, "errors": [f"resolution failed: {e}"]}
+    res = Resolver(plan, log=None).resolve()
     return {"valid": not res.errors(), "issues": [{"severity": i.severity, "msg": i.msg} for i in res.issues], "demand_a": res.demand,
-            "block_params": {f"{k[0]}.{k[1]}": {a: b for a, b in v.items() if a != "requests"} for k, v in res.params.items()}}
+            "recipe_params": {f"{k[0]}.{k[1]}": v for k, v in res.params.items()}}
 
 
 def tool_build_system(args: dict):
-    from .system.plan import SystemPlan
-    from .system.build import build_system
-    plan = SystemPlan.from_dict(args["plan"] if isinstance(args["plan"], dict) else json.loads(args["plan"]))
-    lib = _lib(args.get("research", True))
-    out = _outdir(plan.name)
-    sb = build_system(plan, lib, out, log=lambda s: print(s, file=sys.stderr), build_pcbs=bool(args.get("build_pcbs", True)),
-                      pcb_time_s=float(args.get("pcb_time_s", 900)))
     from .purchase.plan import build_purchase_files
-    pf = build_purchase_files(sb, lib)
+    from .system.build import build_system
+    from .system.plan import SystemPlan
+    plan = SystemPlan.from_dict(args["plan"] if isinstance(args["plan"], dict) else json.loads(args["plan"]))
+    out = _outdir(plan.name)
+    sb = build_system(plan, out, log=lambda s: print(s, file=sys.stderr), build_pcbs=bool(args.get("build_pcbs", True)), pcb_time_s=float(args.get("pcb_time_s", 900)))
+    build_purchase_files(sb)
     return {"output_dir": str(out), "cost": sb.cost, "decisions": sb.resolved.decisions,
             "issues": [{"severity": i.severity, "msg": i.msg} for i in sb.resolved.issues + sb.issues],
             "boards": {b: {"files": sorted(str(p) for p in (i.get("files") or {}).values())[:6], "cost": i["cost"],
@@ -100,40 +96,35 @@ def tool_build_system(args: dict):
             "reports": [str(out / "SYSTEM.md"), str(out / "purchase" / "shopping_list.md")]}
 
 
-def tool_build_block_board(args: dict):
-    from .blocks.registry import build_block
-    from .pcb.flow import BoardSpec, build_board
+def tool_build_recipe_board(args: dict):
     from .export.package import write_package
-    lib = _lib(args.get("research", True))
-    c = build_block(lib, args["block"], args.get("params") or {})
+    from .pcb.flow import BoardSpec, build_board
+    from .recipes import build_recipe
+    c = build_recipe(args["recipe"], args.get("params") or {})
     res = build_board(c, BoardSpec(layers=args.get("layers"), copper_oz=float(args.get("copper_oz", 1.0))), log=lambda s: print(s, file=sys.stderr))
-    out = _outdir(f"block_{args['block']}")
-    files = write_package(res, out, args["block"])
+    out = _outdir(f"recipe_{args['recipe']}")
+    files = write_package(res, out, args["recipe"])
     return {"output_dir": str(out), "success": res.success, "drc": res.drc.summary(), "board_mm": [res.board.width, res.board.height],
-            "layers": res.board.rules.layers, "calcs": c.calcs, "warnings": list(dict.fromkeys(res.board.warnings + c.warnings))[:15],
-            "fab_zip": str(files["fab.zip"])}
+            "layers": res.board.rules.layers, "calcs": c.calcs, "warnings": list(dict.fromkeys(res.board.warnings + c.warnings))[:15], "fab_zip": str(files["fab.zip"])}
 
 
-def tool_purchase_list(args: dict):
-    return {"hint": "forge_build_system already writes <output_dir>/purchase/shopping_list.md, cart_*.csv and purchase_plan.json"}
-
-
+_OBJ = {"type": "object", "properties": {}}
 TOOLS = {
-    "forge_list_blocks": (tool_list_blocks, "List the deterministic subassembly builders (blocks) with parameters. Call first when planning.",
-                          {"type": "object", "properties": {}}),
-    "forge_search_parts": (tool_search_parts, "Search the cached parts catalog (MPN/description/category text).",
-                           {"type": "object", "properties": {"query": {"type": "string"}, "limit": {"type": "integer"}}, "required": ["query"]}),
-    "forge_get_part": (tool_get_part, "Full catalog record for an MPN (pins, params, docs, offers).",
-                       {"type": "object", "properties": {"mpn": {"type": "string"}}, "required": ["mpn"]}),
-    "forge_research_part": (tool_research_part, "Find a part NOT in the catalog on the web, download its official datasheet, cache it, record where to buy it.",
-                            {"type": "object", "properties": {"spec": {"type": "string", "description": "requirement or MPN"}, "category": {"type": "string"}}, "required": ["spec"]}),
-    "forge_validate_plan": (tool_validate_plan, "Validate a SystemPlan JSON and run the interface resolver (no PCB work). Returns issues, current demand, derived block params.",
-                            {"type": "object", "properties": {"plan": {"type": ["object", "string"]}, "research": {"type": "boolean"}}, "required": ["plan"]}),
-    "forge_build_system": (tool_build_system, "Resolve + build every board (place, route, DRC, Gerber/BOM/KiCad), cost roll-up, buy-vs-build, purchase lists. Slow (minutes).",
-                           {"type": "object", "properties": {"plan": {"type": ["object", "string"]}, "build_pcbs": {"type": "boolean"}, "research": {"type": "boolean"}, "pcb_time_s": {"type": "number"}}, "required": ["plan"]}),
-    "forge_build_block_board": (tool_build_block_board, "Build ONE block (e.g. buck_converter with params) into a finished fab-ready board.",
-                                {"type": "object", "properties": {"block": {"type": "string"}, "params": {"type": "object"}, "layers": {"type": "integer"}, "copper_oz": {"type": "number"}, "research": {"type": "boolean"}}, "required": ["block"]}),
-    "forge_purchase_list": (tool_purchase_list, "Where purchase lists are written.", {"type": "object", "properties": {}}),
+    "sparky_list_recipes": (tool_list_recipes, "List recipes (circuit builders) with ports, parameters and which parameters the resolver derives. Call first when planning.", _OBJ),
+    "sparky_search_symbols": (tool_search_symbols, "Search KiCad's symbol libraries (name/keywords/description); returns library id and default footprint.",
+                              {"type": "object", "properties": {"query": {"type": "string"}, "limit": {"type": "integer"}}, "required": ["query"]}),
+    "sparky_pick_parts": (tool_pick_parts, "Parametric search of the JLCPCB/LCSC catalogue (stock, price, LCSC id, datasheet) for a named need, e.g. need=inductor params={henries:4.7e-6,isat_min:4}.",
+                          {"type": "object", "properties": {"need": {"type": "string"}, "params": {"type": "object"}, "qty": {"type": "integer"}, "limit": {"type": "integer"}}, "required": ["need"]}),
+    "sparky_save_spec": (tool_save_spec, "Store datasheet numbers a recipe requested (NeedsDatasheet), with their source. Read the OFFICIAL datasheet; never guess.",
+                         {"type": "object", "properties": {"part": {"type": "string"}, "values": {"type": "object"}, "source": {"type": "string"}}, "required": ["part", "values", "source"]}),
+    "sparky_write_recipe": (tool_write_recipe, "Author a NEW recipe (Python file: META, PARAMS, optional ports(), build(ctx, **params)) when none fits; validated and cached. See docs/RECIPES.md.",
+                            {"type": "object", "properties": {"name": {"type": "string"}, "source": {"type": "string"}}, "required": ["name", "source"]}),
+    "sparky_validate_plan": (tool_validate_plan, "Validate a SystemPlan JSON and run the interface resolver (builds each recipe; no PCB work). Returns issues, demand, derived parameters.",
+                             {"type": "object", "properties": {"plan": {"type": ["object", "string"]}}, "required": ["plan"]}),
+    "sparky_build_system": (tool_build_system, "Resolve + build every board (place, Freerouting, KiCad DRC, Gerber/BOM/STEP), cost roll-up, buy-vs-build, shopping list. Slow (minutes).",
+                            {"type": "object", "properties": {"plan": {"type": ["object", "string"]}, "build_pcbs": {"type": "boolean"}, "pcb_time_s": {"type": "number"}}, "required": ["plan"]}),
+    "sparky_build_recipe_board": (tool_build_recipe_board, "Build ONE recipe with params into a finished fab-ready board.",
+                                  {"type": "object", "properties": {"recipe": {"type": "string"}, "params": {"type": "object"}, "layers": {"type": "integer"}, "copper_oz": {"type": "number"}}, "required": ["recipe"]}),
 }
 
 
@@ -152,7 +143,7 @@ def handle(req: dict):
     if m == "initialize":
         return {"protocolVersion": p.get("protocolVersion", PROTOCOL), "capabilities": {"tools": {}},
                 "serverInfo": {"name": "sparky", "version": "0.1.0"},
-                "instructions": "Deterministic EDA pipelines. Decompose requests into a SystemPlan (see CLAUDE.md), validate with forge_validate_plan, build with forge_build_system."}
+                "instructions": "Deterministic EDA pipelines. Decompose requests into a SystemPlan (see CLAUDE.md), validate with sparky_validate_plan, build with sparky_build_system."}
     if m == "tools/list":
         return {"tools": [{"name": n, "description": d, "inputSchema": s} for n, (_, d, s) in TOOLS.items()]}
     if m == "tools/call":

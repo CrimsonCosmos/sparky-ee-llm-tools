@@ -1,7 +1,6 @@
 """Index of KiCad's schematic symbol libraries (/usr/share/kicad/symbols, override $KICAD_SYMBOL_DIR).
 
-`find_symbols` searches by name / keywords / description / footprint filter / pin count, `symbol_for_part`
-picks the best symbol for a sparky PartDef, and `symbol_node` returns a fully flattened (extends resolved)
+`find_symbols` searches by name / keywords / description / footprint filter / pin count and `symbol_node` returns a fully flattened (extends resolved)
 symbol s-expression ready to embed in a schematic's lib_symbols.
 """
 from __future__ import annotations
@@ -224,75 +223,6 @@ def symbol_pins(lib_id: str) -> list[dict]:
 
 
 # ---- part -> symbol -----------------------------------------------------------------------
-def symbol_for_part(part, footprint_name: str = "") -> str | None:
-    """Best KiCad symbol lib_id for a PartDef, or None (caller then draws a box symbol from the part's pins)."""
-    if not symbols_available():
-        return None
-    for lid in _candidates(part):
-        if info(lid) and (not part.pins or compatible(part, lid)):
-            return lid
-    return None
-
-
-def _mpn_match(part) -> list[str]:
-    """Library symbols named like the MPN (KiCad uses a lower-case 'x' as package/temperature wildcard, e.g. STM32F103C8Tx)."""
-    out = []
-    for q in dict.fromkeys([part.mpn, *getattr(part, "aliases", ())]):
-        qn = re.sub(r"[^A-Za-z0-9]", "", q).upper()
-        if len(qn) < 4:
-            continue
-        for s in find_symbols(qn[:7], limit=200):
-            sn = re.sub(r"[^A-Za-z0-9]", "", s.name)
-            rx = "".join("." if ch == "x" else re.escape(ch.upper()) for ch in sn)
-            if len(sn) >= 4 and re.match(rx, qn):
-                out.append((-len(sn), s.lib_id))
-    return [lid for _, lid in sorted(out)]
-
-
-def _candidates(part) -> list[str]:
-    cat = part.category or ""
-    desc = f"{part.description} {part.mpn}".lower()
-    npins = len(part.pins)
-    c: list[str] = []
-    if cat.startswith("capacitor.electrolytic"):
-        c += ["Device:C_Polarized", "Device:CP"]
-    elif cat.startswith("resistor"):
-        c.append("Device:R")
-    elif cat.startswith("capacitor"):
-        c.append("Device:C")
-    elif cat.startswith("inductor"):
-        c.append("Device:L")
-    elif cat.startswith("ferrite"):
-        c.append("Device:FerriteBead")
-    elif cat == "led" or cat.startswith("led"):
-        c.append("Device:LED")
-    elif cat.startswith("fuse"):
-        c.append("Device:Fuse")
-    elif cat.startswith("crystal"):
-        c += ["Device:Crystal_GND24" if npins == 4 else "Device:Crystal"]
-    elif cat.startswith("testpoint"):
-        c.append("Connector:TestPoint")
-    elif cat.startswith("mounting"):
-        c.append("Mechanical:MountingHole")
-    elif cat.startswith("connector") and npins:
-        m = re.search(r"(\d)x(\d+)", part.package or "")
-        rows, cols = (int(m.group(1)), int(m.group(2))) if m else (1, npins)
-        if rows == 2 and rows * cols == npins:
-            c.append(f"Connector_Generic:Conn_02x{cols:02d}_Odd_Even")
-        c.append(f"Connector_Generic:Conn_01x{npins:02d}")
-    elif cat.startswith("mosfet"):
-        pol = "PMOS" if re.search(r"p-?channel|p-mos|pmos", desc) else "NMOS"
-        c += [f"Device:Q_{pol}_{o}" for o in ("GDS", "GSD", "DGS", "DSG", "SDG", "SGD")]
-    elif cat in ("tvs",) or "tvs" in cat:
-        c += ["Device:D_TVS", "Device:D"]
-    elif cat.startswith("diode"):
-        c += (["Device:D_Schottky"] if "schottky" in desc or part.mpn.upper().startswith(("SS", "B5", "SB")) else []) + \
-             (["Device:D_Zener"] if "zener" in desc else []) + ["Device:D"]
-    if not c or cat.startswith(("ic", "mcu", "regulator", "driver", "transceiver", "sensor", "amplifier", "opamp")):
-        c += _mpn_match(part)
-    return c
-
-
 def symbol_units(lib_id: str) -> int:
     node = symbol_node(lib_id)
     units = set()
@@ -307,19 +237,3 @@ def symbol_units(lib_id: str) -> int:
 _GENERIC = re.compile(r"^(~|\d+|pin_?\d+|p\d+)?$", re.I)
 
 
-def compatible(part, lib_id: str) -> bool:
-    """True when `lib_id` can stand for `part`: single unit, every part pin number exists on the symbol, and
-    meaningful pin names agree (so an A/K or +/- swap is never silently drawn)."""
-    if not lib_id or symbol_units(lib_id) != 1:
-        return False
-    sp = {p["number"]: p for p in symbol_pins(lib_id)}
-    if len(sp) != len([p for p in part.pins]) or any(p.number not in sp for p in part.pins):
-        return False
-    for p in part.pins:
-        sn, pn = sp[p.number]["name"], p.name
-        if _GENERIC.match(sn) or _GENERIC.match(pn):
-            continue
-        a, b = _norm(sn), _norm(pn)
-        if a != b and a not in b and b not in a:
-            return False
-    return True

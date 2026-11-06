@@ -15,7 +15,7 @@ def render_report(res: BuildResult, project: str, extra: dict) -> str:
           f"- Components: {len(c.components)} ({sum(1 for r in rows)} BOM lines), nets: {len(c.nets)}",
           f"- Planes: {b.plane_nets or 'none'}; pours: {list(b.pour_nets) or 'none'}; routed by Freerouting, checked and filled by KiCad {drc.version or ''}",
           f"- KiCad DRC: **{'CLEAN' if drc.clean else 'ERRORS'}** ({drc.summary()})",
-          f"- Estimated BOM cost (1 board): **${cost['total_usd']:.2f}** ({'estimated prices - refresh before ordering' if cost['estimated'] else 'quoted'}), unpriced lines: {cost['lines_unpriced']}",
+          f"- BOM cost (1 board, catalogue snapshot; excludes PCB fab + assembly): **${cost['total_usd']:.2f}** (snapshot prices - refresh before ordering), unpriced lines: {cost['lines_unpriced']}",
           ""]
     th = an.get("thermal", {})
     L += ["## Thermal", "", f"- Peak board temperature rise above ambient (steady state, still air): **{th.get('peak_rise_c', 0)} C**"]
@@ -31,27 +31,22 @@ def render_report(res: BuildResult, project: str, extra: dict) -> str:
     L += [f"- {w}" for w in allw] or ["- none"]
     if drc.errors:
         L += ["", "## DRC errors", ""] + [f"- {v['type']}: {v['description']}" for v in drc.errors[:40]]
-    L += ["", "## Design calculations (from deterministic block builders)", ""]
+    L += ["", "## Design calculations (from the recipes)", ""]
     for k, v in c.calcs.items():
         L.append(f"- `{k}`: {v}")
-    L += ["", "## Bill of materials", "", "| Qty | Designators | MPN | Value | Package | Est. $ | Verified |", "|--|--|--|--|--|--|--|"]
+    L += ["", "## Bill of materials", "", "| Qty | Designators | MPN | Value | Package | Snapshot $ | Symbol/footprint source |", "|--|--|--|--|--|--|--|"]
     for r in rows:
         up = f"{r['unit_price']:.3f}" if r["unit_price"] is not None else "?"
-        L.append(f"| {r['qty']} | {','.join(r['refs'][:6])}{'...' if len(r['refs']) > 6 else ''} | {r['mpn']} | {r['value']} | {r['package']} | {up} | {'yes' if r['verified'] else 'no'} |")
-    unv = [r["mpn"] for r in rows if not r["verified"] and r["provenance"] != "generic"]
-    fsrc = c.calcs.get("footprint_sources", {})
-    gen_only = sorted(n for n, src in fsrc.items() if src.startswith("generator"))
-    official = sorted(n for n, src in fsrc.items() if src.startswith(("kicad:", "datasheet:")))
+        L.append(f"| {r['qty']} | {','.join(r['refs'][:6])}{'...' if len(r['refs']) > 6 else ''} | {r['mpn']} | {r['value']} | {r['package']} | {up} | {r['source']} |")
+    unrev = [r['mpn'] for r in rows if r['source'] != 'kicad-library']
     L += ["", "## Manufacturing-readiness checklist", "",
           "The software verifies geometry (DRC), connectivity and format validity. It cannot replace these human checks:", ""]
     L += [f"- [{'x' if drc.clean else ' '}] DRC clean and every net connected (automated)",
-          f"- [{' ' if unv else 'x'}] Pinouts cross-checked against datasheets" + (f" - **unverified: {', '.join(unv)}**" if unv else ""),
-          f"- [{' ' if gen_only else 'x'}] Footprints: {len(official)} use official geometry (KiCad library / datasheet drawing), "
-          + (f"**{len(gen_only)} are generator-only and still need a check against the manufacturer drawing: {', '.join(gen_only)}**" if gen_only else "none are generator-only"),
-          "- [ ] Schematic reviewed by an engineer (block calculations are listed above; stability/EMC are not simulated)",
+          f"- [{' ' if unrev else 'x'}] Symbols/footprints come from KiCad's reviewed libraries" + (f" - **vendor-imported, UNREVIEWED: {', '.join(unrev)}** (check pinout and land pattern against the datasheet)" if unrev else ""),
+          "- [ ] Schematic reviewed by an engineer (recipe calculations are listed above; loop stability and EMC are not verified)",
           "- [ ] High-current nets reviewed (ampacity warnings above); thermal estimate is a 2-D model, not a substitute for testing",
           "- [ ] Gerbers opened in an independent viewer (KiCad/Gerbv) and the fab's online DFM check passed",
-          "- [ ] Prices/stock refreshed from suppliers before ordering (`forge purchase`)"]
+          "- [ ] Prices/stock refreshed from suppliers before ordering (catalogue prices are a snapshot)"]
     for k, v in (extra or {}).items():
         L += ["", f"## {k}", "", str(v)]
     return "\n".join(L) + "\n"

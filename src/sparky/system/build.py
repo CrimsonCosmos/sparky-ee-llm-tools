@@ -7,12 +7,11 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from ..blocks.registry import build_block
 from ..erc import run_erc
 from ..export import bom as bomx
 from ..export.package import write_package
 from ..model import Circuit
-from ..parts.db import PartsLibrary
+from ..recipes.policy import Policy
 from ..pcb.flow import BoardSpec, build_board
 from . import cost as costx
 from .plan import BlockInst, BoardNode, Link, PurchasedItem, SystemPlan
@@ -28,7 +27,6 @@ def assemble_board(res: Resolved, board: BoardNode) -> Circuit:
     lib_circuit = Circuit(board.id)
     c = lib_circuit
     keys = [(board.id, bi.id) for bi in board.blocks if (board.id, bi.id) in res.circuits]
-    keys += [(board.id, bi.id) for bi in res.extra_blocks.get(board.id, [])]
     for key in keys:
         c.merge(res.circuits[key], prefix=f"{key[1]}.", block=key[1])
     for l in res.links:
@@ -80,28 +78,27 @@ class SystemBuild:
     issues: list = field(default_factory=list)
 
 
-def _mounting(lib: PartsLibrary) -> Circuit:
-    return build_block(lib, "mounting_holes", {})
-
-
-def decide_buy_vs_build(lib: PartsLibrary, plan: SystemPlan, log=print) -> tuple[SystemPlan, list[str]]:
+def decide_buy_vs_build(plan: SystemPlan, policy: Policy, log=print) -> tuple[SystemPlan, list[str]]:
     """Replace blocks that have a purchasable alternative when buying is cheaper/equivalent (or forced by `prefer`/budget).
     Policy: do not build what can be bought cheaply; build when the BOM is much cheaper or the user insists."""
     decisions: list[str] = []
     plan = copy.deepcopy(plan)
-    r = Resolver(lib, plan, log=None)
+    r = Resolver(plan, policy, log=None)
     res = r.resolve()
     swaps: list[tuple[str, BlockInst]] = []
     for b in plan.boards:
         for bi in b.blocks:
             if not bi.buy_alternative:
                 continue
-            circ = res.circuits[(b.id, bi.id)]
-            est = costx.est_build_cost(circ, b.layers or 4, b.qty)
+            circ = res.circuits.get((b.id, bi.id))
+            if circ is None:
+                decisions.append(f"{b.id}.{bi.id}: could not be built ({bi.recipe}); see issues")
+                continue
+            est = {"total": costx.build_cost(circ, 1)["bom"]}      # BOM only: PCB/assembly are not estimated
             alt = bi.buy_alternative
             if bi.prefer == "build":
-                decisions.append(f"{b.id}.{bi.id}: BUILD (user preference); est. ${est['total']:.2f}/board vs buy ${alt.unit_cost_usd:.2f}")
-            elif bi.prefer == "buy" or alt.unit_cost_usd <= est["total"] * 1.15 + 3.0:
+                decisions.append(f"{b.id}.{bi.id}: BUILD (user preference); BOM ${est['total']:.2f}/board (excl. PCB/assembly) vs buy ${alt.unit_cost_usd:.2f}")
+            elif bi.prefer == "buy" or alt.unit_cost_usd <= est["total"] * policy.buy_ratio + policy.buy_abs_usd:
                 swaps.append((b.id, bi))
                 why = "user preference" if bi.prefer == "buy" else "purchased module is no more expensive than building (and saves design/verification risk)"
                 decisions.append(f"{b.id}.{bi.id}: BUY '{alt.title}' ${alt.unit_cost_usd:.2f} vs build ${est['total']:.2f} - {why}")
@@ -120,7 +117,7 @@ def decide_buy_vs_build(lib: PartsLibrary, plan: SystemPlan, log=print) -> tuple
             ports.append(d)
         item = PurchasedItem(f"{bid}_{bi.id}", bi.buy_alternative.title, "module", board.qty, bi.buy_alternative.unit_cost_usd,
                              bi.buy_alternative.spec, bi.buy_alternative.url, bi.buy_alternative.supplier, ports, True,
-                             f"replaces block {bid}.{bi.id} ({bi.block})")
+                             f"replaces {bid}.{bi.id} ({bi.recipe})")
         plan.purchased.append(item)
         board.blocks = [x for x in board.blocks if x.id != bi.id]
         for l in plan.links:
@@ -132,14 +129,15 @@ def decide_buy_vs_build(lib: PartsLibrary, plan: SystemPlan, log=print) -> tuple
     return plan, decisions
 
 
-def build_system(plan: SystemPlan, lib: PartsLibrary, outdir: str | Path, log=print, build_pcbs: bool = True,
+def build_system(plan: SystemPlan, outdir: str | Path, policy: Policy | None = None, log=print, build_pcbs: bool = True,
                  pcb_time_s: float = 1200.0) -> SystemBuild:
     out = Path(outdir)
     out.mkdir(parents=True, exist_ok=True)
     log = log or (lambda *_a, **_k: None)
     t0 = time.time()
-    plan2, decisions = decide_buy_vs_build(lib, plan, log)
-    res = Resolver(lib, plan2, log=log).resolve()
+    policy = policy or Policy()
+    plan2, decisions = decide_buy_vs_build(plan, policy, log)
+    res = Resolver(plan2, policy, log=log).resolve()
     res.decisions = decisions
     sb = SystemBuild(out, res)
     for d in decisions:
@@ -151,7 +149,6 @@ def build_system(plan: SystemPlan, lib: PartsLibrary, outdir: str | Path, log=pr
     total_boards_usd = 0.0
     for b in res.plan.boards:
         circ = assemble_board(res, b)
-        circ.merge(_mounting(lib), prefix="mh.", block="mech")
         erc = run_erc(circ)
         errs = [e for e in erc if e.severity == "error"]
         for e in errs:
@@ -166,21 +163,14 @@ def build_system(plan: SystemPlan, lib: PartsLibrary, outdir: str | Path, log=pr
             info["result"] = bres
             info["files"] = write_package(bres, out / "boards" / b.id, b.id,
                                           extra={"System context": f"Board `{b.id}` x{b.qty} in system `{plan2.name}`. {b.notes}"})
-            bb = bres.board
-            info["cost"] = {"bom": bomx.bom_cost(circ)["total_usd"], "pcb": round(costx.pcb_fab_cost(bb.width * bb.height, bb.rules.layers, b.qty), 2),
-                            "assembly": round(costx.assembly_cost(circ, b.qty), 2)}
+            info["cost"] = costx.build_cost(circ, b.qty)
         else:
-            e = costx.est_build_cost(circ, b.layers or 4, b.qty)
-            info["cost"] = {"bom": e["bom"], "pcb": e["pcb"], "assembly": e["assembly"]}
-        info["cost"]["per_board"] = round(sum(info["cost"].values()), 2)
-        info["cost"]["qty"] = b.qty
-        info["cost"]["total"] = round(info["cost"]["per_board"] * b.qty, 2)
+            info["cost"] = costx.build_cost(circ, b.qty)
         total_boards_usd += info["cost"]["total"]
     items_usd = sum(p.unit_cost_usd * p.qty for p in res.plan.purchased)
-    harness_usd = sum(h["cost_usd_each"] * h["qty"] for h in res.harness)
-    subtotal = total_boards_usd + items_usd + harness_usd
-    cont = 0.10 * subtotal
-    sb.cost = {"boards_usd": round(total_boards_usd, 2), "purchased_usd": round(items_usd, 2), "harness_usd": round(harness_usd, 2),
+    subtotal = total_boards_usd + items_usd
+    cont = policy.contingency_fraction * subtotal
+    sb.cost = {"boards_usd": round(total_boards_usd, 2), "purchased_usd": round(items_usd, 2), "contingency_fraction": policy.contingency_fraction,
                "contingency_usd": round(cont, 2), "total_usd": round(subtotal + cont, 2), "budget_usd": plan2.budget_usd,
                "within_budget": (plan2.budget_usd is None) or (subtotal + cont <= plan2.budget_usd), "elapsed_s": round(time.time() - t0, 1)}
     from .report import write_system_report
