@@ -14,7 +14,7 @@ keep going until the limitations list is empty (do not just report limitations).
 5. Placement spike: benchmark keep-ours vs open-source option on 3 boards behind a file contract; decide and delete the loser.
 6. Verification: ngspice testbenches per block family (replace equation-only trust), mutation corpus for false positives/negatives, datasheet reference check, EE rules only where KiCad/ngspice cannot express them; coverage always reported.
 7. Thermal (Elmer FEM) and EMI (openEMS) adapters; mechanical floor plan (default small, roughly square outline; STEP export; FreeCAD/CadQuery later).
-8. Remaining limitations to close: STM32 pinout/datasheet verification (research agent / manual download), distributor links & live prices (APIs with keys), BGA/diff-pair/length matching via Freerouting+KiCad rules, doubled-sided assembly, scope beyond ten blocks (parts research + SKiDL-based custom circuits).
+8. Remaining limitations to close: MCU pinouts and alternate functions come from the KiCad symbol libraries (STM32 included): no per-part verification work, just map pin-mux from those symbols; distributor links & live prices (APIs with keys), BGA/diff-pair/length matching via Freerouting+KiCad rules, doubled-sided assembly, scope beyond ten blocks (parts research + SKiDL-based custom circuits).
 9. Hygiene: rename package to `sparky`, dependency pins from docs/DEPENDENCIES.md (newest versions), keep fast suite under 10 s, CI scoped by changed files.
 
 ## Status update (picker)
