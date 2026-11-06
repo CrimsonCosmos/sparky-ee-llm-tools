@@ -24,3 +24,5 @@ keep going until the limitations list is empty (do not just report limitations).
 * TODO: delete the hand-written seed catalogue (`parts/seed.py`, `parts/generic.py`, `parts/db.py`) once blocks are ported to equations+SKiDL+picker (the old blocks still depend on it).
 
 **Decision (user):** LLM/agent auto-purchasing is out of scope. The deliverable is the BOM + shopping list/cart CSVs with links; the user buys. Remove `purchase/agent.py` when the purchase module is ported.
+
+**Analysis tools (decided, no bake-off):** IR drop = kicad-irdrop (Apache-2.0; adapter `analysis/irdrop.py`, written, untested against the real tool). Thermal = pcb-analysis (FEM, beta). EMI = openEMS via a KiCad-to-openEMS geometry exporter (KESE / Antmicro gerber2ems); no rule-based EMI checks. Our own `pcb/analysis.py` thermal/EMI heuristics get deleted once the adapters work. Blocked on permission to pip-install/run third-party tools in the session.
