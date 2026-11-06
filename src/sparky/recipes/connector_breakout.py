@@ -8,6 +8,11 @@ PARAMS = [Param("symbol", "string", None, "KiCad symbol of the connector (pin co
           Param("voltage", "number", 0.0, "highest voltage on the connector (V)", False), Param("current_a", "number", 0.0, "highest pin current (A)", False)]
 
 
+def ports(policy=None, pins=None, kind="bundle", voltage=0.0, current_a=0.0, **_):
+    names = list(dict.fromkeys(pins or []))
+    return [PortSpec(n, n, "ground" if n == "GND" else kind, "bidir", voltage, current_a) for n in names]
+
+
 def build(ctx, symbol, footprint, pins, kind, voltage, current_a):
     j = ctx.generic(symbol, footprint)
     if len(j.pins) != len(pins):
@@ -16,5 +21,5 @@ def build(ctx, symbol, footprint, pins, kind, voltage, current_a):
     for i, name in enumerate(pins, 1):
         nets[name] = nets.get(name) or ctx.s.Net(name)
         j[i] += nets[name]
-    return Result(ports=[PortSpec(n, n, "ground" if n == "GND" else kind, "bidir", voltage, current_a) for n in nets],
+    return Result(ports=ports(None, pins, kind, voltage, current_a),
                   calcs={"connector": f"{symbol}: {len(pins)} pins ({', '.join(pins)})"})

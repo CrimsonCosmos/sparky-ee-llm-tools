@@ -14,6 +14,9 @@ DATASHEET = {"vdd_min": "minimum supply, V", "vdd_max": "maximum supply, V", "c_
 SWD = {"swdio": r".*SWDIO", "swclk": r".*SWCLK"}
 
 
+def ports(policy=None, vdd=None, rail="+3V3", vdd_min=None, vdd_max=None, **_):
+    return [PortSpec("vcc", rail, "power", "in", vdd or 0.0, 0.0, meta=dict(vmin=vdd_min, vmax=vdd_max)), PortSpec("gnd", "GND", "ground")]
+
 def build(ctx, symbol, vdd, rail, signals, swd_header_symbol, swd_header_footprint):
     s = ctx.s
     u, ch = ctx.ic(symbol)
@@ -48,7 +51,7 @@ def build(ctx, symbol, vdd, rail, signals, swd_header_symbol, swd_header_footpri
     hdr[2] += swdio
     hdr[3] += swclk
     hdr[4] += gnd
-    used, ports = {"NRST", "BOOT0"} | {str(p.name) for p in sup}, []
+    used, sig_ports = {"NRST", "BOOT0"} | {str(p.name) for p in sup}, []
     for net_name, spec in signals.items():
         if "pin" in spec:
             cands = [p for p in u.pins if str(p.name) == spec["pin"]]
@@ -60,10 +63,10 @@ def build(ctx, symbol, vdd, rail, signals, swd_header_symbol, swd_header_footpri
         used.add(str(p.name))
         n = s.Net(net_name)
         p += n
-        ports.append(PortSpec(net_name, net_name, spec.get("kind", "gpio"), "bidir", vdd, 0.0, meta=dict(pin=str(p.name))))
-    res = Result(calcs={"mcu": f"{u.name}: {len(sup)} supply pins bypassed, SWD header, {len(signals)} signals bound ({', '.join(f'{k}->{ports[i].meta['pin']}' for i, k in enumerate(signals))})"})
+        sig_ports.append(PortSpec(net_name, net_name, spec.get("kind", "gpio"), "bidir", vdd, 0.0, meta=dict(pin=str(p.name))))
+    res = Result(calcs={"mcu": f"{u.name}: {len(sup)} supply pins bypassed, SWD header, {len(signals)} signals bound ({', '.join(f'{k}->{sig_ports[i].meta['pin']}' for i, k in enumerate(signals))})"})
     res.warnings += [f"not in the parts catalogue (no price/stock): {n}" for n in ctx.unsourced]
-    res.ports = ports + [PortSpec("vcc", rail, "power", "in", vdd, 0.0, meta=dict(vmin=ds["vdd_min"], vmax=ds["vdd_max"])), PortSpec("gnd", "GND", "ground")]
+    res.ports = sig_ports + ports(None, vdd, rail, ds["vdd_min"], ds["vdd_max"])
     return res
 
 

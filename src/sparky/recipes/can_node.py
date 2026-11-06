@@ -13,6 +13,11 @@ PARAMS = [Param("symbol", "string", None, "KiCad symbol of the CAN transceiver (
 DATASHEET = {"vcc_min": "minimum supply, V", "vcc_max": "maximum supply, V", "bitrate_max": "maximum bit rate, bit/s", "c_bypass": "recommended VCC bypass capacitor, F"}
 
 
+def ports(policy=None, vcc=None, vcc_min=None, vcc_max=None, **_):
+    return [PortSpec("logic", "TXD", "can_logic", "bidir", vcc or 0.0, signals={"tx": "TXD", "rx": "RXD"}, meta=dict(role="device")),
+            PortSpec("bus", "CANH", "can_bus", "bidir", 0.0, signals={"canh": "CANH", "canl": "CANL"}, meta=dict(role="peer", needs_connector=True)),
+            PortSpec("vcc", "VCC", "power", "in", vcc or 0.0, 0.0, meta=dict(vmin=vcc_min, vmax=vcc_max)), PortSpec("gnd", "GND", "ground")]
+
 def build(ctx, symbol, vcc, bitrate, terminated=False, termination_jumper_footprint=None):
     s = ctx.s
     u, ch = ctx.ic(symbol)
@@ -39,7 +44,5 @@ def build(ctx, symbol, vcc, bitrate, terminated=False, termination_jumper_footpr
     res = Result(calcs={"can": f"{u.name}: {bitrate / 1e3:g} kbit/s at {vcc:g} V, slope pin to GND, termination "
                                f"{'none' if not terminated else 'jumper-selectable' if termination_jumper_footprint else 'fixed'} {CAN_TERMINATION_OHM:g} ohm"})
     res.warnings += [f"not in the parts catalogue (no price/stock): {n}" for n in ctx.unsourced]
-    res.ports = [PortSpec("logic", "TXD", "can_logic", "bidir", vcc, signals={"tx": "TXD", "rx": "RXD"}, meta=dict(role="device")),
-                 PortSpec("bus", "CANH", "can_bus", "bidir", 0.0, signals={"canh": "CANH", "canl": "CANL"}, meta=dict(role="peer", needs_connector=True)),
-                 PortSpec("vcc", "VCC", "power", "in", vcc, 0.0, meta=dict(vmin=ds["vcc_min"], vmax=ds["vcc_max"])), PortSpec("gnd", "GND", "ground")]
+    res.ports = ports(None, vcc, ds["vcc_min"], ds["vcc_max"])
     return res

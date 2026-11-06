@@ -44,6 +44,8 @@ class Ctx:
     def _tag(self, part: Any, ch: Choice) -> Any:
         part.fields["MPN"], part.fields["LCSC"] = ch.mpn, ch.lcsc
         part.fields["Manufacturer"] = ch.manufacturer
+        part.fields["UnitPrice"], part.fields["PriceQty"], part.fields["Stock"] = ch.unit_price, self.qty, ch.stock    # catalogue snapshot, not a live quote
+        part.fields["Url"] = ch.url
         if ch.datasheet:
             part.fields["Datasheet"] = ch.datasheet
         self.picks[part.ref] = ch

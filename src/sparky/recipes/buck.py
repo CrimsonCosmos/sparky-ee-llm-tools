@@ -8,7 +8,8 @@ from sparky.toolchain import ngspice
 
 META = dict(name="buck", summary="Synchronous buck converter: KiCad symbol chosen by the designer, datasheet design procedure for L/C/divider, "
                                  "parts spec-checked against the catalogue, power stage verified in ngspice.",
-            category="power", auto=("vin_min", "vin_max", "iout"))
+            category="power",
+            auto={"iout": ("vout", "current"), "vin_min": ("vin", "vmin"), "vin_max": ("vin", "vmax")})
 PARAMS = [Param("symbol", "string", None, "KiCad symbol 'Library:Name' of the regulator (e.g. Regulator_Switching:TPS563201)", True),
           Param("vin_min", "number", None, "min input (V)", True), Param("vin_max", "number", None, "max input (V)", True),
           Param("vout", "number", None, "output (V)", True), Param("iout", "number", None, "load current (A)", True),
@@ -18,6 +19,14 @@ DATASHEET = {"vref": "feedback reference voltage, V", "fsw": "switching frequenc
              "l_max": "datasheet-recommended maximum inductance, H",
              "c_boot": "bootstrap capacitor value, F", "v_boot": "voltage across the bootstrap capacitor (BOOT-SW), V"}
 
+
+def ports(policy, vin_min=None, vin_max=None, vout=None, iout=None, rail=None, vout_actual=None, **_):
+    """Interface ports from parameters alone (missing values give partial ports); input current assumes policy.converter_efficiency at vin_min."""
+    iout = iout or 0.0
+    iin = iout * (vout or 0.0) / ((vin_min or 1.0) * policy.converter_efficiency)
+    v = vout_actual or vout or 0.0
+    return [PortSpec("vin", "VIN", "power", "in", ((vin_min or 0) + (vin_max or 0)) / 2, iin, meta=dict(vmin=vin_min, vmax=vin_max)),
+            PortSpec("vout", rail or "VOUT", "power", "out", v, iout, meta=dict(source="buck", tolerance=abs(v / vout - 1) if vout else 0.0)), PortSpec("gnd", "GND", "ground")]
 
 def build(ctx, symbol, vin_min, vin_max, vout, iout, rail, inductor_footprint=None):
     s, pol = ctx.s, ctx.policy
@@ -60,7 +69,5 @@ def build(ctx, symbol, vin_min, vin_max, vout, iout, rail, inductor_footprint=No
             res.warnings.append(f"SPICE disagrees with the design equations by {max(err_r, err_p) * 100:.0f} % (> {pol.spice_tolerance * 100:g} %): review the inductor/capacitor sizing")
     else:
         res.calcs["spice"] = "NOT VERIFIED: ngspice unavailable"
-    res.ports = [PortSpec("vin", "VIN", "power", "in", (vin_min + vin_max) / 2, iout * vout / vin_min, meta=dict(vmin=vin_min, vmax=vin_max)),
-                 PortSpec("vout", rail, "power", "out", d.vout_actual, iout, meta=dict(source="buck", tolerance=abs(d.vout_actual / vout - 1))),
-                 PortSpec("gnd", "GND", "ground")]
+    res.ports = ports(pol, vin_min, vin_max, vout, iout, rail, d.vout_actual)
     return res

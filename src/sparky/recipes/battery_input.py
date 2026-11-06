@@ -1,7 +1,8 @@
 from sparky.recipes import Param, PortSpec, Result
 
 META = dict(name="battery_input", summary="DC/battery input: connector, fuse, unidirectional TVS clamp and bulk electrolytics; exposes the protected bus rail.",
-            category="power", auto=("ibat_max", "vbat_nom", "vbat_max", "vbat_min", "c_bulk"))
+            category="power",
+            auto={"ibat_max": ("vbus", "current"), "vbat_nom": ("src", "voltage"), "vbat_min": ("src", "vmin"), "vbat_max": ("src", "vmax")})
 PARAMS = [Param("vbat_nom", "number", None, "nominal pack voltage (V)", True), Param("vbat_max", "number", None, "max voltage incl. full charge (V)", True),
           Param("vbat_min", "number", None, "min voltage at cutoff (V)", True), Param("ibat_max", "number", None, "max continuous bus current (A)", True),
           Param("c_bulk", "number", None, "bulk capacitance the downstream stages need (F)", True),
@@ -10,6 +11,11 @@ PARAMS = [Param("vbat_nom", "number", None, "nominal pack voltage (V)", True), P
           Param("connector_rating_a", "number", None, "connector continuous current rating from its datasheet (A)", True),
           Param("rail", "string", "VBAT", "net name of the protected bus", False)]
 
+
+def ports(policy, vbat_nom=None, vbat_max=None, vbat_min=None, ibat_max=None, rail="VBAT", **_):
+    i = ibat_max or 0.0
+    return [PortSpec("vbus", rail, "power", "out", vbat_nom or 0.0, i, meta=dict(vmin=vbat_min, vmax=vbat_max, source="battery")),
+            PortSpec("src", "RAW", "power", "in", vbat_nom or 0.0, i, meta=dict(vmin=vbat_min, vmax=vbat_max, external=True)), PortSpec("gnd", "GND", "ground")]
 
 def build(ctx, vbat_nom, vbat_max, vbat_min, ibat_max, c_bulk, connector_symbol, connector_footprint, connector_rating_a, rail):
     s, pol = ctx.s, ctx.policy
@@ -30,7 +36,5 @@ def build(ctx, vbat_nom, vbat_max, vbat_min, ibat_max, c_bulk, connector_symbol,
         c[2] += gnd
     res = Result(calcs={"battery_input": f"{vbat_min:g}-{vbat_max:g} V, {ibat_max:g} A; fuse {f.value}; TVS {tvs.value}; bulk {len(caps)} x {caps[0].value}"})
     res.warnings += [f"not in the parts catalogue (no price/stock): {n}" for n in ctx.unsourced]
-    res.ports = [PortSpec("vbus", rail, "power", "out", vbat_nom, ibat_max, meta=dict(vmin=vbat_min, vmax=vbat_max, source="battery")),
-                 PortSpec("src", "RAW", "power", "in", vbat_nom, ibat_max, meta=dict(vmin=vbat_min, vmax=vbat_max, external=True)),
-                 PortSpec("gnd", "GND", "ground")]
+    res.ports = ports(pol, vbat_nom, vbat_max, vbat_min, ibat_max, rail)
     return res

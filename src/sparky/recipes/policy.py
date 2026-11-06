@@ -30,3 +30,5 @@ class Policy:
     chip_fuse: tuple[str, ...] = ("0603", "0805", "1206", "1210", "1812")
     surge_margin: float = 1.02               # TVS stand-off must exceed the highest working voltage by at least this factor
     connector_derating: float = 0.8          # continuous current <= this x the connector's contact rating
+    demand_margin: float = 1.1               # a regulator is sized for the downstream demand x this
+    converter_efficiency: float = 0.9        # assumed when estimating a converter's INPUT current from its output (replace with the datasheet curve for tight budgets)

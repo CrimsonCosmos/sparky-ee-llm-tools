@@ -4,7 +4,7 @@ Search path: this package's shipped recipes, then `$SPARKY_RECIPES` (os.pathsep-
 into the data dir when no existing one fits (from a datasheet typical-application circuit); it is then cached and reusable like a researched part.
 
 A recipe module defines:
-    META   = dict(name=..., summary=..., category=..., auto=("param", ...))    # `auto`: params the resolver may fill from neighbours
+    META   = dict(name=..., summary=..., category=..., auto={"param": ("port", "current|vmin|vmax|voltage")})    # params the resolver fills from the links on that port
     PARAMS = [Param(...), ...]
     def build(ctx: Ctx, **params) -> Result        # build parts/nets with ctx.s (SKiDL); return declared ports
 """
@@ -54,11 +54,12 @@ class Recipe:
     params: list[Param]
     build: Callable[..., Result]
     category: str = "general"
-    auto: tuple = ()
+    auto: dict = field(default_factory=dict)      # {param: (port, attribute)}: param is determined by that port attribute (current | vmin | vmax | voltage)
+    ports: Callable[..., list] | None = None      # ports(policy, **params) -> [PortSpec]: interface from parameters alone (missing values allowed)
     path: str = ""
 
     def describe(self) -> dict:
-        return {"name": self.name, "summary": self.summary, "category": self.category, "auto_params": list(self.auto), "source": self.path,
+        return {"name": self.name, "summary": self.summary, "category": self.category, "auto_params": {k: list(v) for k, v in self.auto.items()}, "source": self.path,
                 "params": [{"name": p.name, "type": p.type, "default": p.default, "doc": p.doc, "required": p.required} for p in self.params]}
 
 
@@ -81,7 +82,7 @@ def _load_file(path: Path) -> Recipe | None:
     if not meta or not hasattr(mod, "build"):
         return None
     return Recipe(meta["name"], meta.get("summary", ""), list(getattr(mod, "PARAMS", [])), mod.build, meta.get("category", "general"),
-                  tuple(meta.get("auto", ())), str(path))
+                  dict(meta.get("auto", {})), getattr(mod, "ports", None), str(path))
 
 
 def registry() -> dict[str, Recipe]:

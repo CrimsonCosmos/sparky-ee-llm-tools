@@ -9,29 +9,29 @@ from ..model import Circuit
 from ..pcb.board import Board
 
 
+def _fp_name(c) -> str:
+    fp = c.part.footprint
+    return fp if isinstance(fp, str) else fp.name
+
+
 def group_bom(circuit: Circuit) -> list[dict]:
+    """One row per (MPN, value, footprint). Prices/links come from the catalogue fields recorded on each component (a snapshot, not a live quote)."""
     groups: "OrderedDict[tuple, dict]" = OrderedDict()
     for ref, c in circuit.components.items():
-        if c.dnp or c.part.category in ("mounting", "testpoint"):
-            key = ("__mech__", c.part.mpn)
-        else:
-            key = (c.part.mpn, c.value, c.part.footprint if isinstance(c.part.footprint, str) else c.part.footprint.name)
-        g = groups.setdefault(key, {"refs": [], "part": c.part, "value": c.value, "dnp": c.dnp or c.part.category in ("mounting", "testpoint")})
+        mech = c.dnp or c.part.category in ("mounting", "testpoint")
+        key = ("__mech__", c.part.mpn) if mech else (c.part.mpn, c.value, _fp_name(c))
+        g = groups.setdefault(key, {"refs": [], "comp": c, "dnp": mech})
         g["refs"].append(ref)
     rows = []
-    for key, g in groups.items():
-        p = g["part"]
-        offer = p.best_offer(len(g["refs"]))
-        lcsc = next((o.sku for o in p.offers if o.supplier == "lcsc" and o.sku), "")
+    for g in groups.values():
+        c, p = g["comp"], g["comp"].part
+        f = c.props
         rows.append({
             "refs": sorted(g["refs"], key=lambda r: (r.rstrip("0123456789"), int("".join(ch for ch in r if ch.isdigit()) or 0))),
-            "qty": len(g["refs"]), "mpn": p.mpn, "manufacturer": p.manufacturer, "value": g["value"],
-            "footprint": p.footprint if isinstance(p.footprint, str) else p.footprint.name, "package": p.package,
-            "description": p.description, "category": p.category, "dnp": g["dnp"],
-            "lcsc": lcsc, "unit_price": offer.price_at(len(g["refs"])) if offer else None,
-            "price_estimated": offer.estimated if offer else True, "verified": p.verified, "provenance": p.provenance,
-            "datasheet": p.datasheet_url,
-            "links": {o.supplier: (o.url) for o in p.offers if o.url},
+            "qty": len(g["refs"]), "mpn": p.mpn, "manufacturer": f.get("Manufacturer", ""), "value": c.value, "footprint": _fp_name(c), "package": p.package,
+            "description": p.description, "category": p.category, "dnp": g["dnp"], "lcsc": f.get("LCSC", ""),
+            "unit_price": f.get("UnitPrice"), "price_qty": f.get("PriceQty"), "stock": f.get("Stock"),
+            "source": f.get("Source", "kicad-library"), "datasheet": f.get("Datasheet", p.datasheet_url), "links": {"lcsc": f["Url"]} if f.get("Url") else {},
         })
     rows.sort(key=lambda r: (r["refs"][0].rstrip("0123456789"), r["mpn"]))
     return rows
@@ -40,14 +40,13 @@ def group_bom(circuit: Circuit) -> list[dict]:
 def bom_csv(circuit: Circuit) -> str:
     out = io.StringIO()
     w = csv.writer(out)
-    w.writerow(["Designator", "Qty", "MPN", "Manufacturer", "Value", "Footprint", "Description", "Unit price USD (est.)",
-                "Ext price USD", "Datasheet", "Digi-Key", "Mouser", "LCSC", "Pinout verified"])
+    w.writerow(["Designator", "Qty", "MPN", "Manufacturer", "Value", "Footprint", "Description", "Unit price USD (catalogue snapshot)",
+                "Ext price USD", "Datasheet", "LCSC link", "LCSC #", "Symbol/footprint source"])
     for r in group_bom(circuit):
         up = r["unit_price"]
         w.writerow([",".join(r["refs"]), r["qty"], r["mpn"], r["manufacturer"], r["value"], r["footprint"], r["description"],
                     f"{up:.4f}" if up is not None else "", f"{up * r['qty']:.2f}" if up is not None else "", r["datasheet"],
-                    r["links"].get("digikey", ""), r["links"].get("mouser", ""), r["links"].get("lcsc", ""),
-                    "yes" if r["verified"] else "NO"])
+                    r["links"].get("lcsc", ""), r["lcsc"], r["source"]])
     return out.getvalue()
 
 
@@ -100,4 +99,4 @@ def bom_cost(circuit: Circuit, boards: int = 1) -> dict:
             continue
         total += r["unit_price"] * r["qty"] * boards
     return {"lines": len(rows), "parts": sum(r["qty"] for r in rows), "total_usd": round(total, 2), "lines_unpriced": unknown,
-            "estimated": any(r["price_estimated"] for r in rows)}
+            "estimated": True}      # catalogue snapshot prices, not live quotes
