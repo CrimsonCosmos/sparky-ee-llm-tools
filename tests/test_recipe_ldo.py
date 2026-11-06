@@ -32,7 +32,7 @@ def test_recipes_are_discovered_from_files():
 
 
 def test_ldo_builds_from_catalogue_and_kicad_symbol(cat):
-    c = build_recipe("ldo", dict(vin_min=4.5, vin_max=5.5, vout=3.3, iout=0.3, c_in=10e-6, c_out=22e-6, rail="+3V3"), ctx=Ctx(cat))
+    c = build_recipe("ldo", dict(symbol="Regulator_Linear:AMS1117-3.3", vin_min=4.5, vin_max=5.5, vout=3.3, iout=0.3, c_in=10e-6, c_out=22e-6, rail="+3V3"), ctx=Ctx(cat))
     mpns = {comp.part.mpn for comp in c.components.values()}
     assert "AMS1117-3.3" in mpns                                    # real KiCad symbol, pins by name
     assert c.ports["vout"].voltage == 3.3
@@ -40,3 +40,10 @@ def test_ldo_builds_from_catalogue_and_kicad_symbol(cat):
     assert sum(1 for pins in c.nets.values() for p in pins if p.startswith(ref + ".")) == 3       # IN, OUT, GND all connected
     # dissipation = (5.5 - 3.3) * 0.3 = 0.66 W  (hand calculation)
     assert "0.66 W" in c.calcs["ldo"]
+
+
+def test_part_failing_the_spec_check_is_an_error_not_a_substitution(cat):
+    # catalogue says the 3.3 V part is 1 A; asking for 2 A must fail loudly
+    from sparky.recipes.ctx import NoPart
+    with pytest.raises(NoPart):
+        build_recipe("ldo", dict(symbol="Regulator_Linear:AMS1117-3.3", vin_min=4.5, vin_max=5.5, vout=3.3, iout=2.0, c_in=10e-6, c_out=22e-6, rail="+3V3"), ctx=Ctx(cat))

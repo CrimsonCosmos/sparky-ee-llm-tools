@@ -28,6 +28,8 @@ class Ctx:
         self.policy = policy or Policy()
         self.qty = qty
         self._catalog = catalog
+        self.unsourced: list[str] = []            # parts with no catalogue match (no price/stock known)
+        self.unreviewed: list[str] = []           # parts whose symbol/footprint came from a vendor import, not KiCad's reviewed libraries
         self.picks: dict[str, Choice] = {}          # ref -> purchasable choice (BOM / purchasing)
 
     @property
@@ -59,18 +61,38 @@ class Ctx:
         p = self.s.Part("Device", "C", value=_val(farads), footprint=chip_footprint("C", ch.package))
         return self._tag(p, ch)
 
-    # ---- active parts: need + KiCad symbol --------------------------------------------------
-    def ic(self, need: Need, *, symbol_lib: str | None = None, scan: int = 60):
-        """First catalogue part (basic/preferred first, then cheapest) that has a KiCad symbol of the same name; returns (SKiDL part, Choice)."""
-        from ..kicad_symbols import find_symbols
-        for ch in self.catalog.pick(need, qty=self.qty, limit=scan):
-            for sym in find_symbols(ch.mpn, lib=symbol_lib, limit=5):
-                if _norm(sym.name) == _norm(ch.mpn) or _norm(sym.name).startswith(_norm(ch.mpn)):
-                    if not sym.footprint:
-                        continue
-                    p = self.s.Part(sym.lib, sym.name, footprint=sym.footprint)
-                    return self._tag(p, ch), ch
-        raise NoPart(f"no purchasable part with a KiCad symbol for: {need}")
+    # ---- active parts: KiCad's reviewed library is the source of symbol + footprint ---------------------
+    def ic(self, symbol: str, need: Need | None = None):
+        """`symbol` = KiCad 'Library:Name' chosen by the designer (search: `sparky symbols <name>`). Pins and footprint come from KiCad's library.
+        Sourcing/price come from the catalogue by that part name; `need` is a SPEC CHECK on the sourced part's catalogue attributes (voltage,
+        current, ...) - a part that fails it is an error, not silently replaced. Returns (SKiDL part, Choice | None)."""
+        from ..kicad_symbols import info
+        si = info(symbol)
+        if si is None:
+            raise NoPart(f"KiCad symbol '{symbol}' not found; search with `sparky symbols <name>`, or import the vendor part explicitly with ctx.ic_import(lcsc)")
+        if not si.footprint:
+            raise NoPart(f"KiCad symbol '{symbol}' has no default footprint; pass the footprint explicitly")
+        p = self.s.Part(si.lib, si.name, footprint=si.footprint)
+        got = self.catalog.pick(Need("%", text=si.name, min_stock=1), qty=self.qty, limit=1) if self._has_catalog() else []
+        if got:
+            if need is not None and not Catalog._ok(got[0].attributes, need):
+                raise NoPart(f"{si.name} ({got[0].mpn}) does not meet the requirement {need}; catalogue says {got[0].attributes}")
+            return self._tag(p, got[0]), got[0]
+        p.fields["MPN"] = si.name
+        self.unsourced.append(si.name)
+        return p, None
+
+    def ic_import(self, lcsc: str):
+        """Fallback when KiCad has no symbol: the vendor's own record for this exact part (libsrc). Flagged UNREVIEWED in the part's fields."""
+        from ..libsrc import ensure_part
+        pf = ensure_part(lcsc)
+        p = self.s.Part(str(pf.symbol_file), pf.symbol_name, footprint=str(pf.footprint_file))
+        p.fields["Source"] = "vendor-import-unreviewed"
+        self.unreviewed.append(f"{pf.symbol_name} ({lcsc})")
+        return p
+
+    def _has_catalog(self) -> bool:
+        return self._catalog is not None or db_path().exists()
 
     def _first(self, need: Need, what: str) -> Choice:
         got = self.catalog.pick(need, qty=self.qty, limit=1)
@@ -82,3 +104,4 @@ class Ctx:
 def _val(x: float) -> str:
     from ..units import fmt_si
     return fmt_si(x)
+

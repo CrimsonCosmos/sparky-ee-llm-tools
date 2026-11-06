@@ -181,13 +181,11 @@ def parse_footprint(text: str, name: str | None = None) -> Footprint:
             continue
         keep.append(p)
     pads = keep
-    if cx:
-        cyard = (min(cx), min(cy), max(cx), max(cy))
-    elif pads:
-        cyard = (min(p.x - p.w / 2 for p in pads) - 0.25, min(p.y - p.h / 2 for p in pads) - 0.25,
-                 max(p.x + p.w / 2 for p in pads) + 0.25, max(p.y + p.h / 2 for p in pads) + 0.25)
-    else:
-        cyard = (-1, -1, 1, 1)
+    # courtyard must enclose every pad (vendor footprints, e.g. EasyEDA's, put the package BODY on F.CrtYd): union of the drawn courtyard and the pad extents
+    boxes = [(min(cx), min(cy), max(cx), max(cy))] if cx else []
+    if pads:
+        boxes.append((min(p.x - p.w / 2 for p in pads), min(p.y - p.h / 2 for p in pads), max(p.x + p.w / 2 for p in pads), max(p.y + p.h / 2 for p in pads)))
+    cyard = (min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes), max(b[3] for b in boxes)) if boxes else (0.0, 0.0, 0.0, 0.0)
     return Footprint(name, pads, cyard, silk, 1.0, f"kicad:{name}")
 
 

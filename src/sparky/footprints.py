@@ -375,6 +375,12 @@ def resolve_footprint(spec) -> Footprint:
     if name in _REGISTRY:
         return _REGISTRY[name]
     fp: Footprint | None = None
+    if name.endswith(".kicad_mod") and Path(name).is_file():          # imported part footprint (libsrc): the file itself is the source of truth
+        from .kicad_mod import load_file
+        fp = load_file(name)
+        fp.name, fp.source = Path(name).stem, f"file:{name}"
+        _REGISTRY[name] = fp
+        return fp
     if is_kicad_id(name):
         lib_id = name[len("sparky:"):] if name.startswith("sparky:") else name
         fp = kicad_footprint(lib_id)

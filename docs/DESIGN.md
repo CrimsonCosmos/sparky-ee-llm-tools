@@ -102,3 +102,10 @@ datasheet's own numbers). All other blocks migrate to this pattern; the old `Cir
 
 ## 9. External requirements and known blockers
 See `docs/DEPENDENCIES.md`. Resolved: KiCad 10.0.8 installed from the official PPA; push access to this repository granted by the owner. Lesson recorded: parsing KiCad files with indentation-specific regexes broke on KiCad 10 (tabs); use format-agnostic parsing and version-gated features (`toolchain.kicad_has`).
+
+## Part sources (decided)
+1. **KiCad's reviewed libraries are the source of symbols and footprints.** The designer (Claude, or a human) names the KiCad symbol (`sparky symbols <name>` searches); pins, pin types and the footprint come from it.
+2. **The jlcparts catalogue supplies sourcing only** (stock, price, LCSC id, datasheet link) and acts as a *spec check* on the chosen part (a part that fails the electrical requirement is an error, never silently replaced). Parts missing from the catalogue are flagged "unsourced".
+3. **Vendor import (`libsrc`, easyeda2kicad, AGPL, external process only) is a flagged fallback** when KiCad has no symbol: marked `vendor-import-unreviewed`, pin types inferred from names, courtyard extended to the pads. It is an unofficial API (observed: HTTP 403 after a few requests) so imports are cached and may be unavailable.
+4. We never match orderable MPNs to symbol names by prefix/fuzzy rules.
+5. "Would a real engineer do this?" is asked at every step: equations give a first pass, then simulation/verification (ngspice, KiCad DRC/ERC, thermal/IR-drop tools) checks it.
