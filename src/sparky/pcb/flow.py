@@ -50,16 +50,11 @@ def suggest_layers(circuit: Circuit) -> int:
 
 def build_board(circuit: Circuit, spec: BoardSpec | None = None, log=print) -> BuildResult:
     from .. import kicad_backend, routing
-    from ..export.kicad import to_kicad_pcb
+    from ..export.kicad import add_pours, to_kicad_pcb
     spec = spec or BoardSpec()
     t_start = time.time()
     work = Path(spec.workdir or tempfile.mkdtemp(prefix=f"sparky_{circuit.name}_"))
     work.mkdir(parents=True, exist_ok=True)
-    try:                                    # official KiCad footprint geometry where the library has it
-        from ..footprint_sync import sync_circuit
-        sync_circuit(circuit)
-    except Exception:
-        pass
     msgs: list[str] = []
 
     def say(s: str) -> None:
@@ -90,6 +85,7 @@ def build_board(circuit: Circuit, spec: BoardSpec | None = None, log=print) -> B
             except routing.RoutingError as e:
                 say(f"   routing failed: {e}")
                 continue
+            routed.write_text(add_pours(routed.read_text(), board))        # outer pours go in after routing (see export.kicad)
             routed.with_suffix(".kicad_pro").write_bytes(raw.with_suffix(".kicad_pro").read_bytes())
             filled = work / f"{tag}_final.kicad_pcb"
             drc = kicad_backend.run_drc(routed, refill=True, rules=rules, save_to=filled)

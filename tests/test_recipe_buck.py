@@ -31,7 +31,7 @@ def env(tmp_path, monkeypatch):
     c.commit()
     c.close()
     # SYNTHETIC datasheet numbers for this test (the values used in tests/test_eq_buck / TI TPS563201 typical application); real flows store these via `save`
-    datasheet.save("TPS563201", dict(vref=0.768, fsw=580e3, l_min=2.2e-6, l_max=4.7e-6, c_boot=100e-9, v_boot=5.0), "test fixture")
+    datasheet.save("TPS563201", dict(vref=0.768, fsw=580e3, **{"l_min@3.3V": 2.2e-6, "l_max@3.3V": 4.7e-6}, c_boot=100e-9, v_boot=5.0), "test fixture")
     return Catalog(p)
 
 

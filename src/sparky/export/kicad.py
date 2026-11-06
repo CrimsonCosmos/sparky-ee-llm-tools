@@ -104,20 +104,36 @@ def to_kicad_pcb(board: Board, title: str = "sparky") -> str:
     for a, b in zip(pts[:-1], pts[1:]):
         k += 1
         root.append(["gr_line", ["start", a[0], a[1]], ["end", b[0], b[1]], ["stroke", ["width", 0.1], ["type", "default"]], ["layer", Q("Edge.Cuts")], ["tstamp", _uuid(f"e{k}")]])
-    # zones: definitions only (KiCad fills them: kicad-cli --refill-zones). Planes = whole inner layer, pours = outer layers.
-    zone_defs = [(layer, net) for layer, net in board.plane_nets.items()]
-    zone_defs += [(layer, net) for net, layers in board.pour_nets.items() for layer in layers if layer not in board.plane_nets]
-    outline = board.outline.buffer(-board.rules.edge_clearance)
-    for layer, net in zone_defs:
-        if net not in nets:
-            continue
-        k += 1
-        root.append(["zone", ["net", nets[net]], ["net_name", Q(net)], ["layer", Q(layer)], ["tstamp", _uuid(f"z{k}")], ["hatch", "edge", 0.5],
-                     ["connect_pads", "yes", ["clearance", board.rules.clearance]], ["min_thickness", max(0.127, board.rules.min_track)],
-                     ["fill", "yes", ["thermal_gap", board.rules.plane_thermal_gap], ["thermal_bridge_width", board.rules.plane_spoke],
-                      ["island_removal_mode", 1]],
-                     ["polygon", ["pts"] + [["xy", x, y] for x, y in outline.exterior.coords[:-1]]]])
+    # inner-layer planes are exported with the board (Freerouting routes the net through vias to the plane). Outer-layer POURS are added after routing
+    # (`add_pours`): the router must not treat a fragmenting outer pour as connectivity, so those nets are routed as ordinary tracks first.
+    for layer, net in board.plane_nets.items():
+        if net in nets:
+            k += 1
+            root.append(_zone(board, nets[net], net, layer, f"z{k}"))
     return dump(root) + "\n"
+
+
+def _zone(board: Board, net_id: int, net: str, layer: str, seed: str) -> list:
+    outline = board.outline.buffer(-board.rules.edge_clearance)
+    return ["zone", ["net", net_id], ["net_name", Q(net)], ["layer", Q(layer)], ["tstamp", _uuid(seed)], ["hatch", "edge", 0.5],
+            ["connect_pads", "yes", ["clearance", board.rules.clearance]], ["min_thickness", max(0.127, board.rules.min_track)],
+            ["fill", "yes", ["thermal_gap", board.rules.plane_thermal_gap], ["thermal_bridge_width", board.rules.plane_spoke], ["island_removal_mode", 1]],
+            ["polygon", ["pts"] + [["xy", x, y] for x, y in outline.exterior.coords[:-1]]]]
+
+
+def add_pours(pcb_text: str, board: Board) -> str:
+    """Append the outer-layer copper pours to a ROUTED board, using the net ids the routed file itself defines (pcbnew may renumber nets)."""
+    import re
+    ids = {m.group(2): int(m.group(1)) for m in re.finditer(r'\(net (\d+) "([^"]*)"\)', pcb_text)}
+    zones = []
+    for net, layers in board.pour_nets.items():
+        for layer in layers:
+            if layer not in board.plane_nets and net in ids:
+                zones.append(dump(_zone(board, ids[net], net, layer, f"pour-{net}-{layer}")))
+    if not zones:
+        return pcb_text
+    i = pcb_text.rstrip().rfind(")")
+    return pcb_text[:i] + "\n".join(zones) + "\n" + pcb_text[i:]
 
 
 def to_kicad_netlist(circuit: Circuit) -> str:

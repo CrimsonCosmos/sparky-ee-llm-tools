@@ -15,9 +15,11 @@ PARAMS = [Param("symbol", "string", None, "KiCad symbol 'Library:Name' of the re
           Param("vout", "number", None, "output (V)", True), Param("iout", "number", None, "load current (A)", True),
           Param("rail", "string", None, "output rail net name", True),
           Param("inductor_footprint", "string", None, "KiCad footprint for the inductor when chip-size parts do not fit", False)]
-DATASHEET = {"vref": "feedback reference voltage, V", "fsw": "switching frequency, Hz", "l_min": "datasheet-recommended minimum inductance, H",
-             "l_max": "datasheet-recommended maximum inductance, H",
-             "c_boot": "bootstrap capacitor value, F", "v_boot": "voltage across the bootstrap capacitor (BOOT-SW), V"}
+def datasheet_fields(vout: float) -> dict:
+    """Numbers to take from the OFFICIAL datasheet. The recommended inductor range is tabulated per output voltage, so it is requested for this vout."""
+    return {"vref": "feedback reference voltage, V", "fsw": "switching frequency, Hz",
+            f"l_min@{vout:g}V": f"datasheet-recommended minimum inductance for Vout={vout:g} V, H", f"l_max@{vout:g}V": f"datasheet-recommended maximum inductance for Vout={vout:g} V, H",
+            "c_boot": "bootstrap capacitor value, F", "v_boot": "highest voltage across the bootstrap capacitor (BOOT-SW), V"}
 
 
 def ports(policy, vin_min=None, vin_max=None, vout=None, iout=None, rail=None, vout_actual=None, **_):
@@ -32,8 +34,8 @@ def build(ctx, symbol, vin_min, vin_max, vout, iout, rail, inductor_footprint=No
     s, pol = ctx.s, ctx.policy
     ic, ch = ctx.ic(symbol, needs.buck_regulator(vin_min, vin_max, iout * pol.current_margin))
     mpn = ch.mpn if ch else ic.name
-    ds = datasheet(ic.name, DATASHEET, ch.datasheet if ch else "")
-    d = design_buck(BuckSpec(vin_min, vin_max, vout, iout, ds["fsw"], ds["vref"], l_range=(ds["l_min"], ds["l_max"])))
+    ds = datasheet(ic.name, datasheet_fields(vout), ch.datasheet if ch else "")
+    d = design_buck(BuckSpec(vin_min, vin_max, vout, iout, ds["fsw"], ds["vref"], l_range=(ds[f"l_min@{vout:g}V"], ds[f"l_max@{vout:g}V"])))
     vin, vo, gnd, sw, fb = s.Net("VIN"), s.Net(rail), s.Net("GND"), s.Net("SW"), s.Net("FB")
     for role, net in (("vin", vin), ("sw", sw), ("fb", fb), ("gnd", gnd)):
         for p in pins(ic, role):
