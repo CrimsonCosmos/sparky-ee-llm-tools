@@ -15,6 +15,7 @@ anthropic = ["anthropic"]
 
 [project.scripts]
 forge = "studioforge.cli:main"
+sparky = "studioforge.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

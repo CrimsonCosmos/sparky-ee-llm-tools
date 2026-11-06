@@ -133,11 +133,12 @@ def cmd_mcp(a):
 
 
 def cmd_doctor(a):
-    import shutil
+    from . import toolchain
     from .parts.db import PartsLibrary
-    print("python OK;", "claude CLI:", shutil.which("claude") or "MISSING", "| pdftotext:", shutil.which("pdftotext") or "missing", "| java (freerouting):", shutil.which("java") or "missing")
+    for k, v in toolchain.report().items():
+        print(f"{k:<24} {v or 'MISSING'}")
     lib = PartsLibrary(getattr(a, "home", None), auto_research=False)
-    print(f"catalog: {lib.count()} parts at {lib.root}")
+    print(f"{'catalog':<24} {lib.count()} parts at {lib.root}")
 
 
 def main(argv=None):

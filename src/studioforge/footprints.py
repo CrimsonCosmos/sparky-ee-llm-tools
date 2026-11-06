@@ -245,15 +245,10 @@ _DIRS_CACHE: dict = {}
 
 
 def kicad_dir() -> Path | None:
-    """Root of KiCad's *.pretty libraries: $KICAD_FOOTPRINT_DIR, $KICAD_FOOTPRINTS, then the usual install paths."""
-    cands = [os.environ.get("KICAD_FOOTPRINT_DIR"), os.environ.get("KICAD_FOOTPRINTS"),
-             os.environ.get("KICAD7_FOOTPRINT_DIR"), os.environ.get("KICAD8_FOOTPRINT_DIR"),
-             "/usr/share/kicad/footprints", "/usr/local/share/kicad/footprints",
-             "/Applications/KiCad/KiCad.app/Contents/SharedSupport/footprints"]
-    for c in cands:
-        if c and Path(c).is_dir() and any(Path(c).glob("*.pretty")):
-            return Path(c)
-    return None
+    """Root of KiCad's *.pretty libraries (discovered per OS in toolchain.py)."""
+    from .toolchain import kicad_library_dir
+    d = kicad_library_dir("footprints")
+    return Path(d) if d and Path(d).is_dir() and any(Path(d).glob("*.pretty")) else None
 
 
 def kicad_available() -> bool:

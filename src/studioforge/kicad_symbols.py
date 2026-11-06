@@ -18,11 +18,9 @@ from . import sexpr
 
 
 def symbol_dir() -> Path | None:
-    for c in (os.environ.get("KICAD_SYMBOL_DIR"), os.environ.get("KICAD_SYMBOLS"), "/usr/share/kicad/symbols",
-              "/usr/local/share/kicad/symbols", "/Applications/KiCad/KiCad.app/Contents/SharedSupport/symbols"):
-        if c and Path(c).is_dir() and any(Path(c).glob("*.kicad_sym")):
-            return Path(c)
-    return None
+    from .toolchain import kicad_library_dir
+    d = kicad_library_dir("symbols")
+    return Path(d) if d and Path(d).is_dir() and any(Path(d).glob("*.kicad_sym")) else None
 
 
 def symbols_available() -> bool:

@@ -56,7 +56,8 @@ FREEROUTING_SHA256 = "2c07d58f75dac03782664081e7a58b41c25400d871a9fcf166a2ea6fe6
 FREEROUTING_URL = f"https://github.com/freerouting/freerouting/releases/download/v{FREEROUTING_VERSION}/freerouting-{FREEROUTING_VERSION}.jar"
 JAR_NAME = f"freerouting-{FREEROUTING_VERSION}.jar"
 BRIDGE = Path(__file__).resolve().parent.parent / "kicad_backend" / "pcbnew_bridge.py"
-KICAD_PYTHON = "/usr/bin/python3"
+from ..toolchain import kicad_python as _kp
+KICAD_PYTHON = _kp() or "python3"   # interpreter that can import pcbnew (discovered per OS)
 
 
 class FreeroutingError(RuntimeError):

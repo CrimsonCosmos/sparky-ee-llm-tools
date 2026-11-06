@@ -22,21 +22,14 @@ from pathlib import Path
 
 
 def find_kicad_cli() -> str | None:
-    return shutil.which("kicad-cli")
+    from ..toolchain import kicad_cli
+    return kicad_cli()
 
 
 def find_kicad_python() -> str | None:
-    """A python interpreter that can `import pcbnew` (KiCad bindings live in the distro python)."""
-    for exe in ("/usr/bin/python3", shutil.which("python3"), sys.executable):
-        if not exe or not Path(exe).exists():
-            continue
-        try:
-            r = subprocess.run([exe, "-c", "import pcbnew"], capture_output=True, timeout=60)
-        except Exception:
-            continue
-        if r.returncode == 0:
-            return exe
-    return None
+    """An interpreter that can `import pcbnew` (discovered per OS in toolchain.py)."""
+    from ..toolchain import kicad_python
+    return kicad_python()
 
 
 def available() -> bool:
