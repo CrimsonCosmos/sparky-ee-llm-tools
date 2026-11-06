@@ -7,6 +7,14 @@ conductivities, limits, part values, pin tables). Each value comes from exactly 
 passed in. Only true unit conversions and physical constants may be literals, and they are named. If a value has no source, add a field
 with a documented source - do not inline a "reasonable" number. Violations are bugs; review every diff for them.
 
+## A CONFIDENTLY WRONG TEST SYSTEM IS WORSE THAN NONE (top rule)
+A check that passes while the design is wrong is worse than no check, because people stop looking. Therefore: every checker, analysis
+and test must be validated against an independent reference (hand calculation, datasheet number, a second solver, real fab/KiCad
+output) before it is trusted; tests must be able to fail (assert real values with tolerances, never just "ran without error");
+never derive the expected value from the code under test; never loosen a tolerance or skip a test to get green; report "not
+verified" / "tool unavailable" instead of a pass when a check could not really run; label estimates as estimates. Prefer adopting a
+validated open-source checker over our own. A heuristic with no validation must say so in its output.
+
 ## 1. Purpose (the one thing this program does)
 > Given a system-level description with named **inputs and outputs** (rails, buses, connectors, loads, budget), produce a
 > **KiCad project** (schematic + placed + routed PCB + fab files) and a **bill of materials with sourcing**.
