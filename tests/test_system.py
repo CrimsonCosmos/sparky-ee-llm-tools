@@ -2,13 +2,13 @@ import json
 
 import pytest
 
-from studioforge.blocks.registry import REGISTRY, _load
-from studioforge.llm.base import MockLLM
-from studioforge.system import templates
-from studioforge.system.build import build_system, decide_buy_vs_build
-from studioforge.system.plan import SystemPlan
-from studioforge.system.planner import PlannerError, SUPERVISOR_PROMPT, plan_request, plan_with_llm
-from studioforge.system.resolver import Resolver
+from sparky.blocks.registry import REGISTRY, _load
+from sparky.llm.base import MockLLM
+from sparky.system import templates
+from sparky.system.build import build_system, decide_buy_vs_build
+from sparky.system.plan import SystemPlan
+from sparky.system.planner import PlannerError, SUPERVISOR_PROMPT, plan_request, plan_with_llm
+from sparky.system.resolver import Resolver
 
 
 def joint_plan(motor_a=8.0, qty=1, duty=1.0, battery_a=30.0):
@@ -73,7 +73,7 @@ def test_voltage_window_violation_detected(lib):
 
 
 def test_missing_part_triggers_research_path_offline(lib):
-    from studioforge.parts.db import PartNotFound
+    from sparky.parts.db import PartNotFound
     p = joint_plan()
     p.purchased[0].ports[0].update(voltage=72.0, vmin=60.0, vmax=80.0)       # needs an >=82 V TVS: not in the catalog
     with pytest.raises(PartNotFound):
@@ -103,7 +103,7 @@ def test_connectors_and_harness_follow_constraints(lib):
 
 def test_buy_vs_build_policy(lib):
     p = joint_plan()
-    from studioforge.system.plan import BuyAlternative
+    from sparky.system.plan import BuyAlternative
     buck = p.boards[0].blocks[1]
     buck.buy_alternative = BuyAlternative("48-12V 3A module", 12.0, supplier="digikey")
     plan2, dec = decide_buy_vs_build(lib, p, log=None)

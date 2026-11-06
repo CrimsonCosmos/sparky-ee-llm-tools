@@ -5,10 +5,10 @@ import zipfile
 import pytest
 
 from conftest import mcu_circuit
-from studioforge import kicad_backend as kb
-from studioforge.export.kicad import to_kicad_pcb
-from studioforge.export.package import write_package
-from studioforge.pcb.flow import BoardSpec, build_board
+from sparky import kicad_backend as kb
+from sparky.export.kicad import to_kicad_pcb
+from sparky.export.package import write_package
+from sparky.pcb.flow import BoardSpec, build_board
 
 pytestmark = [pytest.mark.slow, pytest.mark.skipif(not kb.available() or kb.capabilities()["pcbnew_python"] is None,
                                 reason="kicad-cli / pcbnew not installed")]
@@ -16,7 +16,7 @@ pytestmark = [pytest.mark.slow, pytest.mark.skipif(not kb.available() or kb.capa
 
 @pytest.fixture(scope="module")
 def built(tmp_path_factory):
-    from studioforge.parts.db import PartsLibrary
+    from sparky.parts.db import PartsLibrary
     lib = PartsLibrary(tmp_path_factory.mktemp("h"), auto_research=False)
     return {n: build_board(mcu_circuit(lib), BoardSpec(layers=n), log=None) for n in (2, 4)}
 

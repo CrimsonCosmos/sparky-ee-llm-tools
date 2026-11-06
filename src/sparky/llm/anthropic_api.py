@@ -17,7 +17,7 @@ class AnthropicLLM(LLM):
         if not os.environ.get("ANTHROPIC_API_KEY"):
             raise LLMUnavailable("ANTHROPIC_API_KEY not set")
         self.client = anthropic.Anthropic()
-        self.model = model or os.environ.get("FORGE_MODEL", "claude-sonnet-5-5")
+        self.model = model or os.environ.get("SPARKY_MODEL", "claude-sonnet-5-5")
 
     def run(self, prompt, *, system="", tools=None, cwd=None, mcp_config=None,
             json_output=False, timeout=900, budget_usd=2.0) -> LLMResult:

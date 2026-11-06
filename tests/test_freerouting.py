@@ -2,12 +2,12 @@
 import pytest
 from conftest import mcu_circuit
 
-from studioforge.pcb import freerouting as fr
-from studioforge.pcb.drc import run_drc
-from studioforge.pcb.placement import PlaceOptions, place
-from studioforge.pcb.planes import add_stitching, assign_planes, fill_zones
-from studioforge.pcb.pours import plan_power_pours
-from studioforge.pcb.rules import rules_for
+from sparky.pcb import freerouting as fr
+from sparky.pcb.drc import run_drc
+from sparky.pcb.placement import PlaceOptions, place
+from sparky.pcb.planes import add_stitching, assign_planes, fill_zones
+from sparky.pcb.pours import plan_power_pours
+from sparky.pcb.rules import rules_for
 
 needs_fr = pytest.mark.skipif(not fr.available(), reason="java>=21 / Freerouting jar / KiCad pcbnew not available")
 
@@ -28,7 +28,7 @@ def test_parse_ses():
 
 
 def test_router_selection_builtin_never_uses_freerouting(lib, monkeypatch):
-    from studioforge.pcb.flow import BoardSpec, build_board
+    from sparky.pcb.flow import BoardSpec, build_board
     called = []
     monkeypatch.setattr(fr, "route_with_freerouting", lambda *a, **k: called.append(1))
     build_board(mcu_circuit(lib), BoardSpec(layers=2, router="builtin"), log=None)
@@ -55,7 +55,7 @@ def test_freerouting_routes_mcu(lib, layers):
 
 @needs_fr
 def test_flow_uses_freerouting(lib):
-    from studioforge.pcb.flow import BoardSpec, build_board
+    from sparky.pcb.flow import BoardSpec, build_board
     res = build_board(mcu_circuit(lib), BoardSpec(layers=4, router="freerouting"), log=None)
     assert res.board.stats.get("router") == "freerouting"
     assert res.success

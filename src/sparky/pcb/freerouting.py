@@ -19,12 +19,12 @@ Design decisions
     KiCad net class with that track width, set in pcbnew design settings before the DSN export.
   * Freerouting 2.1.0 ignores its pass/timeout settings in CLI mode (it runs up to ~1000 passes), and writes the SES only
     when it finishes.  We therefore launch it through a tiny compiled shim (FrShim, built once with javac into
-    $FORGE_HOME/tools) that stops the auto-router gracefully on a stop-file / soft timeout; the Python side watches the
+    $SPARKY_HOME/tools) that stops the auto-router gracefully on a stop-file / soft timeout; the Python side watches the
     pass log and requests the stop when the score stagnates.  Without javac only a hard kill is possible (result lost,
     FreeroutingError, caller falls back to the builtin router).
 
 Tool provisioning: `install_freerouting()` downloads the pinned release from github.com/freerouting/freerouting,
-verifies SHA-256 and caches it under $FORGE_HOME/tools/ (never committed).  Requires Java >= 21 (2.1.0 is Java-21 bytecode;
+verifies SHA-256 and caches it under $SPARKY_HOME/tools/ (never committed).  Requires Java >= 21 (2.1.0 is Java-21 bytecode;
 2.2+ need Java 25).
 """
 from __future__ import annotations
@@ -80,7 +80,7 @@ class FreeroutingOptions:
 
 # ---------------------------------------------------------------------------------------------------- provisioning
 def tools_dir() -> Path:
-    home = os.environ.get("FORGE_HOME") or str(Path.home() / ".studioforge")
+    home = os.environ.get("SPARKY_HOME") or str(Path.home() / ".sparky")
     return Path(home) / "tools"
 
 
@@ -127,7 +127,7 @@ def available(java: str = "java") -> bool:
 
 
 def install_freerouting(timeout_s: float = 300.0) -> Path:
-    """Download the pinned official release asset into $FORGE_HOME/tools and verify its SHA-256."""
+    """Download the pinned official release asset into $SPARKY_HOME/tools and verify its SHA-256."""
     import urllib.request
     dest = jar_path()
     if jar_ok(dest):

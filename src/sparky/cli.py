@@ -142,8 +142,8 @@ def cmd_doctor(a):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(prog="forge", description="Claude Code + deterministic EDA: request -> boards -> fab files -> purchasing")
-    ap.add_argument("--home", help="cache dir (default ~/.studioforge)")
+    ap = argparse.ArgumentParser(prog="sparky", description="Claude Code + deterministic EDA: request -> boards -> fab files -> purchasing")
+    ap.add_argument("--home", help="cache dir (default ~/.sparky)")
     ap.add_argument("--offline", action="store_true", help="never call an LLM (templates + catalog only)")
     ap.add_argument("--llm", choices=["claude-code", "anthropic", "offline"], help="LLM backend")
     sub = ap.add_subparsers(dest="cmd", required=True)

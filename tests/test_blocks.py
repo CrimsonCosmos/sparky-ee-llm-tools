@@ -2,9 +2,9 @@ import math
 
 import pytest
 
-from studioforge.blocks.mcu import PinMuxError, solve_pinmux
-from studioforge.blocks.registry import build_block, describe_blocks
-from studioforge.erc import run_erc
+from sparky.blocks.mcu import PinMuxError, solve_pinmux
+from sparky.blocks.registry import build_block, describe_blocks
+from sparky.erc import run_erc
 
 
 @pytest.mark.parametrize("name,params", [
@@ -46,7 +46,7 @@ def test_high_voltage_buck_uses_catch_diode_and_compensation(lib):
 
 
 def test_buck_miss_offline_raises_part_not_found(lib):
-    from studioforge.parts.db import PartNotFound
+    from sparky.parts.db import PartNotFound
     with pytest.raises(PartNotFound):
         build_block(lib, "buck_converter", {"vin_min": 9, "vin_max": 60, "vout": 5.0, "iout": 5.0})
 
@@ -90,8 +90,8 @@ def test_connector_family_follows_current(lib):
 def test_researched_part_drives_block_with_safe_defaults(lib):
     """A part that arrived through the research path (no TI-specific hysteresis data) must still yield a correct,
     flagged design: catch diode because it is non-synchronous, generic EN divider + explicit warning."""
-    from studioforge.footprints import resolve_footprint
-    from studioforge.model import PartDef, PinDef
+    from sparky.footprints import resolve_footprint
+    from sparky.model import PartDef, PinDef
     pins = [PinDef("1", "BOOT"), PinDef("2", "NC", "nc"), PinDef("3", "NC", "nc"), PinDef("4", "VSENSE", "input"), PinDef("5", "ENA", "input"),
             PinDef("6", "GND", "power_in"), PinDef("7", "VIN", "power_in"), PinDef("8", "PH", "output"), PinDef("9", "DAP", "power_in")]
     lib.put(PartDef("TPS5430DDA", "Texas Instruments", "36V 3A buck", "ic.regulator.buck", "SO-PowerPAD-8", pins, "SOIC-8-EP",

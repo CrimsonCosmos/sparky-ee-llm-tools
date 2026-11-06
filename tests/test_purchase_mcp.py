@@ -5,12 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from studioforge.llm.base import MockLLM
-from studioforge.model import Offer
-from studioforge.purchase import mouser
-from studioforge.purchase.agent import CONFIRM, auto_buy
-from studioforge.purchase.plan import _spare, build_purchase_files
-from studioforge.system.build import build_system
+from sparky.llm.base import MockLLM
+from sparky.model import Offer
+from sparky.purchase import mouser
+from sparky.purchase.agent import CONFIRM, auto_buy
+from sparky.purchase.plan import _spare, build_purchase_files
+from sparky.system.build import build_system
 from test_system import joint_plan
 
 
@@ -50,7 +50,7 @@ def test_agent_never_checks_out_without_confirmation(sysbuild, lib):
 
 
 def test_agent_failure_degrades_to_manual_list(sysbuild, lib):
-    from studioforge.llm.base import OfflineLLM
+    from sparky.llm.base import OfflineLLM
     build_purchase_files(sysbuild, lib)
     res = auto_buy(sysbuild.out / "purchase" / "purchase_plan.json", OfflineLLM())
     assert res["manual"] and all(m["url"] for m in res["manual"])
@@ -70,11 +70,11 @@ def _rpc(proc, id_, method, params=None):
 
 
 def test_mcp_server_protocol(tmp_path):
-    env = {"PYTHONPATH": str(Path(__file__).resolve().parents[1] / "src"), "FORGE_HOME": str(tmp_path / "h"), "PATH": "/usr/bin:/bin"}
-    proc = subprocess.Popen([sys.executable, "-m", "studioforge.mcp_server"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, env=env)
+    env = {"PYTHONPATH": str(Path(__file__).resolve().parents[1] / "src"), "SPARKY_HOME": str(tmp_path / "h"), "PATH": "/usr/bin:/bin"}
+    proc = subprocess.Popen([sys.executable, "-m", "sparky.mcp_server"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, env=env)
     try:
         init = _rpc(proc, 1, "initialize", {"protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {"name": "t", "version": "0"}})
-        assert init["result"]["serverInfo"]["name"] == "studioforge"
+        assert init["result"]["serverInfo"]["name"] == "sparky"
         tools = _rpc(proc, 2, "tools/list")["result"]["tools"]
         assert {"forge_list_blocks", "forge_validate_plan", "forge_build_system", "forge_research_part"} <= {t["name"] for t in tools}
         blocks = _rpc(proc, 3, "tools/call", {"name": "forge_list_blocks", "arguments": {}})["result"]
@@ -89,7 +89,7 @@ def test_mcp_server_protocol(tmp_path):
 
 
 def test_claude_code_backend_builds_a_safe_command(monkeypatch):
-    from studioforge.llm import claude_code
+    from sparky.llm import claude_code
     captured = {}
 
     class R:

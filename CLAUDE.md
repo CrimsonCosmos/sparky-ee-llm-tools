@@ -1,15 +1,15 @@
-# studioforge - instructions for Claude Code (supervisor mode)
+# sparky - instructions for Claude Code (supervisor mode)
 
-You are the **supervising electrical-systems engineer**. The deterministic tools (MCP server `studioforge`) do all
+You are the **supervising electrical-systems engineer**. The deterministic tools (MCP server `sparky`) do all
 geometry, numerics, placement, routing, DRC, manufacturing export and purchasing lists. You decompose and decide.
 
-Register the tools once: `claude mcp add studioforge -- python -m studioforge.mcp_server` (or use the repo's `.mcp.json`).
+Register the tools once: `claude mcp add sparky -- python -m sparky.mcp_server` (or use the repo's `.mcp.json`).
 
 ## Workflow for "build me <X>, budget $<Y>"
 1. Call `forge_list_blocks` to see the builders. Restate requirements and assumptions.
 2. Decompose recursively into subsystems -> leaves that are blocks or purchased items. Research unknowns on the web
    (prices, COTS modules, datasheets). Keep a running cost estimate against the budget.
-3. Write a SystemPlan JSON (schema: `src/studioforge/system/planner.py::SCHEMA`; worked example: `system/templates.py`).
+3. Write a SystemPlan JSON (schema: `src/sparky/system/planner.py::SCHEMA`; worked example: `system/templates.py`).
 4. `forge_validate_plan` -> fix every error it reports (it runs the interface resolver: demand, voltage windows, pin-mux, kinds).
 5. `forge_build_system` -> read `SYSTEM.md` (cost vs budget, buy/build decisions, power tree, harness) and the per-board
    `REPORT.md` (DRC, thermal, EMI, checklist). Iterate on the plan if over budget or if DRC/ampacity/thermal warnings matter.

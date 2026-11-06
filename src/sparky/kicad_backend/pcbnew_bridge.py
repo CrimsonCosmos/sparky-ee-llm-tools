@@ -1,8 +1,8 @@
-"""pcbnew helper, run with the SYSTEM python (the one that can `import pcbnew`), never imported by studioforge.
+"""pcbnew helper, run with the SYSTEM python (the one that can `import pcbnew`), never imported by sparky.
 
     /usr/bin/python3 pcbnew_bridge.py dsn spec.json     # .kicad_pcb -> Specctra DSN
 (KiCad 7's python API cannot import a .ses outside the GUI - ImportSpecctraSES works on the GUI board only - so the
- Freerouting result is parsed by studioforge.pcb.freerouting.parse_ses instead.)
+ Freerouting result is parsed by sparky.pcb.freerouting.parse_ses instead.)
 
 spec.json keys (all lengths in mm):
   pcb, dsn                            file paths

@@ -64,7 +64,7 @@ def capabilities() -> dict:
 def write_kicad_pro(path: str | Path, rules=None, name: str | None = None) -> Path:
     """Write a minimal .kicad_pro so KiCad's DRC uses OUR fab rules instead of its defaults.
 
-    `rules` is a studioforge `pcb.rules.Rules` (or any object with the same attribute names)."""
+    `rules` is a sparky `pcb.rules.Rules` (or any object with the same attribute names)."""
     path = Path(path)
     g = (lambda k, d: getattr(rules, k, d)) if rules is not None else (lambda k, d: d)
     clr, trk, via, drl = g("clearance", 0.2), g("track", 0.2), g("via_dia", 0.6), g("via_drill", 0.3)

@@ -20,7 +20,7 @@ def _c(v: float) -> int:
 
 
 class Gerber:
-    def __init__(self, function: str, polarity: str = "Positive", name: str = "studioforge"):
+    def __init__(self, function: str, polarity: str = "Positive", name: str = "sparky"):
         self.lines: list[str] = []
         self.ap: dict[tuple, int] = {}
         self.ap_defs: list[str] = []
@@ -105,7 +105,7 @@ class Gerber:
 
     def text(self) -> str:
         head = [
-            "%TF.GenerationSoftware,studioforge,forge,0.1*%",
+            "%TF.GenerationSoftware,sparky,forge,0.1*%",
             f"%TF.FileFunction,{self.function}*%",
             f"%TF.FilePolarity,{self.polarity}*%",
             "%FSLAX46Y46*%", "%MOMM*%", "G01*", "G75*", "%LPD*%",
@@ -264,7 +264,7 @@ def excellon(board: Board, plated: bool) -> str:
     if not holes and not slots:
         return ""
     func = "Plated,1,%d,PTH" % board.rules.layers if plated else "NonPlated,1,%d,NPTH" % board.rules.layers
-    out = ["M48", "; DRILL file {studioforge} date unspecified", "; FORMAT={-:-/ absolute / metric / decimal}",
+    out = ["M48", "; DRILL file {sparky} date unspecified", "; FORMAT={-:-/ absolute / metric / decimal}",
            f"; #@! TF.FileFunction,{func}", "FMAT,2", "METRIC,TZ"]
     order = sorted(set(holes) | set(slots))
     for i, d in enumerate(order, 1):

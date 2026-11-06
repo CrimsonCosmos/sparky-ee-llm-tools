@@ -69,7 +69,7 @@ class OfflineLLM(LLM):
     name = "offline"
 
     def run(self, *a, **kw) -> LLMResult:
-        raise LLMUnavailable("no LLM backend configured (set FORGE_LLM=claude-code or anthropic)")
+        raise LLMUnavailable("no LLM backend configured (set SPARKY_LLM=claude-code or anthropic)")
 
 
 class MockLLM(LLM):
@@ -93,7 +93,7 @@ class MockLLM(LLM):
 
 def get_llm(kind: str | None = None) -> LLM:
     import os
-    kind = (kind or os.environ.get("FORGE_LLM") or "auto").lower()
+    kind = (kind or os.environ.get("SPARKY_LLM") or "auto").lower()
     if kind in ("claude-code", "claude", "cc"):
         from .claude_code import ClaudeCodeLLM
         return ClaudeCodeLLM()

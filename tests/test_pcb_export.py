@@ -5,22 +5,22 @@ import pytest
 from shapely.geometry import box
 
 from conftest import mcu_circuit
-from studioforge.export import bom as bomx
-from studioforge.export.package import write_package
-from studioforge.pcb import analysis
-from studioforge.pcb.board import Track
-from studioforge.pcb.drc import run_drc
-from studioforge.pcb.flow import BoardSpec, build_board
-from studioforge.pcb.placement import PlaceOptions, place
-from studioforge.pcb.rules import current_for_width, rules_for, trace_width_for_current
-from studioforge.pcb.planes import assign_planes
+from sparky.export import bom as bomx
+from sparky.export.package import write_package
+from sparky.pcb import analysis
+from sparky.pcb.board import Track
+from sparky.pcb.drc import run_drc
+from sparky.pcb.flow import BoardSpec, build_board
+from sparky.pcb.placement import PlaceOptions, place
+from sparky.pcb.rules import current_for_width, rules_for, trace_width_for_current
+from sparky.pcb.planes import assign_planes
 
 
 pytestmark = pytest.mark.slow  # builds real boards / runs KiCad: skipped by default, see pytest.ini
 
 @pytest.fixture(scope="module")
 def built(tmp_path_factory):
-    from studioforge.parts.db import PartsLibrary
+    from sparky.parts.db import PartsLibrary
     lib = PartsLibrary(tmp_path_factory.mktemp("h"), auto_research=False)
     return {layers: build_board(mcu_circuit(lib), BoardSpec(layers=layers), log=None) for layers in (2, 4)}
 
@@ -127,9 +127,9 @@ def test_plane_assignment(lib):
 
 def test_auto_pitch_follows_pad_geometry(lib):
     """A 0.5 mm-pitch QFP on 0.2/0.2 rules needs a fine grid (corridor ~0.03 mm); coarse parts allow a fast coarse grid."""
-    from studioforge.model import Circuit
-    from studioforge.pcb.board import Board
-    from studioforge.pcb.router import auto_pitch
+    from sparky.model import Circuit
+    from sparky.pcb.board import Board
+    from sparky.pcb.router import auto_pitch
     fine = mcu_circuit(lib)
     g_fine, _ = auto_pitch(Board(fine, rules_for(2), 30, 30), 0.2, 0.2)
     g_fine4, _ = auto_pitch(Board(fine, rules_for(4), 30, 30), 0.15, 0.15)
@@ -142,7 +142,7 @@ def test_auto_pitch_follows_pad_geometry(lib):
 
 
 def test_breakout_margin_grows_board_for_fine_pitch(lib):
-    from studioforge.pcb.placement import _auto_size, breakout_margin, PlaceOptions
+    from sparky.pcb.placement import _auto_size, breakout_margin, PlaceOptions
     assert breakout_margin(48) > breakout_margin(8) > breakout_margin(2) == 0
     w, h = _auto_size(mcu_circuit(lib), PlaceOptions())
     assert w * h > 20 * 20

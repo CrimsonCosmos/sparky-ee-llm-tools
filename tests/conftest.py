@@ -5,7 +5,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from studioforge.parts.db import PartsLibrary  # noqa: E402
+from sparky.parts.db import PartsLibrary  # noqa: E402
 
 
 @pytest.fixture
@@ -14,8 +14,8 @@ def lib(tmp_path):
 
 
 def mcu_circuit(lib):
-    from studioforge.constraints import Decouple
-    from studioforge.model import Circuit
+    from sparky.constraints import Decouple
+    from sparky.model import Circuit
     c = Circuit("mcu_test")
     u = c.add(lib.get("STM32F103C8T6"), prefix="U", power_w=0.15)
     c.set_net("GND", role="ground")

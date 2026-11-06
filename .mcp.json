@@ -1,8 +1,8 @@
 {
   "mcpServers": {
-    "studioforge": {
+    "sparky": {
       "command": "python3",
-      "args": ["-m", "studioforge.mcp_server"],
+      "args": ["-m", "sparky.mcp_server"],
       "env": { "PYTHONPATH": "src" }
     }
   }

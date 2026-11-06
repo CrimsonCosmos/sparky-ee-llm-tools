@@ -1,7 +1,7 @@
 # Next steps (written before a session compaction; source of truth for the resume)
 
 State: repo = https://github.com/CrimsonCosmos/sparky-ee-llm-tools (main), local clone /home/user/sparky-ee-llm-tools. KiCad 10.0.8 installed (kicad-cli, pcbnew);
-ngspice 42; java; Freerouting jar cached under $FORGE_HOME/tools. Package is still named `studioforge` (entry points `forge`, `sparky`). Push to sparky without being asked.
+ngspice 42; java; Freerouting jar cached under $SPARKY_HOME/tools. Package is still named `sparky` (entry points `forge`, `sparky`). Push to sparky without being asked.
 Working rules from the owner: no sub-agents; do the work in this session; Python only; console app (Win/macOS/Linux); adopt open-source tools instead of writing them;
 minimal LLM use (system plan + part research on a miss); fast scoped tests on push, integration only manual/nightly; design before code; loose coupling through files;
 keep going until the limitations list is empty (do not just report limitations).

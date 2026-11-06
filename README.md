@@ -1,4 +1,4 @@
-# studioforge
+# sparky
 
 **Pair Claude Code with deterministic EDA pipelines.** Say *"build me a humanoid robot; budget is $50,000"* and get a
 system architecture, cost-vs-budget, fab-ready PCB packages (Gerber, drill, BOM, pick-and-place, KiCad), a wiring harness,
@@ -48,7 +48,7 @@ forge build-plan plan.json --no-pcb           # resolve + cost only (seconds)
 
 ### Claude Code as the supervisor (MCP)
 ```bash
-claude mcp add studioforge -- python -m studioforge.mcp_server      # or use .mcp.json in this directory
+claude mcp add sparky -- python -m sparky.mcp_server      # or use .mcp.json in this directory
 # then, inside Claude Code:  "build me a humanoid robot, budget $50,000"
 ```
 `CLAUDE.md` contains the supervisor instructions (same text as `planner.SUPERVISOR_PROMPT`). Tools: `forge_list_blocks`,
@@ -62,9 +62,9 @@ compares the **actually computed** build cost (BOM + PCB + assembly at the real 
 (`prefer: "build" | "buy"` overrides). Decisions and reasoning are written to `SYSTEM.md`.
 
 ## Parts: large catalog, cached docs, research on a miss
-* SQLite catalog (`~/.studioforge`): seed ICs/connectors with pinouts + unbounded **synthesised generics** (any R/C/L/LED/header/fuse by value and
-  package, parametric MLCC derating) + bulk importer (`forge parts import-jlcpcb`).
-* Datasheets are downloaded and cached (`forge parts verify`); pin names/numbers are cross-checked against the PDF text.
+* SQLite catalog (`~/.sparky`): seed ICs/connectors with pinouts + unbounded **synthesised generics** (any R/C/L/LED/header/fuse by value and
+  package, parametric MLCC derating) + bulk importer (`sparky parts import-jlcpcb`).
+* Datasheets are downloaded and cached (`sparky parts verify`); pin names/numbers are cross-checked against the PDF text.
   *Verified against real TI/Diodes/AMS datasheets during development - and it caught a naming mismatch.*
 * **Miss → research agent.** If no catalog part satisfies a requirement, headless Claude Code searches the web, downloads the official
   datasheet, extracts pinout/footprint/ratings and distributor links into strict JSON. Deterministic code validates it (pad coverage, overlaps,
@@ -92,7 +92,7 @@ compares the **actually computed** build cost (BOM + PCB + assembly at the real 
 ## Honest limitations
 * The built-in router is a Python grid router: dense boards may need several automatic layout attempts (the 15 A joint board ended at 125 × 92 mm after 5 attempts / ~8 min).
 * Nothing here has been sent to a fab. Run the fab's DFM check and open the Gerbers in KiCad/Gerbv first. `REPORT.md` ends with a checklist.
-* Seed pinouts are `verified=False` until `forge parts verify` matches them to a cached datasheet (STM32 datasheet host blocks automated downloads → use the research agent or download manually).
+* Seed pinouts are `verified=False` until `sparky parts verify` matches them to a cached datasheet (STM32 datasheet host blocks automated downloads → use the research agent or download manually).
 * Land patterns are IPC-nominal generators; connectors/modules must be compared with manufacturer drawings.
 * Electrical design is equation-based, **not simulated** (loop stability, EMC, enclosure thermals). Thermal is a 2-D steady-state estimate.
 * Autorouter is a grid router (Python): small/medium boards route in seconds-minutes; very dense/large boards need the time budget raised or a different tool (Specctra DSN export for Freerouting is a planned adapter).
@@ -101,6 +101,6 @@ compares the **actually computed** build cost (BOM + PCB + assembly at the real 
 * Agent purchasing (browser/computer use) is implemented safely (cart-fill only; checkout requires an exact confirmation phrase) but not exercised in CI. Prices are estimates until refreshed from suppliers (`purchase/mouser.py` API adapter needs a key).
 
 ## Layout
-`src/studioforge/` — `model.py` data model · `footprints.py`/`kicad_mod.py` · `parts/` catalog, research, docs · `blocks/` builders ·
+`src/sparky/` — `model.py` data model · `footprints.py`/`kicad_mod.py` · `parts/` catalog, research, docs · `blocks/` builders ·
 `system/` plan, resolver, planner, cost, build · `pcb/` placement, router, pours, planes, DRC, analysis, flow · `export/` Gerber, KiCad, BOM, SVG, report ·
 `purchase/` plan, agent, API · `mcp_server.py` · `cli.py` · `tests/`

@@ -23,7 +23,7 @@ class ClaudeCodeLLM(LLM):
 
     def __init__(self, binary: str | None = None, model: str | None = None):
         self.binary = binary or shutil.which("claude")
-        self.model = model or os.environ.get("FORGE_MODEL")
+        self.model = model or os.environ.get("SPARKY_MODEL")
         if not self.binary:
             raise LLMUnavailable("`claude` CLI not found on PATH")
 

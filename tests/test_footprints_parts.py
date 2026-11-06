@@ -2,11 +2,11 @@ import json
 
 import pytest
 
-from studioforge.footprints import resolve_footprint, validate_footprint
-from studioforge.llm.base import MockLLM, extract_json
-from studioforge.model import PartDef, PinDef
-from studioforge.parts import docs
-from studioforge.parts.db import PartNotFound
+from sparky.footprints import resolve_footprint, validate_footprint
+from sparky.llm.base import MockLLM, extract_json
+from sparky.model import PartDef, PinDef
+from sparky.parts import docs
+from sparky.parts.db import PartNotFound
 
 
 def test_footprint_generators_cover_pins(lib):
@@ -104,7 +104,7 @@ def test_part_roundtrip(lib):
 
 
 def _fake_kicad(tmp_path, monkeypatch):
-    from studioforge import footprints as fpm
+    from sparky import footprints as fpm
     lib = tmp_path / "kicad" / "Connector_AMASS.pretty"
     lib.mkdir(parents=True)
     (lib / "AMASS_XT60PW-M_1x02_P7.20mm_Horizontal.kicad_mod").write_text("""(footprint "AMASS_XT60PW-M_1x02_P7.20mm_Horizontal" (layer "F.Cu")
@@ -118,8 +118,8 @@ def _fake_kicad(tmp_path, monkeypatch):
 
 def test_kicad_library_overrides_generator_and_is_reported(lib, tmp_path, monkeypatch):
     """KiCad's local library (a stub tree via KICAD_FOOTPRINT_DIR) replaces the generator and is recorded as the source."""
-    from studioforge import footprint_sync as fs
-    from studioforge.model import Circuit
+    from sparky import footprint_sync as fs
+    from sparky.model import Circuit
     fpm = _fake_kicad(tmp_path, monkeypatch)
     try:
         c = Circuit("t")
@@ -135,7 +135,7 @@ def test_kicad_library_overrides_generator_and_is_reported(lib, tmp_path, monkey
 
 
 def test_generator_is_offline_fallback(monkeypatch, tmp_path):
-    from studioforge import footprints as fpm
+    from sparky import footprints as fpm
     monkeypatch.setenv("KICAD_FOOTPRINT_DIR", str(tmp_path))                 # no *.pretty here
     monkeypatch.setattr(fpm, "kicad_dir", lambda: None)
     fpm._REGISTRY.pop("SOIC-8", None)
@@ -146,7 +146,7 @@ def test_generator_is_offline_fallback(monkeypatch, tmp_path):
         fpm._REGISTRY.pop("SOIC-8", None)
 
 
-@pytest.mark.skipif(not __import__("studioforge.footprints", fromlist=["x"]).kicad_available(), reason="KiCad libraries not installed")
+@pytest.mark.skipif(not __import__("sparky.footprints", fromlist=["x"]).kicad_available(), reason="KiCad libraries not installed")
 class TestRealKicad:
     def test_lib_id_and_legacy_resolve_to_kicad(self):
         a = resolve_footprint("Package_SO:SOIC-8_3.9x4.9mm_P1.27mm")
@@ -163,8 +163,8 @@ class TestRealKicad:
             resolve_footprint("Package_SO:NOPE_123")
 
     def test_all_seed_parts_use_kicad(self, lib):
-        from studioforge.footprint_sync import sync_circuit
-        from studioforge.model import Circuit
+        from sparky.footprint_sync import sync_circuit
+        from sparky.model import Circuit
         c = Circuit("all")
         for p in lib.all():
             c.add(p, prefix="U")
@@ -172,7 +172,7 @@ class TestRealKicad:
         assert all(v.startswith("kicad:") for v in info.values()), info
 
     def test_search_and_package_mapping(self):
-        from studioforge.footprints import find_footprints, footprint_for_package
+        from sparky.footprints import find_footprints, footprint_for_package
         r = find_footprints("SOIC-8", pins=8)
         assert r and r[0]["lib_id"] == "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm"
         assert footprint_for_package("SOT-23-6", 6).lib_id == "Package_TO_SOT_SMD:SOT-23-6"
@@ -181,8 +181,8 @@ class TestRealKicad:
 
     def test_parser_robustness_over_libraries(self):
         """Every footprint of a sample of libraries parses; rotated/custom/roundrect pads give finite boxes."""
-        from studioforge import footprints as fpm
-        from studioforge.kicad_mod import parse_footprint
+        from sparky import footprints as fpm
+        from sparky.kicad_mod import parse_footprint
         n = 0
         for lb in ("Package_QFP", "Package_DFN_QFN", "Connector_USB", "Package_BGA", "Connector_Molex"):
             for name in fpm._names(lb)[:60]:
@@ -194,7 +194,7 @@ class TestRealKicad:
         assert n > 100
 
     def test_rotated_and_custom_pad_bbox(self):
-        from studioforge.kicad_mod import parse_footprint
+        from sparky.kicad_mod import parse_footprint
         fp = parse_footprint('''(footprint "X"
           (pad "1" smd rect (at 1 2 90) (size 2 1) (layers "F.Cu" "F.Mask"))
           (pad "2" smd custom (at 5 0) (size 1 1) (layers "F.Cu" "F.Mask")
@@ -207,7 +207,7 @@ class TestRealKicad:
 
 
 def test_compare_flags_drill_differences():
-    from studioforge import footprint_sync as fs
+    from sparky import footprint_sync as fs
     a, b = resolve_footprint("XT60PW"), resolve_footprint("XT60PW")
     assert fs.compare(a, b) == []
     from dataclasses import replace
@@ -216,6 +216,6 @@ def test_compare_flags_drill_differences():
 
 
 def test_kicad_parser_drops_paste_only_pads():
-    from studioforge.kicad_mod import parse_footprint
+    from sparky.kicad_mod import parse_footprint
     fp = parse_footprint('(footprint "X" (pad "1" smd rect (at 0 0) (size 1 1) (layers "F.Cu" "F.Mask")) (pad "" smd rect (at 0 0) (size 0.5 0.5) (layers "F.Paste")))')
     assert len(fp.pads) == 1

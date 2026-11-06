@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "studioforge"
+name = "sparky"
 version = "0.1.0"
 description = "Claude Code + deterministic EDA pipelines: prompt -> system plan -> boards -> fab files -> purchasing"
 requires-python = ">=3.10"
@@ -14,8 +14,7 @@ dev = ["pytest", "gerbonara", "kiutils"]
 anthropic = ["anthropic"]
 
 [project.scripts]
-forge = "studioforge.cli:main"
-sparky = "studioforge.cli:main"
+sparky = "sparky.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

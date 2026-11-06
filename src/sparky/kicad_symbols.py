@@ -1,7 +1,7 @@
 """Index of KiCad's schematic symbol libraries (/usr/share/kicad/symbols, override $KICAD_SYMBOL_DIR).
 
 `find_symbols` searches by name / keywords / description / footprint filter / pin count, `symbol_for_part`
-picks the best symbol for a studioforge PartDef, and `symbol_node` returns a fully flattened (extends resolved)
+picks the best symbol for a sparky PartDef, and `symbol_node` returns a fully flattened (extends resolved)
 symbol s-expression ready to embed in a schematic's lib_symbols.
 """
 from __future__ import annotations
@@ -75,8 +75,8 @@ def _scan_lib(path: Path) -> list[SymInfo]:
 
 
 def _cache_file(root: Path) -> Path:
-    base = os.environ.get("FORGE_HOME")
-    d = Path(base) if base else Path(tempfile.gettempdir()) / "studioforge_cache"
+    base = os.environ.get("SPARKY_HOME")
+    d = Path(base) if base else Path(tempfile.gettempdir()) / "sparky_cache"
     d.mkdir(parents=True, exist_ok=True)
     return d / "kicad_symbol_index.json"
 

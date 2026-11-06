@@ -15,7 +15,7 @@ from .report import kicad_drc_section, render_report
 
 def write_package(res: BuildResult, outdir: str | Path, project: str, extra: dict | None = None,
                   use_kicad: bool | None = None) -> dict[str, Path]:
-    """`use_kicad`: None = auto (on when kicad-cli is on PATH and FORGE_KICAD != "0"), True/False to force."""
+    """`use_kicad`: None = auto (on when kicad-cli is on PATH and SPARKY_KICAD != "0"), True/False to force."""
     out = Path(outdir)
     out.mkdir(parents=True, exist_ok=True)
     b = res.board
@@ -24,7 +24,7 @@ def write_package(res: BuildResult, outdir: str | Path, project: str, extra: dic
     gdir = out / "gerber"
     extra = dict(extra or {})
     if use_kicad is None:
-        use_kicad = kicad_backend.available() and os.environ.get("FORGE_KICAD", "1") != "0"
+        use_kicad = kicad_backend.available() and os.environ.get("SPARKY_KICAD", "1") != "0"
     gfiles: dict[str, Path] | None = None
     if use_kicad:
         try:      # KiCad is the authoritative DRC + gerber/drill/position backend

@@ -1,6 +1,6 @@
 import sys
 
-from studioforge import toolchain as tc
+from sparky import toolchain as tc
 
 
 def _clear():

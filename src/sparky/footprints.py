@@ -362,7 +362,7 @@ def kicad_footprint(lib_id: str) -> Footprint | None:
 
 
 def is_kicad_id(spec: str) -> bool:
-    return ":" in spec and not spec.startswith("studioforge:")
+    return ":" in spec and not spec.startswith("sparky:")
 
 
 # ---- resolver --------------------------------------------------------------------
@@ -376,7 +376,7 @@ def resolve_footprint(spec) -> Footprint:
         return _REGISTRY[name]
     fp: Footprint | None = None
     if is_kicad_id(name):
-        lib_id = name[len("studioforge:"):] if name.startswith("studioforge:") else name
+        lib_id = name[len("sparky:"):] if name.startswith("sparky:") else name
         fp = kicad_footprint(lib_id)
         if fp is None:
             raise KeyError(f"KiCad footprint '{name}' not found under {kicad_dir()}")

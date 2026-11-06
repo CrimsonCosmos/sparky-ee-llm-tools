@@ -2,7 +2,7 @@
 
 Lets Claude Code act as the supervisor: it decomposes the request itself (following the
 instructions in CLAUDE.md / planner.SUPERVISOR_PROMPT) and calls these deterministic tools.
-Register with:  claude mcp add studioforge -- python -m studioforge.mcp_server
+Register with:  claude mcp add sparky -- python -m sparky.mcp_server
 """
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ def _lib(auto_research: bool = True):
 
 
 def _outdir(name: str) -> Path:
-    base = Path(os.environ.get("FORGE_OUT") or Path.cwd() / "forge_out")
+    base = Path(os.environ.get("SPARKY_OUT") or Path.cwd() / "forge_out")
     d = base / name
     d.mkdir(parents=True, exist_ok=True)
     return d
@@ -151,7 +151,7 @@ def handle(req: dict):
     m, id_, p = req.get("method"), req.get("id"), req.get("params") or {}
     if m == "initialize":
         return {"protocolVersion": p.get("protocolVersion", PROTOCOL), "capabilities": {"tools": {}},
-                "serverInfo": {"name": "studioforge", "version": "0.1.0"},
+                "serverInfo": {"name": "sparky", "version": "0.1.0"},
                 "instructions": "Deterministic EDA pipelines. Decompose requests into a SystemPlan (see CLAUDE.md), validate with forge_validate_plan, build with forge_build_system."}
     if m == "tools/list":
         return {"tools": [{"name": n, "description": d, "inputSchema": s} for n, (_, d, s) in TOOLS.items()]}

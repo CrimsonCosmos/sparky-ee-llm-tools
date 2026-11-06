@@ -24,7 +24,7 @@ class PartNotFound(LookupError):
 
 
 def default_home() -> Path:
-    return Path(os.environ.get("FORGE_HOME") or Path.home() / ".studioforge")
+    return Path(os.environ.get("SPARKY_HOME") or Path.home() / ".sparky")
 
 
 class PartsLibrary:

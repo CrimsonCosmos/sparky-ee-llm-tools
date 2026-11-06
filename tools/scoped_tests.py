@@ -2,7 +2,7 @@
 
   python tools/scoped_tests.py [BASE_REF] [-- extra pytest args]
 
-Mapping is by package area: src/studioforge/<area>/... or <area>.py -> tests/test_<area>*.py.
+Mapping is by package area: src/sparky/<area>/... or <area>.py -> tests/test_<area>*.py.
 Changes outside a known area (pyproject, conftest, model.py ...) fall back to the whole FAST suite.
 Slow/integration tests are never selected here; run them explicitly with `pytest -m slow`."""
 from __future__ import annotations
@@ -25,7 +25,7 @@ def select(files: list[str]) -> list[str] | None:
         p = Path(f)
         if p.parts[:1] == ("tests",) and p.suffix == ".py" and p.name.startswith("test_"):
             tests.add(f)
-        elif p.parts[:2] == ("src", "studioforge"):
+        elif p.parts[:2] == ("src", "sparky"):
             area = p.parts[2].removesuffix(".py") if len(p.parts) > 2 else ""
             hits = sorted((ROOT / "tests").glob(f"test_{area}*.py"))
             if not hits:

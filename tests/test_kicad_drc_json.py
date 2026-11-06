@@ -1,6 +1,6 @@
 import json
 
-from studioforge.kicad_backend.cli import parse_drc_json
+from sparky.kicad_backend.cli import parse_drc_json
 
 
 def test_parse_kicad8plus_json_report():

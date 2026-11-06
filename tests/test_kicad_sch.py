@@ -7,9 +7,9 @@ import xml.etree.ElementTree as ET
 import pytest
 
 from conftest import mcu_circuit
-from studioforge.blocks.registry import build_block
-from studioforge.export.kicad_sch import to_kicad_sch, write_kicad_sch
-from studioforge.kicad_symbols import find_symbols, symbol_for_part, symbols_available
+from sparky.blocks.registry import build_block
+from sparky.export.kicad_sch import to_kicad_sch, write_kicad_sch
+from sparky.kicad_symbols import find_symbols, symbol_for_part, symbols_available
 
 CLI = shutil.which("kicad-cli")
 pytestmark = pytest.mark.skipif(not symbols_available(), reason="KiCad symbol libraries not installed")
@@ -62,7 +62,7 @@ def test_schematic_parses_with_kiutils_and_has_properties(lib, tmp_path):
     props = {pr.key: pr.value for pr in by_ref["C1"].properties}
     assert props["Footprint"].startswith("Capacitor_SMD:C_0402") and props["Value"]
     assert {s.libId for s in sch.libSymbols} >= {"Device:C", "Connector_Generic:Conn_01x08"}
-    assert res.symbols["U1"].startswith("studioforge:") or ":" in res.symbols["U1"]
+    assert res.symbols["U1"].startswith("sparky:") or ":" in res.symbols["U1"]
     assert len(sch.globalLabels) >= sum(len(v) for v in c.nets.values())
 
 
@@ -105,7 +105,7 @@ def test_erc_when_available(lib, tmp_path):
 
 def test_symbol_scan_handles_tab_and_space_indentation(tmp_path):
     """Regression: KiCad 10 writes tabs, KiCad 7 spaces; the scanner must read both (it returned 0 symbols on KiCad 10)."""
-    from studioforge.kicad_symbols import _scan_lib
+    from sparky.kicad_symbols import _scan_lib
     tab = '(kicad_symbol_lib\n\t(symbol "R"\n\t\t(property "ki_keywords" "R res"\n\t\t\t(at 0 0 0))\n\t\t(property "ki_fp_filters" "R_*"\n\t\t\t(at 0 0 0))\n\t\t(symbol "R_1_1"\n\t\t\t(pin passive line (at 0 0 0) (number "1"))\n\t\t\t(pin passive line (at 0 1 0) (number "2"))))\n)\n'
     spc = tab.replace("\t\t\t", "      ").replace("\t\t", "    ").replace("\t", "  ")
     for text in (tab, spc):

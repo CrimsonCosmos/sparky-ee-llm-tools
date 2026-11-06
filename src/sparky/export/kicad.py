@@ -12,7 +12,7 @@ from ..pcb.board import Board
 
 
 def _uuid(seed: str) -> Q:
-    return Q(str(uuid.uuid5(uuid.NAMESPACE_URL, "studioforge/" + seed)))
+    return Q(str(uuid.uuid5(uuid.NAMESPACE_URL, "sparky/" + seed)))
 
 
 def _layers_def(n: int):
@@ -29,12 +29,12 @@ def _layers_def(n: int):
     return ["layers"] + layers
 
 
-def to_kicad_pcb(board: Board, title: str = "studioforge") -> str:
+def to_kicad_pcb(board: Board, title: str = "sparky") -> str:
     c = board.circuit
     nets = {"": 0}
     for n in c.nets:
         nets[n] = len(nets)
-    root: list = ["kicad_pcb", ["version", 20221018], ["generator", Q("studioforge")],
+    root: list = ["kicad_pcb", ["version", 20221018], ["generator", Q("sparky")],
                   ["general", ["thickness", board.rules.thickness_mm]], ["paper", Q("A4")],
                   _layers_def(len(board.layers)),
                   ["setup", ["pad_to_mask_clearance", board.rules.mask_expansion],
@@ -46,7 +46,7 @@ def to_kicad_pcb(board: Board, title: str = "studioforge") -> str:
         pl = board.place[ref]
         fp = comp.footprint
         pn = c.pin_net_map()
-        fl: list = ["footprint", Q(f"studioforge:{fp.name}"), ["layer", Q("F.Cu")], ["tstamp", _uuid(ref)],
+        fl: list = ["footprint", Q(f"sparky:{fp.name}"), ["layer", Q("F.Cu")], ["tstamp", _uuid(ref)],
                     ["at", pl.x, pl.y, pl.rot] if pl.rot else ["at", pl.x, pl.y],
                     ["fp_text", "reference", Q(ref), ["at", 0, -(abs(fp.courtyard[1]) + 1.0), 0], ["layer", Q("F.SilkS")],
                      ["effects", ["font", ["size", 0.8, 0.8], ["thickness", 0.12]]], ["tstamp", _uuid(ref + "-ref")]],
@@ -121,10 +121,10 @@ def to_kicad_pcb(board: Board, title: str = "studioforge") -> str:
 
 def to_kicad_netlist(circuit: Circuit) -> str:
     """KiCad XML netlist (importable via Pcbnew > File > Import > Netlist)."""
-    out = ['(export (version "E")', f'  (design (source "{escape(circuit.name)}") (tool "studioforge"))', "  (components"]
+    out = ['(export (version "E")', f'  (design (source "{escape(circuit.name)}") (tool "sparky"))', "  (components"]
     for ref, c in circuit.components.items():
         fp = c.part.footprint if isinstance(c.part.footprint, str) else c.part.footprint.name
-        out.append(f'    (comp (ref "{ref}") (value "{escape(c.value or c.part.mpn)}") (footprint "studioforge:{escape(fp)}")'
+        out.append(f'    (comp (ref "{ref}") (value "{escape(c.value or c.part.mpn)}") (footprint "sparky:{escape(fp)}")'
                    f' (fields (field (name "MPN") "{escape(c.part.mpn)}")))')
     out.append("  )")
     out.append("  (nets")

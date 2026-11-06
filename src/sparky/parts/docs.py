@@ -8,7 +8,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) studioforge/0.1 (+datasheet-cache)"
+USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) sparky/0.1 (+datasheet-cache)"
 MAX_PDF = 120 * 1024 * 1024
 
 
