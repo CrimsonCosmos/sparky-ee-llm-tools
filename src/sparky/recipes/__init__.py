@@ -45,6 +45,7 @@ class Result:
     notes: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     calcs: dict[str, str] = field(default_factory=dict)
+    net_attrs: dict[str, dict] = field(default_factory=dict)      # local net name -> {current_a, voltage}: internal nets that carry current (e.g. a switch node)
 
 
 @dataclass
@@ -131,6 +132,16 @@ def build_recipe(name: str, params: dict | None = None, instance: str | None = N
     c = from_skidl(name=instance or name)
     for pt in res.ports:
         c.ports[pt.name] = Port(pt.name, pt.net, pt.kind, pt.direction, pt.voltage, pt.current_a, dict(pt.meta), dict(pt.signals))
+    for pt in res.ports:                       # port current/voltage become net attributes: they drive track width (IPC-2221) and conductor spacing in the board flow
+        a = c.net_attrs.get(pt.net)
+        if a is not None and pt.kind == "power":
+            a.current_a = max(a.current_a, pt.current_a or 0.0)
+            a.voltage = max(a.voltage, pt.voltage or 0.0, (pt.meta or {}).get("vmax") or 0.0)
+    for net, d in res.net_attrs.items():
+        a = c.net_attrs.get(net)
+        if a is not None:
+            a.current_a = max(a.current_a, d.get("current_a", 0.0))
+            a.voltage = max(a.voltage, d.get("voltage", 0.0))
     c.notes += res.notes
     c.warnings += res.warnings
     c.calcs.update(res.calcs)

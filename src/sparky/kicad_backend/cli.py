@@ -31,10 +31,11 @@ def capabilities() -> dict:
             "ipc2581": kicad_has("ipc2581")}
 
 
-def write_kicad_pro(path: str | Path, rules=None, name: str | None = None) -> Path:
+def write_kicad_pro(path: str | Path, rules=None, name: str | None = None, net_classes: list[dict] | None = None) -> Path:
     """Write a minimal .kicad_pro so KiCad's DRC uses OUR fab rules instead of its defaults.
 
-    `rules` is a sparky `pcb.rules.Rules` (or any object with the same attribute names)."""
+    `rules` is a sparky `pcb.rules.Rules` (or any object with the same attribute names). `net_classes`: [{name, track_width, clearance, nets: [...]}] - extra classes
+    (wider tracks for current, larger spacing for voltage); the router and KiCad's DRC both honour them."""
     path = Path(path)
     g = (lambda k, d: getattr(rules, k, d)) if rules is not None else (lambda k, d: d)
     clr, trk, via, drl = g("clearance", 0.2), g("track", 0.2), g("via_dia", 0.6), g("via_drill", 0.3)
@@ -62,6 +63,10 @@ def write_kicad_pro(path: str | Path, rules=None, name: str | None = None) -> Pa
                                       "schematic_color": "rgba(0, 0, 0, 0.000)"}],
                          "meta": {"version": 3}, "net_colors": None},
     }
+    ns = pro["net_settings"]
+    for nc in net_classes or []:
+        ns["classes"].append({**ns["classes"][0], "name": nc["name"], "track_width": nc["track_width"], "clearance": nc["clearance"]})
+    ns["netclass_patterns"] = [{"netclass": nc["name"], "pattern": n} for nc in net_classes or [] for n in nc["nets"]]
     path.write_text(json.dumps(pro, indent=2))
     return path
 

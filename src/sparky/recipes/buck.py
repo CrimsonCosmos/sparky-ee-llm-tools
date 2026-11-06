@@ -66,6 +66,8 @@ def build(ctx, symbol, vin_min, vin_max, vout, iout, rail, inductor_footprint=No
     res = Result(notes=list(d.notes), calcs={"buck": f"{mpn}: {vin_min:g}-{vin_max:g} V -> {vout:g} V @ {iout:g} A; L={d.inductance * 1e6:g} uH "
                                                      f"(ripple {d.inductor_ripple:.2f} A, peak {d.inductor_peak:.2f} A, Isat>={d.inductor_isat_min:.2f} A); "
                                                      f"Cout>={d.cout_required * 1e6:.1f} uF; divider {d.r_top:g}/{d.r_bottom:g} -> {d.vout_actual:.3f} V"})
+    res.net_attrs = {"SW": {"current_a": d.inductor_peak, "voltage": vin_max},      # switch node: peak inductor current, input-rail voltage
+                     "GND": {"current_a": iout}}                                    # return current of the load
     res.warnings += [f"not in the parts catalogue (no price/stock): {n}" for n in ctx.unsourced]
     if ngspice():
         sim, cycles = None, pol.spice_cycles

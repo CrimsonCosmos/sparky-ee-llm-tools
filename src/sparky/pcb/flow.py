@@ -11,7 +11,7 @@ from . import analysis
 from .board import Board
 from .placement import PlaceOptions, place
 from .planes import assign_planes
-from .rules import rules_for
+from .rules import net_classes_for, rules_for
 
 
 @dataclass
@@ -78,7 +78,7 @@ def build_board(circuit: Circuit, spec: BoardSpec | None = None, log=print) -> B
             tag = f"{layers}L_u{util}"
             raw, routed = work / f"{tag}.kicad_pcb", work / f"{tag}_routed.kicad_pcb"
             raw.write_text(to_kicad_pcb(board, circuit.name))
-            kicad_backend.write_kicad_pro(raw.with_suffix(".kicad_pro"), rules)
+            kicad_backend.write_kicad_pro(raw.with_suffix(".kicad_pro"), rules, net_classes=net_classes_for(circuit, rules))
             say(f"{layers}L util={util}: board {board.width}x{board.height} mm; routing with Freerouting")
             try:
                 rr = routing.route_pcb(raw, routed, passes=spec.passes, timeout=int(max(120, spec.time_budget_s * 0.6)))

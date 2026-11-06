@@ -73,6 +73,23 @@ def trace_width_for_current(amps: float, rises_c: float = 20.0, oz: float = 1.0,
     return area_mil2 / thick_mil * 0.0254
 
 
+WIDTH_RESOLUTION_MM = 0.001   # fab data precision: widths/clearances are rounded UP to 1 um
+
+
+def net_classes_for(circuit, rules) -> list[dict]:
+    """Extra net classes from each net's declared current (IPC-2221 width at rules.temp_rise_c, outer-layer copper) and voltage (IPC-2221 B2 spacing).
+    A net keeps the default class unless it needs a wider track or more clearance. Nets are grouped by (width, clearance)."""
+    groups: dict[tuple[float, float], list[str]] = {}
+    for net, a in circuit.net_attrs.items():
+        w = trace_width_for_current(a.current_a, rules.temp_rise_c, rules.copper_oz_outer) if a.current_a > 0 else 0.0
+        c = spacing_for_voltage(a.voltage) if a.voltage > 0 else 0.0
+        w = math.ceil(max(w, rules.track) / WIDTH_RESOLUTION_MM) * WIDTH_RESOLUTION_MM
+        c = math.ceil(max(c, rules.clearance) / WIDTH_RESOLUTION_MM) * WIDTH_RESOLUTION_MM
+        if w > rules.track + 1e-9 or c > rules.clearance + 1e-9:
+            groups.setdefault((round(w, 3), round(c, 3)), []).append(net)
+    return [{"name": f"w{w:.3f}_c{c:.3f}", "track_width": w, "clearance": c, "nets": nets} for (w, c), nets in sorted(groups.items())]
+
+
 def current_for_width(width_mm: float, rises_c: float = 20.0, oz: float = 1.0, external: bool = True) -> float:
     k = 0.048 if external else 0.024
     area_mil2 = (width_mm / 0.0254) * 1.378 * oz
