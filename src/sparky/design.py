@@ -103,11 +103,12 @@ def _derive_constraints(c: Circuit) -> None:
         gn = [n for n in nets if n and c.net_attrs[n].role == "ground"]
         if not (pw and gn):
             continue
-        cands = []                                  # (ic ref, pin number) power pins on that net, ICs only
+        cands = []                                  # (ic ref, pin number) power pins on that net, ICs only; natural order so the result is reproducible
         for pin in c.nets[pw[0]]:
             r, _, num = pin.partition(".")
             if c.components[r].part.category == "ic":
                 cands.append((r, num))
+        cands.sort(key=lambda rn: (rn[0], int(rn[1]) if rn[1].isdigit() else 0, rn[1]))
         if not cands:
             continue
         key = (pw[0], "")
