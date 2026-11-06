@@ -75,6 +75,50 @@ class Ctx:
                 return [self._tag(self.s.Part("Device", "C", value=_val(farads), footprint=chip_footprint("C", ch[0].package)), ch[0]) for _ in range(n)]
         raise NoPart(f"catalogue has no MLCC combination for {total_f:g} F usable at {working_v:g} V (nominal {nominal:g} F, rated >= {rated:g} V, <= {pol.max_parallel_caps} parts)")
 
+    def electrolytics(self, total_f: float, working_v: float) -> list:
+        """Aluminium electrolytics in parallel: fewest identical parts (<= policy.max_parallel_caps) with nominal >= total_f, rated >= working_v / derating,
+        and a package that maps to a KiCad footprint."""
+        from ..picker.footprints import electrolytic as fp_for
+        pol = self.policy
+        rated = working_v / pol.cap_voltage_derating
+        for n in range(1, pol.max_parallel_caps + 1):
+            low = total_f / n
+            for ch in self.catalog.pick(needs.electrolytic(low, rated, low * pol.cap_value_window), qty=self.qty * n, limit=20):
+                fp = fp_for(ch.package)
+                if fp:
+                    farads = _parse_f(ch.attributes["Capacitance"])
+                    return [self._tag(self.s.Part("Device", "C_Polarized", value=_val(farads), footprint=fp), ch) for _ in range(n)]
+        raise NoPart(f"catalogue has no electrolytic combination for {total_f:g} F at {working_v:g} V with a known KiCad footprint")
+
+    def tvs(self, standoff_min: float):
+        """Unidirectional TVS by parametric search (stand-off just above the working voltage); generic diode symbol, footprint from the package via the KiCad library."""
+        from ..picker.footprints import diode as fp_for
+        for ch in self.catalog.pick(needs.tvs(standoff_min, unidirectional=True), qty=self.qty, limit=30):
+            fp = fp_for(ch.package)
+            if fp:
+                return self._tag(self.s.Part("Device", "D_Zener", value=ch.mpn, footprint=fp), ch)
+        raise NoPart(f"catalogue has no unidirectional TVS with stand-off >= {standoff_min:g} V in a package with a KiCad footprint")
+
+    def fuse(self, amps: float, volts: float):
+        from ..circuits.passives import chip_footprint
+        need = needs.fuse(amps * self.policy.fuse_margin, volts, self.policy.chip_fuse)
+        ch = self._first(need, f"fuse >= {amps * self.policy.fuse_margin:g} A, {volts:g} V DC")
+        return self._tag(self.s.Part("Device", "Fuse", value=f"{ch.attributes.get('Current Rating', '')}", footprint=chip_footprint("F", ch.package)), ch)
+
+    def generic(self, symbol: str, footprint: str, **fields):
+        """A part whose symbol and footprint the DESIGNER names (connectors, headers, mounting holes): both must exist in KiCad's libraries."""
+        from ..kicad_symbols import info
+        from ..footprints import kicad_mod_path
+        if info(symbol) is None:
+            raise NoPart(f"KiCad symbol '{symbol}' not found")
+        if kicad_mod_path(footprint) is None:
+            raise NoPart(f"KiCad footprint '{footprint}' not found")
+        lib, name = symbol.split(":", 1)
+        p = self.s.Part(lib, name, footprint=footprint)
+        for k, v in fields.items():
+            p.fields[k] = v
+        return p
+
     def inductor(self, henries: float, isat_min: float, footprint: str | None = None):
         """Inductor with L >= design (within the picker's window) and Isat >= isat_min. Chip-code packages map to KiCad footprints by name; other
         packages need an explicit KiCad `footprint` (the designer's choice) - we do not guess a land pattern."""

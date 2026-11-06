@@ -26,3 +26,7 @@ class Policy:
     cap_esr_ohm: float = 5e-3                # typical MLCC ESR at switching frequency; override from the capacitor datasheet
     switch_ron_ohm: float = 50e-3            # used when the regulator datasheet gives no Rds(on)
     chip_inductor: tuple[str, ...] = ("0805", "1008", "1210", "1812")   # chip-code inductor packages that map to KiCad Inductor_SMD footprints
+    fuse_margin: float = 1.25                 # fuse rating >= this x continuous current (fuses are derated ~25 % for ambient/aging)
+    chip_fuse: tuple[str, ...] = ("0603", "0805", "1206", "1210", "1812")
+    surge_margin: float = 1.02               # TVS stand-off must exceed the highest working voltage by at least this factor
+    connector_derating: float = 0.8          # continuous current <= this x the connector's contact rating

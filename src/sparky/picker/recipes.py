@@ -40,10 +40,13 @@ def schottky(vr_min: float, i_min: float) -> Need:
     return Need("Schottky Diodes", minimum={"Voltage - DC Reverse(Vr)": f"{vr_min}V", "Current - Rectified": f"{i_min}A"})
 
 
-def tvs(standoff_min: float, max_over: float = 0.35) -> Need:
+def tvs(standoff_min: float, max_over: float = 0.35, unidirectional: bool = True) -> Need:
     """Stand-off just above the working voltage: a much higher rating clamps far above what the protected parts can take."""
-    return Need("ESD And Surge Protection (TVS/ESD)", minimum={"Reverse Stand-Off Voltage (Vrwm)": f"{standoff_min}V"},
-                maximum={"Reverse Stand-Off Voltage (Vrwm)": f"{standoff_min * (1 + max_over):.4g}V"})
+    n = Need("ESD And Surge Protection (TVS/ESD)", minimum={"Reverse Stand-Off Voltage (Vrwm)": f"{standoff_min}V"},
+             maximum={"Reverse Stand-Off Voltage (Vrwm)": f"{standoff_min * (1 + max_over):.4g}V"})
+    if unidirectional:
+        n.equals["Polarity"] = "Unidirectional"
+    return n
 
 
 def ldo(vout: float, iout_min: float) -> Need:
@@ -70,4 +73,4 @@ def electrolytic(farads_min: float, volts_min: float, farads_max: float) -> Need
 
 
 def fuse(amps_min: float, volts_min: float, package: tuple[str, ...]) -> Need:
-    return Need("Fuses", package=package, minimum={"Current Rating": f"{amps_min}A", "Voltage Rating": f"{volts_min}V"})
+    return Need("Fuses", package=package, minimum={"Current Rating": f"{amps_min}A", "Voltage Rating (DC)": f"{volts_min}V"})
