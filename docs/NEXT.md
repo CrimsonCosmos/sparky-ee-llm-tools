@@ -19,7 +19,8 @@ EMC adapter (pcb-analysis dipole superposition) validated against Ott's small-lo
 3. Recipes Claude should author from datasheet reference designs when needed (motor driver, USB, IMU...). The old hand-written 3-phase driver was deliberately not ported.
 4. Dependency pins are in pyproject; document prebuilt wheels / setup for the pcb-analysis kernels on Windows/macOS.
 5. Fast suite ~11 s (target 10 s); CI scoped by changed files (tools/scoped_tests.py).
-6. Later: BGA, diff-pair/length matching (Freerouting + KiCad rules), double-sided assembly.
+6. DONE (needs KiCadRoutingTools): diff pairs, length groups, BGA/QFN fanout, re-measured independently. Open: the tool's length matching did not equalise a bus in our test (reported, not hidden); via-in-pad needs `fab_tier='advanced'` + rule_overrides; impedance-controlled widths from the stackup; HDI/blind vias for 16-32 layer boards.
+7. Later: double-sided assembly.
 
 Out of scope (marked in code): mechanical integration (`mechanical.py`), live distributor data and purchasing (`sourcing.py`).
 Owner's rules: no sub-agents; Python only; console app on Win/macOS/Linux; adopt open source; minimal LLM use; fast scoped tests; no hardcoded values; no confidently wrong tests.

@@ -47,7 +47,7 @@ datasheets (sources recorded in `specs/*.json`). `pytest -m slow tests/test_e2e_
 ## What it does NOT do (stated in every report)
 Loop stability, EMC and enclosure thermals are not verified (the buck power stage is checked in ngspice against the design equations). PCB fabrication and
 assembly are not priced (catalogue prices are snapshots). Mechanical design, live distributor APIs and automatic purchasing are out of scope
-(`mechanical.py`, `sourcing.py` explain how they could be done). Not yet: BGA, differential-pair/length matching, double-sided assembly.
+(`mechanical.py`, `sourcing.py` explain how they could be done). High-speed routing (differential pairs, length groups, BGA/QFN fanout) uses KiCadRoutingTools when installed and is re-verified from the copper; not yet: HDI/blind vias, impedance from the stackup, double-sided assembly.
 Thermal / IR-drop / EMC adapters (pcb-analysis, kicad-irdrop) are in `sparky/analysis/` and being wired in (docs/NEXT.md).
 
 ## Tests

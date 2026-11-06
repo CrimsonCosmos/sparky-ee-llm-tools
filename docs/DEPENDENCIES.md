@@ -43,3 +43,10 @@
 * `kicad-irdrop` (Apache-2.0) must be installed into the **KiCad Python** (the interpreter that imports pcbnew): `<kicad-python> -m pip install git+https://github.com/firedanceio/kicad-irdrop`.
 * `easyeda2kicad` 1.0.1 is AGPL-3.0: only ever run as an external command by `libsrc` (flagged-unreviewed fallback; the EasyEDA API returned HTTP 403 after a few requests, so imports are cached).
 * pcb-analysis (thermal + EMC) needs its compiled kernels; without them rasterising is pure NumPy (80 s at 1 mm, ~20 min at 0.25 mm) and `available()` returns False.
+
+## Constraint-aware routing (optional): KiCadRoutingTools
+MIT, https://github.com/drandyhaas/KiCadRoutingTools (needs KiCad 9/10 files; numpy, scipy, shapely; Rust router). Used for boards that carry differential pairs, length-match groups or BGA/QFN
+fanout (`constraints.DiffPair / LengthGroup / Fanout`, declared by recipes in `Result.constraints`); other boards keep using Freerouting. Install:
+`git clone https://github.com/drandyhaas/KiCadRoutingTools <data_dir>/tools/KiCadRoutingTools && python build_router.py` (downloads a prebuilt binary or builds with cargo), or point `SPARKY_KRT` at a checkout.
+Our `Rules` are passed to it as its fab-floor file (so its via/annular/track/clearance limits equal ours); `Rules.fab_tier='standard'` forbids via-in-pad and its own escalation.
+Pair/skew and group spread are re-measured from the routed copper (tracks + via barrels): the tool's own reports have disagreed with its written copper.

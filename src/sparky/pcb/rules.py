@@ -32,6 +32,8 @@ class Rules:
     plane_thermal_gap: float = 0.3
     plane_spoke: float = 0.35
     profile: str = "generic"
+    fab_tier: str = "standard"    # process capability the design is built for: 'standard' keeps vias/annulars within this Rules' limits; 'advanced' allows via-in-pad and finer vias
+                                   # (needs a fab that fills+caps vias, IPC-4761 type VII, and matching via/annular limits in rule_overrides)
 
     @property
     def min_via_pitch(self) -> float:

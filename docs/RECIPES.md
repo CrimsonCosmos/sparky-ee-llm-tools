@@ -31,3 +31,9 @@ Rules (the same as the project's top rules):
 4. **Verify what you can:** compare equations with ngspice (`sparky.verify.spice`) or another independent reference, and write a test whose expected values
    are hand-computed. Say "NOT VERIFIED" in the output when a check could not run.
 5. Equations are a first pass, not the proof. Datasheet design procedures are used; loop stability, EMC and enclosure thermals are not verified.
+
+## Routing constraints
+A recipe can declare high-speed requirements in `Result.constraints` (net names local to the recipe; they follow merges and net renames):
+`DiffPair(p, n, width_mm, gap_mm, skew_mm)` (nets must follow a pairing convention: `X_P/X_N`, `X+/X-`, `XP/XN`; the numbers come from the interface standard or an impedance target,
+never a default), `LengthGroup(nets, tolerance_mm)`, `Fanout(ref)` for BGA/QFN escape. Boards with any of these route through KiCadRoutingTools; if it is not installed the build fails with a message.
+A pair finer than the fab profile allows is refused up front with the reason.

@@ -33,6 +33,10 @@ def write_package(res: BuildResult, outdir: str | Path, project: str, extra: dic
         (out / f"{project}.kicad_pro").write_bytes(res.pcb_path.with_suffix(".kicad_pro").read_bytes())
 
     pol = policy or Policy()
+    if res.routing_checks:
+        rows = ["| Constraint | Routed lengths (mm) | Skew / spread (mm) | Limit (mm) | Met |", "|--|--|--|--|--|"]
+        rows += [f"| {c['kind']}: {c['name']} | {', '.join(map(str, c['lengths_mm']))} | {c['skew_mm']} | {c['limit_mm']} | {'yes' if c['ok'] else '**NO**'} |" for c in res.routing_checks]
+        extra["Routing constraints (re-measured from the routed copper, tracks + via barrels)"] = "\n".join(rows)
     extra["DC IR drop (open-source: kicad-irdrop)"] = _irdrop(res, out, files, pol)
     extra["Thermal (open-source FEM: pcb-analysis)"] = _thermal(res, out, files, pol)
 

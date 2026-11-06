@@ -103,6 +103,16 @@ def kicad_library_dir(kind: str) -> str | None:
     return _first_existing(cands)
 
 
+def krt_dir() -> str | None:
+    """KiCadRoutingTools checkout (MIT, https://github.com/drandyhaas/KiCadRoutingTools) with its Rust router built (`python build_router.py`).
+    $SPARKY_KRT, else <data_dir>/tools/KiCadRoutingTools."""
+    from .paths import data_dir
+    for d in (os.environ.get("SPARKY_KRT"), str(data_dir() / "tools" / "KiCadRoutingTools")):
+        if d and (Path(d) / "py_router" / "route.py").is_file() and (Path(d) / "rust_router" / "grid_router.so").exists():
+            return d
+    return None
+
+
 def java() -> str | None:
     return _which_or("java", "SPARKY_JAVA")
 
@@ -120,4 +130,4 @@ def report() -> dict[str, str | None]:
     v = kicad_version()
     return {"kicad-cli": kicad_cli(), "kicad version": ".".join(map(str, v)) if v else None, "kicad python (pcbnew)": kicad_python(),
             "footprint libs": kicad_library_dir("footprints"), "symbol libs": kicad_library_dir("symbols"), "java": java(),
-            "ngspice": ngspice(), "pdftotext": pdftotext(), "claude": shutil.which("claude"), "platform": sys.platform}
+            "ngspice": ngspice(), "KiCadRoutingTools": krt_dir(), "pdftotext": pdftotext(), "claude": shutil.which("claude"), "platform": sys.platform}

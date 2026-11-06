@@ -29,6 +29,19 @@ def _layers_def(n: int):
     return ["layers"] + layers
 
 
+def layer_z_mm(rules, n: int) -> dict[str, float]:
+    """Height (mm from the top copper surface) of each copper layer's centre, from the same stackup the exporter writes (copper per layer + equal cores)."""
+    from ..pcb.rules import OZ_CU_MM
+    names = ["F.Cu"] + [f"In{i}.Cu" for i in range(1, n - 1)] + ["B.Cu"]
+    cu = [rules.copper_oz_outer * OZ_CU_MM if k in (0, n - 1) else rules.copper_oz_inner * OZ_CU_MM for k in range(n)]
+    diel = max((rules.thickness_mm - sum(cu) - 2 * rules.mask_thickness_mm) / (n - 1), 0.0)
+    z, out = 0.0, {}
+    for k, nm in enumerate(names):
+        out[nm] = z + cu[k] / 2
+        z += cu[k] + diel
+    return out
+
+
 def _stackup(rules, n: int) -> list:
     """(stackup ...) describing the physical layers, derived entirely from `rules` (copper weights, board thickness, mask, dielectric)."""
     from ..pcb.rules import OZ_CU_MM

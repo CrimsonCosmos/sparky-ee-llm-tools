@@ -71,3 +71,47 @@ class Separate(_Remap):
     min_mm: float = 15.0
     weight: float = 2.0
     reason: str = "emi"
+
+
+# ---- routing constraints (consumed by the KiCadRoutingTools stage, see sparky.krt) ------------------------------------------------
+class _NetRemap:
+    def remap(self, refmap: dict[str, str], netmap: dict[str, str]) -> None:
+        for f in self._net_fields:
+            v = getattr(self, f)
+            setattr(self, f, [netmap.get(n, n) for n in v] if isinstance(v, list) else netmap.get(v, v))
+        if hasattr(self, "ref"):
+            self.ref = refmap.get(self.ref, self.ref)
+
+    def rename_net(self, old: str, new: str) -> None:
+        for f in self._net_fields:
+            v = getattr(self, f)
+            setattr(self, f, [new if n == old else n for n in v] if isinstance(v, list) else (new if v == old else v))
+
+
+@dataclass
+class DiffPair(_NetRemap):
+    """Coupled differential pair. width/gap come from the interface standard or the impedance target (the designer's number, never a default);
+    skew_mm = allowed P/N length difference. The net names must follow a pairing convention the router recognises (X_P/X_N, X+/X-, XP/XN)."""
+    p: str
+    n: str
+    width_mm: float
+    gap_mm: float
+    skew_mm: float
+    _net_fields = ("p", "n")
+
+
+@dataclass
+class LengthGroup(_NetRemap):
+    """Nets whose routed lengths must agree within tolerance_mm (e.g. a parallel bus)."""
+    nets: list[str]
+    tolerance_mm: float
+    _net_fields = ("nets",)
+
+
+@dataclass
+class Fanout:
+    """Escape-route the balls of this array package (BGA/QFN) before routing the nets."""
+    ref: str
+
+    def remap(self, refmap: dict[str, str], netmap: dict[str, str]) -> None:
+        self.ref = refmap.get(self.ref, self.ref)

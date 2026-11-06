@@ -45,6 +45,7 @@ class Result:
     notes: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     calcs: dict[str, str] = field(default_factory=dict)
+    constraints: list = field(default_factory=list)                # routing constraints (constraints.DiffPair / LengthGroup / Fanout), net names local to the recipe
     net_attrs: dict[str, dict] = field(default_factory=dict)      # local net name -> {current_a, voltage}: internal nets that carry current (e.g. a switch node)
 
 
@@ -142,6 +143,7 @@ def build_recipe(name: str, params: dict | None = None, instance: str | None = N
         if a is not None:
             a.current_a = max(a.current_a, d.get("current_a", 0.0))
             a.voltage = max(a.voltage, d.get("voltage", 0.0))
+    c.constraints += res.constraints
     c.notes += res.notes
     c.warnings += res.warnings
     c.calcs.update(res.calcs)

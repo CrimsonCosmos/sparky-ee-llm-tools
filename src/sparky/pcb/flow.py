@@ -6,6 +6,9 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .. import krt
+from ..export.kicad import layer_z_mm
+from ..constraints import DiffPair, Fanout, LengthGroup
 from ..model import Circuit
 from . import analysis
 from .board import Board
@@ -38,6 +41,7 @@ class BuildResult:
     log: list[str]
     success: bool
     pcb_path: Path | None = None           # routed, zone-filled KiCad board
+    routing_checks: list = field(default_factory=list)     # diff-pair skew / length-group spread re-measured from the copper (krt.verify)
 
 
 def suggest_layers(circuit: Circuit) -> int:
@@ -79,9 +83,22 @@ def build_board(circuit: Circuit, spec: BoardSpec | None = None, log=print) -> B
             raw, routed = work / f"{tag}.kicad_pcb", work / f"{tag}_routed.kicad_pcb"
             raw.write_text(to_kicad_pcb(board, circuit.name))
             kicad_backend.write_kicad_pro(raw.with_suffix(".kicad_pro"), rules, net_classes=net_classes_for(circuit, rules))
-            say(f"{layers}L util={util}: board {board.width}x{board.height} mm; routing with Freerouting")
+            special = [c for c in circuit.constraints if isinstance(c, (DiffPair, LengthGroup, Fanout))]
+            say(f"{layers}L util={util}: board {board.width}x{board.height} mm; routing with {'KiCadRoutingTools (' + str(len(special)) + ' routing constraints)' if special else 'Freerouting'}")
             try:
-                rr = routing.route_pcb(raw, routed, passes=spec.passes, timeout=int(max(120, spec.time_budget_s * 0.6)))
+                if special:
+                    if not krt.available():
+                        raise routing.RoutingError("this board has differential-pair / length-match / fanout constraints, which need KiCadRoutingTools (SPARKY_KRT); not installed")
+                    t_r = time.time()
+                    try:
+                        kr = krt.route(raw, routed, rules=rules, constraints=special, all_nets=[n for n, p in circuit.nets.items() if len(p) > 1],
+                                       net_classes=net_classes_for(circuit, rules), timeout=int(max(120, spec.time_budget_s * 0.6)))
+                    except (RuntimeError, ValueError) as e:
+                        raise routing.RoutingError(str(e)) from e
+                    rr = type("R", (), {"seconds": time.time() - t_r})()
+                    msgs.append("krt: " + ", ".join(f"{s['step']} {s['seconds']}s" for s in kr.steps))
+                else:
+                    rr = routing.route_pcb(raw, routed, passes=spec.passes, timeout=int(max(120, spec.time_budget_s * 0.6)))
             except routing.RoutingError as e:
                 say(f"   routing failed: {e}")
                 continue
@@ -90,10 +107,14 @@ def build_board(circuit: Circuit, spec: BoardSpec | None = None, log=print) -> B
             filled = work / f"{tag}_final.kicad_pcb"
             drc = kicad_backend.run_drc(routed, refill=True, rules=rules, save_to=filled)
             filled.with_suffix(".kicad_pro").write_bytes(raw.with_suffix(".kicad_pro").read_bytes())
-            ok = not drc.errors and not drc.unconnected
+            checks = krt.verify(routed.read_text(), special, layer_z_mm(rules, layers)) if special else []
+            miss = [c["name"] for c in checks if not c["ok"]]
+            if miss:
+                say(f"   routing constraints NOT met (re-measured): {', '.join(miss)}")
+            ok = not drc.errors and not drc.unconnected and not miss
             say(f"   -> kicad drc[{drc.summary()}] ({rr.seconds:.0f}s routing) {'OK' if ok else 'retry'}")
-            res = BuildResult(board, drc, {}, msgs, ok, filled)
-            score = (len(drc.unconnected), len(drc.errors), board.width * board.height)
+            res = BuildResult(board, drc, {}, msgs, ok, filled, checks)
+            score = (len(drc.unconnected), len(drc.errors), len(miss), board.width * board.height)
             if best is None or score < best_score:
                 best, best_score = res, score
             if ok:
