@@ -3,22 +3,13 @@
 Pins are addressed by NAME through the KiCad symbol (never by hand-written pin numbers)."""
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 
 from ..equations.buck import BuckDesign
 from ..equations.eseries import nearest, E6
 from . import skidl
 from .passives import passive
-
-_ROLE = {"vin": r"^(VIN|IN|PVIN|AVIN)$", "sw": r"^(SW|LX|PH)$", "boot": r"^(BOOT|VBST|BST|CB)$", "fb": r"^(FB|VFB|VSENSE|ADJ)$",
-         "en": r"^(EN|ENA|ENABLE)$", "gnd": r"^(GND|PGND|AGND)$", "pad": r"^(PAD|EP|DAP|EPAD)$"}
-
-
-def pins(part, role: str) -> list:
-    """All pins of `part` whose NAME matches the role (e.g. 'vin' -> pin VIN)."""
-    return [p for p in part.pins if re.match(_ROLE[role], p.name, re.I)]
-
+from .pins import pins
 
 @dataclass
 class Block:
@@ -37,14 +28,14 @@ def build_buck(design: BuckDesign, *, ic_lib: str, ic_name: str, vin, vout, gnd,
     sw, fb = s.Net("SW"), s.Net("FB")
     for p in pins(ic, "vin"):
         p += vin
-    for p in pins(ic, "gnd") + pins(ic, "pad"):
+    for p in pins(ic, "gnd") + pins(ic, "pad", required=False):
         p += gnd
     for p in pins(ic, "sw"):
         p += sw
     for p in pins(ic, "fb"):
         p += fb
     if en_to_vin:
-        for p in pins(ic, "en"):
+        for p in pins(ic, "en", required=False):
             p += vin
     # feedback divider
     r_top, r_bot = passive("R", design.r_top), passive("R", design.r_bottom)
@@ -53,7 +44,7 @@ def build_buck(design: BuckDesign, *, ic_lib: str, ic_name: str, vin, vout, gnd,
     l = passive("L", design.inductance, "1210", isat=f"{design.inductor_isat_min:.2f}A")
     sw & l & vout
     # bootstrap capacitor between BOOT and SW
-    for p in pins(ic, "boot"):
+    for p in pins(ic, "boot", required=False):
         cb = passive("C", c_boot, "0402")
         p += cb[1]
         cb[2] += sw
