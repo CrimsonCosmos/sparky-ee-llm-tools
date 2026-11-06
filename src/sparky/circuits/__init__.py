@@ -14,3 +14,10 @@ def skidl():
     import skidl as _s
     _s.set_default_tool(_s.KICAD9)
     return _s
+
+
+def reset():
+    """Start a fresh SKiDL circuit (SKiDL keeps one global default circuit)."""
+    import builtins
+    skidl()
+    builtins.default_circuit.reset()

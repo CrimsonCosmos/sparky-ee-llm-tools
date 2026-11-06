@@ -16,9 +16,7 @@ pytestmark = [pytest.mark.slow, pytest.mark.skipif(not (kicad_backend.available(
 
 @pytest.fixture(scope="module", params=[2, 4])
 def built(request, tmp_path_factory):
-    from sparky.parts.db import PartsLibrary
-    lib = PartsLibrary(tmp_path_factory.mktemp("h"), auto_research=False)
-    res = build_board(mcu_circuit(lib), BoardSpec(layers=request.param), log=None)
+    res = build_board(mcu_circuit(), BoardSpec(layers=request.param), log=None)
     out = tmp_path_factory.mktemp("pkg")
     return request.param, res, out, write_package(res, out, "mcu")
 
