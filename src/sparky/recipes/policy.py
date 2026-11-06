@@ -33,6 +33,9 @@ class Policy:
     demand_margin: float = 1.1               # a regulator is sized for the downstream demand x this
     converter_efficiency: float = 0.9        # assumed when estimating a converter's INPUT current from its output (replace with the datasheet curve for tight budgets)
     logic_level_tolerance_v: float = 0.55   # logic-level mismatch above this needs a level shifter
+    convection_h_w_m2k: float = 10.0         # natural convection, still air, both board faces (typical 5-25); set from the enclosure
+    emissivity: float = 0.9                  # solder mask / FR4 surface
+    thermal_pitch_mm: float = 0.25           # thermal grid resolution
     capacity_warn_fraction: float = 0.8      # warn when a supply is loaded beyond this fraction of its rating
     contingency_fraction: float = 0.10       # added to the system cost roll-up
     buy_ratio: float = 1.15                  # buy instead of build when the purchased price <= build BOM x this + buy_abs_usd (buy-vs-build policy)

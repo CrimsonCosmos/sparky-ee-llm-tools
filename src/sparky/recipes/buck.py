@@ -56,6 +56,10 @@ def build(ctx, symbol, vin_min, vin_max, vout, iout, rail, inductor_footprint=No
         vin & c & gnd
     for c in ctx.capacitors(d.cout_required, vout):
         vo & c & gnd
+    from sparky.datasheet import load as ds_load
+    rds = ds_load(ic.name).get("values", {}).get("rds_on")
+    if rds:                                        # conduction-loss upper bound at the high-side Rds(on); switching/quiescent loss NOT included
+        ic.fields["PowerW"] = iout ** 2 * rds
     res = Result(notes=list(d.notes), calcs={"buck": f"{mpn}: {vin_min:g}-{vin_max:g} V -> {vout:g} V @ {iout:g} A; L={d.inductance * 1e6:g} uH "
                                                      f"(ripple {d.inductor_ripple:.2f} A, peak {d.inductor_peak:.2f} A, Isat>={d.inductor_isat_min:.2f} A); "
                                                      f"Cout>={d.cout_required * 1e6:.1f} uF; divider {d.r_top:g}/{d.r_bottom:g} -> {d.vout_actual:.3f} V"})

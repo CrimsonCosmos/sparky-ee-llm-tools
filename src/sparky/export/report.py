@@ -17,11 +17,7 @@ def render_report(res: BuildResult, project: str, extra: dict) -> str:
           f"- KiCad DRC: **{'CLEAN' if drc.clean else 'ERRORS'}** ({drc.summary()})",
           f"- BOM cost (1 board, catalogue snapshot; excludes PCB fab + assembly): **${cost['total_usd']:.2f}** (snapshot prices - refresh before ordering), unpriced lines: {cost['lines_unpriced']}",
           ""]
-    th = an.get("thermal", {})
-    L += ["## Thermal", "", f"- Peak board temperature rise above ambient (steady state, still air): **{th.get('peak_rise_c', 0)} C**"]
-    for h in th.get("hot", [])[:8]:
-        L.append(f"  - {h['ref']}: {h['power_w']} W -> board +{h['rise_c']} C (peak +{h['peak_c']} C)")
-    L += ["", "## EMI / signal-integrity checks", ""]
+    L += ["", "## Layout checks (geometric)", ""]
     for d in an.get("decoupling", []):
         L.append(f"- Decoupling {d['cap']} -> {d['ic_pin']}: {d['dist_mm']} mm (limit {d['limit_mm']}) {'OK' if d['ok'] else '**FAR**'}")
     for d in an.get("loops", []):

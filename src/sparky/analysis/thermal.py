@@ -46,7 +46,7 @@ def _positions(csv_path: Path) -> dict[str, tuple[float, float]]:
 
 
 def run_thermal(pcb: str | Path, power_w: dict[str, float], positions_csv: str | Path, *, ambient_c: float,
-                h_w_m2k: float, emissivity: float, pitch_mm: float, source_half_mm: float) -> ThermalResult:
+                h_w_m2k: float, emissivity: float, pitch_mm: float, source_half_mm: dict[str, float]) -> ThermalResult:
     import numpy as np
     from geometry.cad_import import (board_thermal_mesh, kicad_step_body_map, layers_from_kicad_stackup, load_step, rasterize_board,
                                      read_kicad_stackup, resolve_bodies)
@@ -80,19 +80,19 @@ def run_thermal(pcb: str | Path, power_w: dict[str, float], positions_csv: str |
     mesh = board_thermal_mesh(raster).mesh
     log.debug("thermal mesh nodes %s", mesh.node_shape)
 
-    def top_nodes(x_mm: float, y_mm: float):
-        row, col = raster.cell_of(x_mm * 1e-3, -y_mm * 1e-3)          # STEP export negates KiCad's y
-        r = int(np.ceil(source_half_mm / raster.pitch_mm))
+    def top_nodes(x_mm: float, y_mm: float, half_mm: float):
+        row, col = raster.cell_of(x_mm * 1e-3, y_mm * 1e-3)           # `kicad-cli pos` PosY is already y-up, i.e. the STEP frame
+        r = int(np.ceil(half_mm / raster.pitch_mm))
         z = mesh.node_shape[0] - 1
         return tuple((z, y, x) for y in range(row - r, row + r + 2) for x in range(col - r, col + r + 2))
 
     missing = [k for k in power_w if k not in pos]
     if missing:
         raise KeyError(f"no position for {missing}")
-    srcs = tuple(HeatSource(top_nodes(*pos[k]), power_w=w, name=k) for k, w in power_w.items() if w > 0)
+    srcs = tuple(HeatSource(top_nodes(*pos[k], source_half_mm[k]), power_w=w, name=k) for k, w in power_w.items() if w > 0)
     amb = ambient_c + 273.15
     prob = ThermalConductionProblem(mesh, convection=(ConvectionBoundary("top", h_w_m2k, amb), ConvectionBoundary("bottom", h_w_m2k, amb)),
-                                    radiation=(RadiationBoundary("top", emissivity, amb),), heat_sources=srcs)
+                                    radiation=((RadiationBoundary("top", emissivity, amb),) if emissivity > 0 else ()), heat_sources=srcs)
     sol = solve_thermal_conduction(prob)
     lap("solve")
     top = sol.temperature_k[-1]

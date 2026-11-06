@@ -9,10 +9,12 @@ from .. import kicad_backend
 from ..pcb.flow import BuildResult
 from . import bom as bomx
 from . import kicad
+from ..analysis import thermal as thermalx
+from ..recipes.policy import Policy
 from .report import kicad_drc_section, render_report
 
 
-def write_package(res: BuildResult, outdir: str | Path, project: str, extra: dict | None = None) -> dict[str, Path]:
+def write_package(res: BuildResult, outdir: str | Path, project: str, extra: dict | None = None, policy: Policy | None = None) -> dict[str, Path]:
     out = Path(outdir)
     out.mkdir(parents=True, exist_ok=True)
     b = res.board
@@ -28,6 +30,8 @@ def write_package(res: BuildResult, outdir: str | Path, project: str, extra: dic
     extra["KiCad DRC (authoritative)"] = kicad_drc_section(res.drc)
     if res.pcb_path.with_suffix(".kicad_pro").exists():
         (out / f"{project}.kicad_pro").write_bytes(res.pcb_path.with_suffix(".kicad_pro").read_bytes())
+
+    extra["Thermal (open-source FEM: pcb-analysis)"] = _thermal(res, out, files, policy or Policy())
 
     def w(name: str, text: str) -> None:
         p = out / name
@@ -52,3 +56,24 @@ def write_package(res: BuildResult, outdir: str | Path, project: str, extra: dic
         z.write(out / "cpl_jlcpcb.csv", "cpl.csv")
     files["assembly.zip"] = zp2
     return files
+
+
+def _thermal(res: BuildResult, out: Path, files: dict, pol: Policy) -> str:
+    """Steady-state board temperature from the dissipation the recipes declared. Says plainly when it did not run."""
+    b = res.board
+    power = {ref: c.power_w for ref, c in b.circuit.components.items() if c.power_w > 0}
+    if not power:
+        return "NOT RUN: no component declared a dissipation (recipes set `PowerW` where they can compute it)."
+    if not thermalx.available():
+        return "NOT RUN: pcb-analysis with its compiled kernels is not installed (see docs/DEPENDENCIES.md); the unverified dissipations are: " + \
+               ", ".join(f"{r} {w:.2f} W" for r, w in power.items())
+    half = {ref: 0.5 * min(x1 - x0, y1 - y0) for ref in power for (x0, y0, x1, y1) in [b.courtyard(ref)]}
+    r = thermalx.run_thermal(res.pcb_path, power, out / "kicad_positions.csv", ambient_c=pol.ambient_c, h_w_m2k=pol.convection_h_w_m2k, emissivity=pol.emissivity,
+                             pitch_mm=pol.thermal_pitch_mm, source_half_mm=half)
+    import json
+    (out / "thermal.json").write_text(json.dumps(r.__dict__, indent=1))
+    files["thermal.json"] = out / "thermal.json"
+    rows = "\n".join(f"- {ref}: {power[ref]:.2f} W -> +{r.part_rise_k.get(ref, 0):.1f} K at its footprint" for ref in power)
+    return (f"Ambient {r.ambient_c:g} C, natural convection h = {pol.convection_h_w_m2k:g} W/m2K on both faces, emissivity {pol.emissivity:g}; heat balance error "
+            f"{r.balance_error_w:.1e} W. **Peak rise {r.peak_rise_k:.1f} K** above ambient (total {r.heat_in_w:.2f} W).\n\n{rows}\n\n"
+            "Dissipation inputs are the recipes' own estimates (e.g. regulator conduction loss), not measurements; package thermal resistance and an enclosure are not modelled.")

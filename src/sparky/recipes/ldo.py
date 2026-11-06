@@ -36,6 +36,7 @@ def build(ctx, symbol, vin_min, vin_max, vout, iout, c_in, c_out, rail):
     vin & cin & gnd
     vo & cout & gnd
     pw = eq.dissipation_w(vin_max, vout, iout)
+    u.fields["PowerW"] = pw                       # worst-case pass-element dissipation, used for placement and the thermal analysis
     res = Result(calcs={"ldo": f"{mpn}: {vin_max:g}->{vout:g} V @ {iout:g} A, dissipation {pw:.2f} W, needs theta_JA <= "
                                 f"{eq.max_theta_ja(pw, pol.ambient_c, pol.tj_max_c):.0f} K/W"})
     if pw > pol.ldo_dissipation_warn_w:

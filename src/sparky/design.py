@@ -57,7 +57,8 @@ def from_skidl(circ: Any | None = None, name: str = "design") -> Circuit:
         cat = str(p.fields.get("category") or _category(ref))
         part = PartDef(mpn=mpn, description=str(getattr(p, "description", "") or ""), category=cat, package=fid.split(":")[-1], pins=pins, footprint=fid,
                        value=str(p.value or ""), datasheet_url=str(getattr(p, "datasheet", "") or ""), params={"symbol": _symbol_id(p)})
-        out.add(part, ref=ref, value=str(p.value or ""), **{k: v for k, v in p.fields.items() if k not in ("MPN", "mpn", "category")})
+        out.add(part, ref=ref, value=str(p.value or ""), power_w=float(p.fields.get("PowerW") or 0.0),
+                **{k: v for k, v in p.fields.items() if k not in ("MPN", "mpn", "category", "PowerW")})
     for net in circ.nets:
         pins = [f"{pin.part.ref}.{pin.num}" for pin in net.pins]
         if pins and net.name and not net.name.startswith("N$") or len(pins) > 1:
