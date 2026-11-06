@@ -44,3 +44,5 @@ class Policy:
     spare_passive_min: int = 5
     spare_other_fraction: float = 0.04
     spare_other_min: int = 1
+    irdrop_grid_mm: float = 0.05             # kicad-irdrop raster (its own default); halve it to check convergence
+    irdrop_budget_pct: float = 2.0           # DC drop budget as a percentage of the rail voltage

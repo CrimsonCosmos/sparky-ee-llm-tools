@@ -9,6 +9,7 @@ from .. import kicad_backend
 from ..pcb.flow import BuildResult
 from . import bom as bomx
 from . import kicad
+from ..analysis import irdrop as irdropx
 from ..analysis import thermal as thermalx
 from ..recipes.policy import Policy
 from .report import kicad_drc_section, render_report
@@ -31,7 +32,9 @@ def write_package(res: BuildResult, outdir: str | Path, project: str, extra: dic
     if res.pcb_path.with_suffix(".kicad_pro").exists():
         (out / f"{project}.kicad_pro").write_bytes(res.pcb_path.with_suffix(".kicad_pro").read_bytes())
 
-    extra["Thermal (open-source FEM: pcb-analysis)"] = _thermal(res, out, files, policy or Policy())
+    pol = policy or Policy()
+    extra["DC IR drop (open-source: kicad-irdrop)"] = _irdrop(res, out, files, pol)
+    extra["Thermal (open-source FEM: pcb-analysis)"] = _thermal(res, out, files, pol)
 
     def w(name: str, text: str) -> None:
         p = out / name
@@ -77,3 +80,24 @@ def _thermal(res: BuildResult, out: Path, files: dict, pol: Policy) -> str:
     return (f"Ambient {r.ambient_c:g} C, natural convection h = {pol.convection_h_w_m2k:g} W/m2K on both faces, emissivity {pol.emissivity:g}; heat balance error "
             f"{r.balance_error_w:.1e} W. **Peak rise {r.peak_rise_k:.1f} K** above ambient (total {r.heat_in_w:.2f} W).\n\n{rows}\n\n"
             "Dissipation inputs are the recipes' own estimates (e.g. regulator conduction loss), not measurements; package thermal resistance and an enclosure are not modelled.")
+
+
+def _irdrop(res: BuildResult, out: Path, files: dict, pol: Policy) -> str:
+    """DC voltage drop on each power rail's real copper (pours, tracks, via barrels). Each load is solved with the rail's full current (worst case)."""
+    rails = irdropx.rails_from_circuit(res.board.circuit)
+    if not rails:
+        return "NOT RUN: no power rail with a declared current, a source part and an IC load was found in this circuit."
+    if not irdropx.available():
+        return "NOT RUN: kicad-irdrop is not installed in the KiCad Python (see docs/DEPENDENCIES.md)."
+    import json
+    data = irdropx.run_irdrop(res.pcb_path, rails, grid=pol.irdrop_grid_mm, budget_pct=pol.irdrop_budget_pct)
+    (out / "irdrop.json").write_text(json.dumps(data, indent=1))
+    files["irdrop.json"] = out / "irdrop.json"
+    L = [f"Raster {pol.irdrop_grid_mm:g} mm, budget {pol.irdrop_budget_pct:g} % of the rail voltage. Current assumed = the rail's declared current through each load.", "",
+         "| Rail | Source | Loads | A | Worst drop (mV) | R_eff (mOhm) | Over budget |", "|--|--|--|--|--|--|--|"]
+    for r in data["rails"]:
+        L.append(f"| {r['net']} | {r['source']} | {', '.join(r['loads'])} | {r['current_a']:g} | {r['worst_drop_mv']:.2f} | {r['r_eff_mohm']:.2f} | "
+                 f"{'**YES**' if r.get('over_budget') else 'no' if r.get('over_budget') is not None else 'n/a'} |")
+        if r.get("unreached"):
+            L.append(f"\n**Not connected to the source in copper: {', '.join(r['unreached'])}**")
+    return "\n".join(L)
