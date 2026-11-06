@@ -13,9 +13,8 @@ def render_report(res: BuildResult, project: str, extra: dict) -> str:
     L += ["## Summary", "",
           f"- Board: **{b.width:.1f} x {b.height:.1f} mm**, **{b.rules.layers} layers** ({', '.join(b.layers)}), fab profile `{b.rules.profile}`",
           f"- Components: {len(c.components)} ({sum(1 for r in rows)} BOM lines), nets: {len(c.nets)}",
-          f"- Copper: {len(b.tracks)} track segments, {len(b.vias)} vias, {len(b.zones)} zones; planes: {b.plane_nets or 'none'}; pours: {list(b.pour_nets) or 'none'}",
-          f"- Router: pitch {b.stats.get('grid_pitch')} mm, rip-ups {b.stats.get('ripups', 0)}, neck-downs {b.stats.get('neckdowns', 0)}, unrouted: {b.stats.get('unrouted') or 'none'}",
-          f"- DRC: **{'CLEAN' if drc.clean else 'ERRORS'}** ({drc.summary()}); disconnected nets: {drc.stats.get('nets_disconnected', '?')}",
+          f"- Planes: {b.plane_nets or 'none'}; pours: {list(b.pour_nets) or 'none'}; routed by Freerouting, checked and filled by KiCad {drc.version or ''}",
+          f"- KiCad DRC: **{'CLEAN' if drc.clean else 'ERRORS'}** ({drc.summary()})",
           f"- Estimated BOM cost (1 board): **${cost['total_usd']:.2f}** ({'estimated prices - refresh before ordering' if cost['estimated'] else 'quoted'}), unpriced lines: {cost['lines_unpriced']}",
           ""]
     th = an.get("thermal", {})
@@ -27,15 +26,11 @@ def render_report(res: BuildResult, project: str, extra: dict) -> str:
         L.append(f"- Decoupling {d['cap']} -> {d['ic_pin']}: {d['dist_mm']} mm (limit {d['limit_mm']}) {'OK' if d['ok'] else '**FAR**'}")
     for d in an.get("loops", []):
         L.append(f"- Hot loop `{d['loop']}`: hull area {d['area_mm2']} mm^2 ({', '.join(d['members'])})")
-    for d in an.get("crosstalk", []):
-        L.append(f"- Crosstalk risk: {d['victim']} runs {d['coupled_length_mm']} mm within 1 mm of a noisy net on {d['layer']}")
-    rp = an.get("reference_plane", {})
-    L.append(f"- Tracks over a solid reference plane/pour: {rp.get('over_reference_pct')}% of {rp.get('track_mm')} mm")
     L += ["", "## Warnings", ""]
-    allw = list(dict.fromkeys(list(b.warnings) + list(c.warnings) + [v.msg for v in drc.warnings][:20]))
+    allw = list(dict.fromkeys(list(b.warnings) + list(c.warnings) + [f"{v['type']}: {v['description']}" for v in drc.warnings][:20]))
     L += [f"- {w}" for w in allw] or ["- none"]
     if drc.errors:
-        L += ["", "## DRC errors", ""] + [f"- {v.kind}: {v.msg}" for v in drc.errors[:40]]
+        L += ["", "## DRC errors", ""] + [f"- {v['type']}: {v['description']}" for v in drc.errors[:40]]
     L += ["", "## Design calculations (from deterministic block builders)", ""]
     for k, v in c.calcs.items():
         L.append(f"- `{k}`: {v}")

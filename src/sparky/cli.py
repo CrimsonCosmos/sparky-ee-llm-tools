@@ -80,7 +80,7 @@ def _build(plan, a):
     from .purchase.plan import build_purchase_files
     from .system.build import build_system
     lib, _ = _lib(a)
-    sb = build_system(plan, lib, a.out, build_pcbs=not a.no_pcb, pcb_time_s=a.pcb_time, pitch=a.pitch)
+    sb = build_system(plan, lib, a.out, build_pcbs=not a.no_pcb, pcb_time_s=a.pcb_time)
     pf = build_purchase_files(sb, lib)
     c = sb.cost
     print("\n=== SYSTEM BUILD COMPLETE ===")
@@ -176,7 +176,7 @@ def main(argv=None):
         s.add_argument("request" if name == "build" else "plan")
         s.add_argument("--budget", type=float); s.add_argument("--out", default="forge_out/system")
         s.add_argument("--no-pcb", action="store_true", help="resolve/cost only; skip placement+routing"); s.add_argument("--pcb-time", type=float, default=900.0)
-        s.add_argument("--pitch", type=float, help="router grid pitch mm (default auto)"); s.set_defaults(fn=fn)
+        s.set_defaults(fn=fn)
     s = sub.add_parser("buy", help="agent cart-fill from a built system's purchase plan")
     s.add_argument("--out", default="forge_out/system"); s.add_argument("--supplier"); s.add_argument("--checkout", action="store_true"); s.add_argument("--confirm", default="")
     s.set_defaults(fn=cmd_buy)

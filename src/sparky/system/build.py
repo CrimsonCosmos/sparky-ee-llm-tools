@@ -133,7 +133,7 @@ def decide_buy_vs_build(lib: PartsLibrary, plan: SystemPlan, log=print) -> tuple
 
 
 def build_system(plan: SystemPlan, lib: PartsLibrary, outdir: str | Path, log=print, build_pcbs: bool = True,
-                 pcb_time_s: float = 900.0, pitch: float | None = None) -> SystemBuild:
+                 pcb_time_s: float = 1200.0) -> SystemBuild:
     out = Path(outdir)
     out.mkdir(parents=True, exist_ok=True)
     log = log or (lambda *_a, **_k: None)
@@ -160,7 +160,7 @@ def build_system(plan: SystemPlan, lib: PartsLibrary, outdir: str | Path, log=pr
         info = {"circuit": circ, "erc": erc}
         sb.boards[b.id] = info
         if build_pcbs and not errs:
-            spec = BoardSpec(layers=b.layers, copper_oz=b.copper_oz, width=b.max_width_mm, height=b.max_height_mm, pitch=pitch,
+            spec = BoardSpec(layers=b.layers, copper_oz=b.copper_oz, width=b.max_width_mm, height=b.max_height_mm,
                              time_budget_s=pcb_time_s)
             bres = build_board(circ, spec, log=log)
             info["result"] = bres

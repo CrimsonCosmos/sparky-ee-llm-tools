@@ -1,66 +1,36 @@
-"""Thin wrapper around KiCad 7.0 tooling.
-
-Facts about KiCad 7.0.x (verified on 7.0.11):
-  * `kicad-cli pcb` only has `export` (gerber(s), drill, pos, pdf, svg, dxf, step). There is NO `pcb drc`
-    (arrived in 8.0), and no IPC-2581 / ODB++ export (8.0+).  DRC therefore runs through the `pcbnew` python
-    module (`pcbnew.WriteDRCReport`) in a subprocess of the system python that ships with KiCad.
-  * DRC and plotting use the zone fill stored in the file; we refill every zone with ZONE_FILLER first so the
-    result reflects KiCad's own copper, not our pre-computed polygons.
-  * Design-rule limits come from `<board>.kicad_pro` next to the board (see `write_kicad_pro`).
-"""
+"""KiCad (>= 8) through `kicad-cli`: DRC, zone fill, Gerber/drill/position/IPC-2581 export. No pcbnew scripting, no version-7 branches."""
 from __future__ import annotations
 
 import json
 import re
 import shutil
 import subprocess
-import sys
 import tempfile
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from ..toolchain import kicad_cli, kicad_has, kicad_version as _version
+
 
 def find_kicad_cli() -> str | None:
-    from ..toolchain import kicad_cli
     return kicad_cli()
 
 
-def find_kicad_python() -> str | None:
-    """An interpreter that can `import pcbnew` (discovered per OS in toolchain.py)."""
-    from ..toolchain import kicad_python
-    return kicad_python()
-
-
 def available() -> bool:
-    return find_kicad_cli() is not None
+    return kicad_cli() is not None and kicad_has("pcb_drc")
 
 
 def kicad_version() -> str | None:
-    exe = find_kicad_cli()
-    if not exe:
-        return None
-    r = subprocess.run([exe, "version"], capture_output=True, text=True, timeout=60)
-    return r.stdout.strip() or None
+    v = _version()
+    return ".".join(map(str, v)) if v else None
 
 
 def capabilities() -> dict:
-    """What the installed KiCad can do (7.0 has no CLI DRC, IPC-2581 or ODB++)."""
-    exe = find_kicad_cli()
-    out = {"kicad_cli": exe, "version": kicad_version(), "pcbnew_python": find_kicad_python(),
-           "cli_drc": False, "ipc2581": False, "odb": False, "export": []}
-    if not exe:
-        return out
-    txt = subprocess.run([exe, "pcb", "export", "--help"], capture_output=True, text=True).stdout
-    out["export"] = re.findall(r"^\s{2,}(\w+)\s", txt, re.M)
-    out["ipc2581"] = "ipc2581" in out["export"]
-    out["odb"] = "odb" in out["export"]
-    top = subprocess.run([exe, "pcb", "--help"], capture_output=True, text=True).stdout
-    out["cli_drc"] = bool(re.search(r"^\s+drc\b", top, re.M))
-    return out
+    return {"kicad_cli": kicad_cli(), "version": kicad_version(), "cli_drc": kicad_has("pcb_drc"), "sch_erc": kicad_has("sch_erc"),
+            "ipc2581": kicad_has("ipc2581")}
 
 
-# ---------------------------------------------------------------------------------------------------- project
 def write_kicad_pro(path: str | Path, rules=None, name: str | None = None) -> Path:
     """Write a minimal .kicad_pro so KiCad's DRC uses OUR fab rules instead of its defaults.
 
@@ -96,53 +66,12 @@ def write_kicad_pro(path: str | Path, rules=None, name: str | None = None) -> Pa
     return path
 
 
-# ---------------------------------------------------------------------------------------------------- pcbnew scripts
-_DRC_SCRIPT = r'''
-import sys, pcbnew
-src, report, refill, saved = sys.argv[1], sys.argv[2], sys.argv[3] == "1", sys.argv[4]
-b = pcbnew.LoadBoard(src)
-if refill:
-    pcbnew.ZONE_FILLER(b).Fill(b.Zones())
-    if saved != "-":
-        pcbnew.SaveBoard(saved, b)
-ok = pcbnew.WriteDRCReport(b, report, pcbnew.EDA_UNITS_MILLIMETRES, True)
-sys.exit(0 if ok else 3)
-'''
-
-_FILL_SCRIPT = r'''
-import sys, pcbnew
-b = pcbnew.LoadBoard(sys.argv[1])
-pcbnew.ZONE_FILLER(b).Fill(b.Zones())
-pcbnew.SaveBoard(sys.argv[2], b)
-'''
-
-
-def _run_py(script: str, *args: str, timeout: int = 300) -> subprocess.CompletedProcess:
-    py = find_kicad_python()
-    if not py:
-        raise RuntimeError("no python interpreter with the pcbnew module found (install KiCad's python bindings)")
-    with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False) as f:
-        f.write(script)
-        sp = f.name
-    try:
-        return subprocess.run([py, sp, *args], capture_output=True, text=True, timeout=timeout)
-    finally:
-        Path(sp).unlink(missing_ok=True)
-
-
-def refill_zones(pcb_path: str | Path, out_path: str | Path) -> Path:
-    r = _run_py(_FILL_SCRIPT, str(pcb_path), str(out_path))
-    if r.returncode != 0 or not Path(out_path).exists():
-        raise RuntimeError(f"zone refill failed: {r.stderr.strip()[-500:]}")
-    return Path(out_path)
-
-
 # ---------------------------------------------------------------------------------------------------- DRC
 @dataclass
 class DrcReport:
     version: str | None = None
     violations: list[dict] = field(default_factory=list)     # {type, description, severity, rule, items:[{x,y,desc}]}
-    unconnected: list[dict] = field(default_factory=list)    # same shape; type == 'unconnected_items'
+    unconnected: list[dict] = field(default_factory=list)
     footprint_errors: list[dict] = field(default_factory=list)
     refilled: bool = True
     raw: str = ""
@@ -171,57 +100,21 @@ class DrcReport:
                 f"{len(self.footprint_errors)} footprint errors")
 
     def to_dict(self) -> dict:
-        return {"tool": "kicad pcbnew DRC", "version": self.version, "zones_refilled": self.refilled,
-                "clean": self.clean, "counts": {"errors": len(self.errors), "warnings": len(self.warnings),
-                                                "unconnected": len(self.unconnected),
-                                                "footprint_errors": len(self.footprint_errors)},
+        return {"tool": "kicad-cli pcb drc", "version": self.version, "zones_refilled": self.refilled, "clean": self.clean,
+                "counts": {"errors": len(self.errors), "warnings": len(self.warnings), "unconnected": len(self.unconnected),
+                           "footprint_errors": len(self.footprint_errors)},
                 "by_type": self.by_type, "violations": self.violations, "unconnected_items": self.unconnected,
                 "footprint_errors": self.footprint_errors}
 
 
-_ITEM = re.compile(r"@\(([-\d.]+) mm, ([-\d.]+) mm\):\s*(.*)")
-
-
-def parse_drc_text(text: str) -> DrcReport:
-    rep = DrcReport(raw=text)
-    section = "violations"
-    cur: dict | None = None
-    for line in text.splitlines():
-        if line.startswith("** Found") and "unconnected" in line:
-            section = "unconnected"
-            cur = None
-            continue
-        if line.startswith("** Found") and "Footprint errors" in line:
-            section = "footprint"
-            cur = None
-            continue
-        m = re.match(r"^\[(\w+)\]: (.*)", line)
-        if m:
-            cur = {"type": m.group(1), "description": m.group(2), "severity": "error", "rule": "", "items": []}
-            {"violations": rep.violations, "unconnected": rep.unconnected, "footprint": rep.footprint_errors}[section].append(cur)
-            continue
-        if cur is None:
-            continue
-        s = line.strip()
-        if "Severity:" in s:
-            rule, _, sev = s.rpartition("Severity:")
-            cur["severity"] = sev.strip().lower()
-            cur["rule"] = rule.strip(" ;")
-        else:
-            im = _ITEM.match(s)
-            if im:
-                cur["items"].append({"x": float(im.group(1)), "y": float(im.group(2)), "desc": im.group(3).strip()})
-    return rep
-
-
 def parse_drc_json(text: str) -> DrcReport:
-    """KiCad >= 8 `kicad-cli pcb drc --format json` report -> DrcReport (same shape the text parser produces)."""
+    """`kicad-cli pcb drc --format json` report -> DrcReport."""
     d = json.loads(text)
 
     def norm(v: dict) -> dict:
-        return {"type": v.get("type", ""), "description": v.get("description", ""), "severity": v.get("severity", "error"),
-                "rule": "", "items": [{"x": (it.get("pos") or {}).get("x", 0.0), "y": (it.get("pos") or {}).get("y", 0.0),
-                                       "desc": it.get("description", "")} for it in v.get("items", [])]}
+        return {"type": v.get("type", ""), "description": v.get("description", ""), "severity": v.get("severity", "error"), "rule": "",
+                "items": [{"x": (it.get("pos") or {}).get("x", 0.0), "y": (it.get("pos") or {}).get("y", 0.0), "desc": it.get("description", "")}
+                          for it in v.get("items", [])]}
     rep = DrcReport(raw=text, version=d.get("kicad_version"))
     rep.violations = [norm(v) for v in d.get("violations", [])]
     rep.unconnected = [norm(v) for v in d.get("unconnected_items", [])]
@@ -229,9 +122,18 @@ def parse_drc_json(text: str) -> DrcReport:
     return rep
 
 
-def _run_drc_native(pcb: Path, refill: bool, rules) -> DrcReport:
-    """KiCad >= 8: the CLI does everything (zone refill included)."""
-    exe = find_kicad_cli()
+def _need_cli() -> str:
+    exe = kicad_cli()
+    if not exe or not kicad_has("pcb_drc"):
+        raise RuntimeError("KiCad >= 8 (kicad-cli with `pcb drc`) is required; install KiCad 10 from kicad.org")
+    return exe
+
+
+def run_drc(pcb_path: str | Path, refill: bool = True, rules=None, report_path: str | Path | None = None,
+            save_to: str | Path | None = None) -> DrcReport:
+    """KiCad DRC. Zones are refilled first (`--refill-zones`); with `save_to` the refilled board is written there for plotting."""
+    exe = _need_cli()
+    pcb = Path(pcb_path).resolve()
     with tempfile.TemporaryDirectory(prefix="kidrc_") as td:
         work = Path(td) / pcb.name
         shutil.copy(pcb, work)
@@ -241,53 +143,21 @@ def _run_drc_native(pcb: Path, refill: bool, rules) -> DrcReport:
         cmd = [exe, "pcb", "drc", "--format", "json", "--severity-all", "--all-track-errors", "--output", str(out)]
         if refill:
             cmd.append("--refill-zones")
-        r = subprocess.run(cmd + [str(work)], capture_output=True, text=True, timeout=600)
+        if save_to:
+            cmd.append("--save-board")
+        r = subprocess.run(cmd + [str(work)], capture_output=True, text=True, timeout=900)
         if not out.exists():
             raise RuntimeError(f"kicad-cli pcb drc failed (rc={r.returncode}): {(r.stderr or r.stdout).strip()[-600:]}")
         rep = parse_drc_json(out.read_text(errors="replace"))
-    rep.refilled = refill
-    return rep
-
-
-def run_drc(pcb_path: str | Path, refill: bool = True, rules=None, report_path: str | Path | None = None) -> DrcReport:
-    from ..toolchain import kicad_has
-    if kicad_has("pcb_drc"):
-        rep = _run_drc_native(Path(pcb_path).resolve(), refill, rules)
-        if report_path:
-            Path(report_path).write_text(json.dumps(rep.to_dict(), indent=1))
-        return rep
-    return _run_drc_pcbnew(pcb_path, refill, rules, report_path)       # KiCad 7 fallback (to be deleted)
-
-
-def _run_drc_pcbnew(pcb_path: str | Path, refill: bool = True, rules=None, report_path: str | Path | None = None) -> DrcReport:
-    """Run KiCad's DRC on a .kicad_pcb. Zones are refilled in memory first (KiCad DRC needs a valid fill).
-
-    If `rules` is given and no <board>.kicad_pro exists, one is written beside the board (in a temp copy, the
-    original directory is never touched)."""
-    pcb = Path(pcb_path).resolve()
-    with tempfile.TemporaryDirectory(prefix="kidrc_") as td:
-        tdp = Path(td)
-        work = tdp / pcb.name
-        shutil.copy(pcb, work)
-        pro = pcb.with_suffix(".kicad_pro")
-        if pro.exists():
-            shutil.copy(pro, work.with_suffix(".kicad_pro"))
-        else:
-            write_kicad_pro(work.with_suffix(".kicad_pro"), rules)
-        out = tdp / "drc.rpt"
-        r = _run_py(_DRC_SCRIPT, str(work), str(out), "1" if refill else "0", "-")
-        if r.returncode != 0 or not out.exists():
-            raise RuntimeError(f"KiCad DRC failed (rc={r.returncode}): {(r.stderr or r.stdout).strip()[-800:]}")
-        text = out.read_text(errors="replace")
-    rep = parse_drc_text(text)
-    rep.version = kicad_version()
+        if save_to:
+            shutil.copy(work, save_to)
     rep.refilled = refill
     if report_path:
         Path(report_path).write_text(json.dumps(rep.to_dict(), indent=1))
     return rep
 
 
-# ---------------------------------------------------------------------------------------------------- fab export
+# ---------------------------------------------------------------------------------------------------- manufacturing export
 def gerber_layers(n_copper: int) -> list[str]:
     """Untranslated KiCad layer names for a fab set. Works for 2/4/6/... layer boards."""
     cu = ["F.Cu"] + [f"In{i}.Cu" for i in range(1, n_copper - 1)] + ["B.Cu"]
@@ -300,21 +170,15 @@ def _copper_count(pcb: Path) -> int:
     return max(2, len(names))
 
 
-def _cli(*args: str, timeout: int = 300) -> subprocess.CompletedProcess:
-    exe = find_kicad_cli()
-    if not exe:
-        raise RuntimeError("kicad-cli not found on PATH")
-    r = subprocess.run([exe, *args], capture_output=True, text=True, timeout=timeout)
+def _cli(*args: str, timeout: int = 600) -> subprocess.CompletedProcess:
+    r = subprocess.run([_need_cli(), *args], capture_output=True, text=True, timeout=timeout)
     if r.returncode != 0:
         raise RuntimeError(f"kicad-cli {' '.join(args[:3])} failed ({r.returncode}): {(r.stderr or r.stdout).strip()[-600:]}")
     return r
 
 
-def export_fab(pcb_path: str | Path, outdir: str | Path, project: str | None = None, refill: bool = True,
-               make_zip: bool = True) -> dict[str, Path]:
-    """Gerbers (+ gerber job file via KiCad), Excellon drills (PTH/NPTH separate + map), position CSV, and a zip.
-
-    Returns {key: path}. IPC-2581 / ODB++ are unavailable in KiCad 7.0 (see `capabilities()`)."""
+def export_fab(pcb_path: str | Path, outdir: str | Path, project: str | None = None, make_zip: bool = True) -> dict[str, Path]:
+    """Gerbers + job file, Excellon drills (PTH/NPTH + maps), position CSV, IPC-2581, board SVG - all produced by kicad-cli from a zone-refilled copy."""
     pcb = Path(pcb_path).resolve()
     out = Path(outdir)
     gdir = out / "gerber"
@@ -323,18 +187,23 @@ def export_fab(pcb_path: str | Path, outdir: str | Path, project: str | None = N
     files: dict[str, Path] = {}
     with tempfile.TemporaryDirectory(prefix="kifab_") as td:
         src = Path(td) / f"{project}.kicad_pcb"
-        if refill:
-            refill_zones(pcb, src)
-        else:
-            shutil.copy(pcb, src)
+        run_drc(pcb, refill=True, save_to=src)                      # refilled copy (zones filled by KiCad itself)
         n = _copper_count(pcb)
-        _cli("pcb", "export", "gerbers", "-o", str(gdir) + "/", "-l", ",".join(gerber_layers(n)),
-             "--subtract-soldermask", str(src))
-        _cli("pcb", "export", "drill", "-o", str(gdir) + "/", "--format", "excellon", "--excellon-separate-th",
-             "--excellon-units", "mm", "--excellon-zeros-format", "decimal", "--generate-map", "--map-format", "gerberx2",
-             str(src))
+        _cli("pcb", "export", "gerbers", "-o", str(gdir) + "/", "-l", ",".join(gerber_layers(n)), "--subtract-soldermask", str(src))
+        _cli("pcb", "export", "drill", "-o", str(gdir) + "/", "--format", "excellon", "--excellon-separate-th", "--excellon-units", "mm",
+             "--excellon-zeros-format", "decimal", "--generate-map", "--map-format", "gerberx2", str(src))
         pos = out / "kicad_positions.csv"
         _cli("pcb", "export", "pos", "-o", str(pos), "--format", "csv", "--units", "mm", "--side", "both", str(src))
+        if kicad_has("ipc2581"):
+            ipc = out / f"{project}.ipc2581.xml"
+            _cli("pcb", "export", "ipc2581", "-o", str(ipc), str(src))
+            files["ipc2581"] = ipc
+        svg = out / "board.svg"
+        _cli("pcb", "export", "svg", "-o", str(svg), "-l", ",".join(gerber_layers(n)[:1] + ["Edge.Cuts"]), "--page-size-mode", "2", "--exclude-drawing-sheet", str(src))
+        if svg.exists():
+            files["svg"] = svg
+        shutil.copy(src, out / f"{project}.kicad_pcb")              # the routed + filled board is the deliverable
+        files["kicad_pcb"] = out / f"{project}.kicad_pcb"
     for p in sorted(gdir.iterdir()):
         files[f"gerber:{p.name}"] = p
     if pos.exists():

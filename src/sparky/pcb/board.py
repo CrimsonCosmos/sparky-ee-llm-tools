@@ -5,7 +5,7 @@ import math
 from dataclasses import dataclass, field
 from typing import Iterable
 
-from shapely.geometry import LineString, Point, Polygon, box
+from shapely.geometry import Point, Polygon, box
 from shapely.ops import unary_union
 
 from ..model import Circuit, Component, oriented_pad, rot_point
@@ -51,41 +51,6 @@ class PlacedPad:
         return box(self.x - self.w / 2 - grow, self.y - self.h / 2 - grow, self.x + self.w / 2 + grow, self.y + self.h / 2 + grow)
 
 
-@dataclass
-class Track:
-    layer: str
-    net: str
-    x1: float
-    y1: float
-    x2: float
-    y2: float
-    width: float
-
-    def geom(self, grow: float = 0.0):
-        return LineString([(self.x1, self.y1), (self.x2, self.y2)]).buffer(self.width / 2 + grow, 8)
-
-
-@dataclass
-class Via:
-    x: float
-    y: float
-    net: str
-    dia: float
-    drill: float
-
-    def geom(self, grow: float = 0.0):
-        return Point(self.x, self.y).buffer(self.dia / 2 + grow, 16)
-
-
-@dataclass
-class Zone:
-    layer: str
-    net: str
-    kind: str = "pour"             # pour | plane
-    priority: int = 0
-    polygons: list = field(default_factory=list)      # filled result (shapely geometries)
-
-
 class Board:
     def __init__(self, circuit: Circuit, rules: Rules, width: float, height: float):
         self.circuit = circuit
@@ -94,13 +59,9 @@ class Board:
         self.height = height
         self.outline: Polygon = box(0, 0, width, height)
         self.place: dict[str, Placement] = {}
-        self.tracks: list[Track] = []
-        self.vias: list[Via] = []
-        self.zones: list[Zone] = []
         self.layers = layer_names(rules.layers)
         self.plane_nets: dict[str, str] = {}          # layer -> net (solid plane layers)
         self.pour_nets: dict[str, list[str]] = {}     # net -> layers carrying a copper pour (layers stay routable)
-        self.power_pours: list[Zone] = []             # high-current polygon pours (pre-routed copper)
         self.keepouts: list[tuple[float, float, float, float]] = []
         self.notes: list[str] = []
         self.warnings: list[str] = []
@@ -150,8 +111,6 @@ class Board:
         for p in self.pads():
             if p.drill > 0:
                 res.append((p.x, p.y, p.drill, p.plated, "pad"))
-        for v in self.vias:
-            res.append((v.x, v.y, v.drill, True, "via"))
         return res
 
     def bbox_used(self) -> tuple[float, float, float, float]:

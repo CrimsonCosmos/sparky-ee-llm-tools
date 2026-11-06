@@ -117,51 +117,7 @@ def loop_report(board: Board) -> list[dict]:
     return out
 
 
-def crosstalk_report(board: Board, near: float = 1.0) -> list[dict]:
-    noisy = {n for n, a in board.circuit.net_attrs.items() if a.noisy}
-    sens = {n for n, a in board.circuit.net_attrs.items() if a.sensitive}
-    out = []
-    for layer in board.layers:
-        nl = [LineString([(t.x1, t.y1), (t.x2, t.y2)]).buffer(t.width / 2) for t in board.tracks if t.layer == layer and t.net in noisy]
-        if not nl:
-            continue
-        zone = unary_union(nl).buffer(near)
-        for n in sens:
-            ln = [LineString([(t.x1, t.y1), (t.x2, t.y2)]) for t in board.tracks if t.layer == layer and t.net == n]
-            if not ln:
-                continue
-            length = unary_union(ln).intersection(zone).length
-            if length > 0.5:
-                out.append({"layer": layer, "victim": n, "coupled_length_mm": round(length, 1)})
-    return out
-
-
-def reference_plane_report(board: Board) -> dict:
-    """Fraction of signal-track length that runs over a solid adjacent reference plane/pour."""
-    total = covered = 0.0
-    zones = {}
-    for z in board.zones:
-        zones.setdefault(z.layer, []).extend(z.polygons)
-    for t in board.tracks:
-        i = board.layers.index(t.layer)
-        adj = []
-        if i > 0:
-            adj.append(board.layers[i - 1])
-        if i < len(board.layers) - 1:
-            adj.append(board.layers[i + 1])
-        ref = [l for l in adj if l in zones and l in board.plane_nets]
-        if len(board.layers) == 2:
-            ref = [l for l in board.layers if l != t.layer and l in zones]
-        L = math.hypot(t.x2 - t.x1, t.y2 - t.y1)
-        total += L
-        if ref:
-            geom = unary_union(zones[ref[0]])
-            covered += LineString([(t.x1, t.y1), (t.x2, t.y2)]).intersection(geom).length
-    return {"track_mm": round(total, 1), "over_reference_pct": round(100 * covered / total, 1) if total else 100.0}
-
-
 def analyze(board: Board) -> dict:
     th = thermal_map(board)
     th.pop("field", None)
-    return {"thermal": th, "decoupling": decoupling_report(board), "loops": loop_report(board),
-            "crosstalk": crosstalk_report(board), "reference_plane": reference_plane_report(board)}
+    return {"thermal": th, "decoupling": decoupling_report(board), "loops": loop_report(board)}

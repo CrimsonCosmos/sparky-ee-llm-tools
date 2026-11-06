@@ -1,18 +1,17 @@
-"""End-to-end deterministic board build with automatic escalation."""
+"""Board build: our placer -> KiCad board file -> Freerouting -> KiCad DRC. Routing, copper fill and checking are KiCad/Freerouting's job."""
 from __future__ import annotations
 
+import tempfile
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from ..model import Circuit
 from . import analysis
 from .board import Board
-from .drc import DRCReport, run_drc
 from .placement import PlaceOptions, place
-from .planes import add_stitching, assign_planes, fill_zones
-from .pours import plan_power_pours
-from .router import RouteOptions, route
-from .rules import Rules, rules_for
+from .planes import assign_planes
+from .rules import rules_for
 
 
 @dataclass
@@ -22,22 +21,23 @@ class BoardSpec:
     height: float | None = None
     profile: str | None = None
     seed: int = 1
-    pitch: float | None = None
     copper_oz: float = 1.0
     max_layers: int = 6
     utilizations: tuple = (0.42, 0.32, 0.24)
-    time_budget_s: float = 900.0
+    time_budget_s: float = 1200.0
+    passes: int = 20                       # Freerouting optimisation passes
     rule_overrides: dict = field(default_factory=dict)
-    router: str = "auto"                   # builtin | freerouting | auto (freerouting if java + jar + KiCad available)
+    workdir: str | None = None
 
 
 @dataclass
 class BuildResult:
-    board: Board
-    drc: DRCReport
+    board: Board                           # placement + intent (planes/pours); copper lives in `pcb_path`
+    drc: object                            # kicad_backend.DrcReport
     analysis: dict
     log: list[str]
     success: bool
+    pcb_path: Path | None = None           # routed, zone-filled KiCad board
 
 
 def suggest_layers(circuit: Circuit) -> int:
@@ -45,30 +45,17 @@ def suggest_layers(circuit: Circuit) -> int:
     hot = sum(1 for c in circuit.components.values() if c.power_w >= 0.5)
     high_i = any(a.current_a >= 5 for a in circuit.net_attrs.values())
     fine = any(p.part.category.startswith("ic.mcu") for p in circuit.components.values())
-    if hot or high_i or n > 45 or fine:
-        return 4
-    return 2
-
-
-def _route_freerouting(board: Board, spec: BoardSpec, say) -> bool:
-    """True if Freerouting routed the board (selected by spec.router); False = use the builtin router."""
-    if spec.router == "builtin":
-        return False
-    from . import freerouting as fr
-    if spec.router == "auto" and not fr.available():
-        return False
-    try:
-        fr.route_with_freerouting(board, fr.FreeroutingOptions(timeout_s=max(60.0, spec.time_budget_s * 0.5)))
-        return True
-    except fr.FreeroutingError as e:
-        say(f"freerouting failed ({e}); falling back to the builtin router")
-        return False
+    return 4 if (hot or high_i or n > 45 or fine) else 2
 
 
 def build_board(circuit: Circuit, spec: BoardSpec | None = None, log=print) -> BuildResult:
+    from .. import kicad_backend, routing
+    from ..export.kicad import to_kicad_pcb
     spec = spec or BoardSpec()
     t_start = time.time()
-    try:                                    # adopt official footprint geometry where KiCad's library has it (cached, one fetch each)
+    work = Path(spec.workdir or tempfile.mkdtemp(prefix=f"sparky_{circuit.name}_"))
+    work.mkdir(parents=True, exist_ok=True)
+    try:                                    # official KiCad footprint geometry where the library has it
         from ..footprint_sync import sync_circuit
         sync_circuit(circuit)
     except Exception:
@@ -79,43 +66,45 @@ def build_board(circuit: Circuit, spec: BoardSpec | None = None, log=print) -> B
         msgs.append(s)
         if log:
             log(f"[{circuit.name}] {s}")
-    layer_options = [spec.layers] if spec.layers else [l for l in (suggest_layers(circuit), 4, 6) if l <= spec.max_layers]
-    layer_options = list(dict.fromkeys(layer_options))
+    layer_options = [spec.layers] if spec.layers else list(dict.fromkeys(l for l in (suggest_layers(circuit), 4, 6) if l <= spec.max_layers))
+    utils = spec.utilizations if not (spec.width and spec.height) else (1.0,)
     best: BuildResult | None = None
-    utils = (spec.utilizations if not (spec.width and spec.height) else (1.0,))
+    best_score = None
     for layers in layer_options:
-      for util, pwr_plane in [(u, v) for u in utils for v in ((True, False) if layers == 4 else (True,))]:
-        if True:
+        for util in utils:
             if time.time() - t_start > spec.time_budget_s:
                 say("time budget exhausted")
                 break
-            over = dict(spec.rule_overrides)
-            over["copper_oz_outer"] = spec.copper_oz
+            over = dict(spec.rule_overrides, copper_oz_outer=spec.copper_oz)
             rules = rules_for(layers, spec.profile, **over)
-            opt = PlaceOptions(width=spec.width, height=spec.height, utilization=util, seed=spec.seed,
-                               fixed_outline=bool(spec.width and spec.height))
-            board = place(circuit, rules, opt)
-            assign_planes(board, power_plane=pwr_plane)
-            pours = plan_power_pours(board)
-            say(f"{layers}L util={util}{'' if pwr_plane else ' (2nd inner layer = signal)'}: board {board.width}x{board.height} mm; "
-                f"pours {pours or 'none'}; routing")
-            if not _route_freerouting(board, spec, say):
-                route(board, RouteOptions(pitch=spec.pitch))
-            fill_zones(board)
-            if add_stitching(board):
-                fill_zones(board)
-            drc = run_drc(board)
-            unrouted = board.stats.get("unrouted", [])
-            ok = drc.clean and not unrouted
-            say(f"   -> unrouted={len(unrouted)} drc[{drc.summary()}] {'OK' if ok else 'retry'}")
-            res = BuildResult(board, drc, {}, msgs, ok)
-            score = (len(unrouted), len(drc.errors), board.width * board.height)
+            board = place(circuit, rules, PlaceOptions(width=spec.width, height=spec.height, utilization=util, seed=spec.seed,
+                                                       fixed_outline=bool(spec.width and spec.height)))
+            assign_planes(board)
+            tag = f"{layers}L_u{util}"
+            raw, routed = work / f"{tag}.kicad_pcb", work / f"{tag}_routed.kicad_pcb"
+            raw.write_text(to_kicad_pcb(board, circuit.name))
+            kicad_backend.write_kicad_pro(raw.with_suffix(".kicad_pro"), rules)
+            say(f"{layers}L util={util}: board {board.width}x{board.height} mm; routing with Freerouting")
+            try:
+                rr = routing.route_pcb(raw, routed, passes=spec.passes, timeout=int(max(120, spec.time_budget_s * 0.6)))
+            except routing.RoutingError as e:
+                say(f"   routing failed: {e}")
+                continue
+            routed.with_suffix(".kicad_pro").write_bytes(raw.with_suffix(".kicad_pro").read_bytes())
+            filled = work / f"{tag}_final.kicad_pcb"
+            drc = kicad_backend.run_drc(routed, refill=True, rules=rules, save_to=filled)
+            filled.with_suffix(".kicad_pro").write_bytes(raw.with_suffix(".kicad_pro").read_bytes())
+            ok = not drc.errors and not drc.unconnected
+            say(f"   -> kicad drc[{drc.summary()}] ({rr.seconds:.0f}s routing) {'OK' if ok else 'retry'}")
+            res = BuildResult(board, drc, {}, msgs, ok, filled)
+            score = (len(drc.unconnected), len(drc.errors), board.width * board.height)
             if best is None or score < best_score:
                 best, best_score = res, score
             if ok:
                 best.analysis = analysis.analyze(best.board)
                 return best
-    assert best is not None
+    if best is None:
+        raise RuntimeError("no board could be built: " + "; ".join(msgs[-3:]))
     best.analysis = analysis.analyze(best.board)
     say("WARNING: no attempt produced a clean, fully routed board; returning the best attempt")
     return best

@@ -4,25 +4,25 @@ WARNING: fp-lib-table file was not found. Component footprints are not available
 WARNING: fp-lib-table file was not found. Component footprints are not available.
 WARNING: fp-lib-table file was not found. Component footprints are not available.
 WARNING: Missing tag on TPS563201 instantiated at /home/user/sparky-ee-llm-tools/src/sparky/circuits/buck.py:35.
-WARNING: Random tag i4yEd1u1hL generated for TPS563201.
+WARNING: Random tag AQCkfUMvbt generated for TPS563201.
 WARNING: Missing tag on R instantiated at /home/user/sparky-ee-llm-tools/src/sparky/circuits/passives.py:18.
-WARNING: Random tag mSkQ4_qakA generated for R.
+WARNING: Random tag Bxp2lWJ8XO generated for R.
 WARNING: Missing tag on R instantiated at /home/user/sparky-ee-llm-tools/src/sparky/circuits/passives.py:18.
-WARNING: Random tag j3Nw4N68kJ generated for R.
+WARNING: Random tag GcGt42zpqF generated for R.
 WARNING: Missing tag on L instantiated at /home/user/sparky-ee-llm-tools/src/sparky/circuits/passives.py:18.
-WARNING: Random tag rlinAgtthR generated for L.
+WARNING: Random tag 6RwKIE4Sf_ generated for L.
 WARNING: Missing tag on C instantiated at /home/user/sparky-ee-llm-tools/src/sparky/circuits/passives.py:18.
-WARNING: Random tag ilhuWuwN1q generated for C.
+WARNING: Random tag JlAwb1Tc9O generated for C.
 WARNING: Missing tag on C instantiated at /home/user/sparky-ee-llm-tools/src/sparky/circuits/passives.py:18.
-WARNING: Random tag UDot9Hi6KC generated for C.
+WARNING: Random tag VmVJxbvYhQ generated for C.
 WARNING: Missing tag on C instantiated at /home/user/sparky-ee-llm-tools/src/sparky/circuits/passives.py:18.
-WARNING: Random tag MnMwa_xCvm generated for C.
+WARNING: Random tag rDf1ut7CWY generated for C.
 WARNING: Missing tag on C instantiated at /home/user/sparky-ee-llm-tools/src/sparky/circuits/passives.py:18.
-WARNING: Random tag zylMdQSnXB generated for C.
+WARNING: Random tag QquAjS5GwK generated for C.
 WARNING: Missing tag on C instantiated at /home/user/sparky-ee-llm-tools/src/sparky/circuits/passives.py:18.
-WARNING: Random tag k5Ap8JdXDi generated for C.
+WARNING: Random tag Ky4UbN8re3 generated for C.
 WARNING: Missing tag on C instantiated at /home/user/sparky-ee-llm-tools/src/sparky/circuits/passives.py:18.
-WARNING: Random tag yamndekibi generated for C.
+WARNING: Random tag 7RXGvC_Api generated for C.
 WARNING: Missing tag on  instantiated at /home/user/sparky-ee-llm-tools/tests/test_circuit_buck.py:14.
 INFO: 26 warnings found while generating netlist.
 INFO: 0 errors found while generating netlist.
