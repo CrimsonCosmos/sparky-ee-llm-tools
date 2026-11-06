@@ -20,7 +20,7 @@
 ## External programs (invoked, not bundled)
 | Program | Version | Notes |
 |---|---|---|
-| KiCad | **10.0.8** (installed here: 7.0.11) | `kicad-cli`; Windows/macOS installers, Linux PPA/Flatpak |
+| KiCad | **10.0.8** (installed here, from the official PPA) | `kicad-cli`; Windows/macOS installers, Linux PPA/Flatpak |
 | Freerouting | 2.1.0 verified (newest unverified) | needs Java 21+; jar fetched with SHA-256 check |
 | ngspice | upstream latest (installed here: 42) | batch mode |
 | Elmer FEM | unverified | thermal, optional |

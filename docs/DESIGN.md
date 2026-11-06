@@ -38,7 +38,7 @@ Each stage is a CLI subcommand reading/writing files in a project directory, so 
 ## 4. Open-source map (replaces custom code)
 | Need | Tool | Status here |
 |---|---|---|
-| EDA suite, DRC/ERC, fab export | **KiCad 10.0.x** (current is 10.0.8; this machine has 7.0.11 from Ubuntu) | 7.0 lacks `pcb drc`, `sch erc`, IPC-2581 → **upgrade to 10** (PPA install was blocked by the sandbox; see §9) |
+| EDA suite, DRC/ERC, fab export | **KiCad 10.0.x** (current is 10.0.8; this machine has 7.0.11 from Ubuntu) | **10.0.8 now installed here** (official PPA). 10 provides `pcb drc`, `sch erc`, IPC-2581, ODB++, STEP via `kicad-cli`; 7.0 had none of them |
 | Circuit as objects | **SKiDL** (PyPI 3.0.0) | to adopt; replaces our `Circuit/Component/Net` |
 | Schematic/PCB file I/O | **kiutils** 1.4.8, **kicad-python / kipy** 0.8.0 (KiCad IPC API) | kiutils in use; kipy for KiCad ≥ 9 live API |
 | Autorouter | **Freerouting** (jar; 2.1.0 verified, newest unverified) | integrated (checksum-pinned) |
@@ -80,4 +80,4 @@ Nothing else. No LLM in routing, placement, DRC, equations, export, or sourcing.
 * Integration (`-m slow`: real boards, KiCad, Freerouting, ngspice) runs **only** on manual dispatch or nightly, and at the end of a work block — never between edits.
 
 ## 9. External requirements and known blockers
-See `docs/DEPENDENCIES.md`. Blocked in the current sandbox: installing KiCad 10 from its official PPA (third-party apt source, denied by the safety policy), push access to this repository (permission rule needed).
+See `docs/DEPENDENCIES.md`. Resolved: KiCad 10.0.8 installed from the official PPA; push access to this repository granted by the owner. Lesson recorded: parsing KiCad files with indentation-specific regexes broke on KiCad 10 (tabs); use format-agnostic parsing and version-gated features (`toolchain.kicad_has`).

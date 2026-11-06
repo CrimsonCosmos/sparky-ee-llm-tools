@@ -99,3 +99,15 @@ def test_erc_when_available(lib, tmp_path):
     write_kicad_sch(mcu_circuit(lib), sch)
     r = subprocess.run([CLI, "sch", "erc", "--format", "json", "-o", str(tmp_path / "erc.json"), str(sch)], capture_output=True, text=True)
     assert (tmp_path / "erc.json").exists(), r.stderr
+
+
+def test_symbol_scan_handles_tab_and_space_indentation(tmp_path):
+    """Regression: KiCad 10 writes tabs, KiCad 7 spaces; the scanner must read both (it returned 0 symbols on KiCad 10)."""
+    from studioforge.kicad_symbols import _scan_lib
+    tab = '(kicad_symbol_lib\n\t(symbol "R"\n\t\t(property "ki_keywords" "R res"\n\t\t\t(at 0 0 0))\n\t\t(property "ki_fp_filters" "R_*"\n\t\t\t(at 0 0 0))\n\t\t(symbol "R_1_1"\n\t\t\t(pin passive line (at 0 0 0) (number "1"))\n\t\t\t(pin passive line (at 0 1 0) (number "2"))))\n)\n'
+    spc = tab.replace("\t\t\t", "      ").replace("\t\t", "    ").replace("\t", "  ")
+    for text in (tab, spc):
+        f = tmp_path / "Device.kicad_sym"
+        f.write_text(text)
+        rows = _scan_lib(f)
+        assert [r.name for r in rows] == ["R"] and rows[0].fp_filters == ["R_*"] and rows[0].pins == 2

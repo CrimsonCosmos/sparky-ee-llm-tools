@@ -44,8 +44,11 @@ class SymInfo:
         return f"{self.lib}:{self.name}"
 
 
-_SYM = re.compile(r'^  \(symbol "([^"]+)"( \(extends "([^"]+)"\))?', re.M)
-_PROP = re.compile(r'^    \(property "(ki_keywords|ki_description|ki_fp_filters|Footprint)" "((?:[^"\\]|\\.)*)"', re.M)
+# KiCad <= 9 indents with spaces, KiCad 10 with tabs; match either so format drift cannot silently empty the index.
+_I1 = r"(?:\t| {2})"            # one indent level  (top-level symbol)
+_I2 = r"(?:\t\t| {4})"          # two indent levels (symbol property)
+_SYM = re.compile(rf'^{_I1}\(symbol "([^"]+)"(?:\s*\(extends "([^"]+)"\))?', re.M)
+_PROP = re.compile(rf'^{_I2}\(property "(ki_keywords|ki_description|ki_fp_filters|Footprint)" "((?:[^"\\]|\\.)*)"', re.M)
 _NUM = re.compile(r'\(number "([^"]+)"')
 
 
@@ -55,7 +58,7 @@ def _scan_lib(path: Path) -> list[SymInfo]:
     out = []
     for i, m in enumerate(ms):
         block = t[m.start(): ms[i + 1].start() if i + 1 < len(ms) else len(t)]
-        info = SymInfo(path.stem, m.group(1), m.group(3) or "")
+        info = SymInfo(path.stem, m.group(1), m.group(2) or "")
         for k, v in _PROP.findall(block):
             if k == "ki_keywords":
                 info.keywords = v
