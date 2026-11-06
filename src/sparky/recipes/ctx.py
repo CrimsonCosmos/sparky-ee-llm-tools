@@ -61,6 +61,31 @@ class Ctx:
         p = self.s.Part("Device", "C", value=_val(farads), footprint=chip_footprint("C", ch.package))
         return self._tag(p, ch)
 
+    def capacitors(self, total_f: float, working_v: float) -> list:
+        """Standard-value MLCCs in parallel giving >= total_f of USABLE capacitance at working_v: the fewest identical parts (<= policy.max_parallel_caps)
+        whose nominal value is in [need/n, window*need/n], rated >= working_v / derating."""
+        pol = self.policy
+        nominal = total_f / pol.mlcc_effective_fraction
+        rated = working_v / pol.cap_voltage_derating
+        for n in range(1, pol.max_parallel_caps + 1):
+            low = nominal / n
+            ch = self.catalog.pick(needs.mlcc_between(low, low * pol.cap_value_window, rated, pol.chip_capacitor), qty=self.qty * n, limit=1)
+            if ch:
+                farads = _parse_f(ch[0].attributes["Capacitance"])
+                return [self._tag(self.s.Part("Device", "C", value=_val(farads), footprint=chip_footprint("C", ch[0].package)), ch[0]) for _ in range(n)]
+        raise NoPart(f"catalogue has no MLCC combination for {total_f:g} F usable at {working_v:g} V (nominal {nominal:g} F, rated >= {rated:g} V, <= {pol.max_parallel_caps} parts)")
+
+    def inductor(self, henries: float, isat_min: float, footprint: str | None = None):
+        """Inductor with L >= design (within the picker's window) and Isat >= isat_min. Chip-code packages map to KiCad footprints by name; other
+        packages need an explicit KiCad `footprint` (the designer's choice) - we do not guess a land pattern."""
+        need = needs.inductor(henries, isat_min)
+        if footprint is None:
+            need.package = self.policy.chip_inductor
+        ch = self._first(need, f"inductor {henries:g} H, Isat >= {isat_min:g} A" + ("" if footprint else " in chip packages (else pass footprint=)"))
+        fp = footprint or chip_footprint("L", ch.package)
+        p = self.s.Part("Device", "L", value=_val(henries), footprint=fp)
+        return self._tag(p, ch)
+
     # ---- active parts: KiCad's reviewed library is the source of symbol + footprint ---------------------
     def ic(self, symbol: str, need: Need | None = None):
         """`symbol` = KiCad 'Library:Name' chosen by the designer (search: `sparky symbols <name>`). Pins and footprint come from KiCad's library.
@@ -105,3 +130,8 @@ def _val(x: float) -> str:
     from ..units import fmt_si
     return fmt_si(x)
 
+
+
+def _parse_f(text: str) -> float:
+    from ..picker.catalog import quantity
+    return float(quantity(text).to("farad").magnitude)

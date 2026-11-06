@@ -56,3 +56,9 @@ def buck_regulator(vin_min: float, vin_max: float, iout_min: float, adjustable: 
     if adjustable:
         n.equals["Output Type"] = "Adjustable"
     return n
+
+
+def mlcc_between(low_f: float, high_f: float, volts_min: float, package: tuple[str, ...] = _SMD_PKG) -> Need:
+    """MLCC whose nominal capacitance lies in [low_f, high_f] and whose rating is at least volts_min."""
+    return Need("Multilayer Ceramic Capacitors MLCC - SMD/SMT", package=package, minimum={"Capacitance": f"{fmt_si(low_f)}F", "Voltage Rating": f"{volts_min}V"},
+                maximum={"Capacitance": f"{fmt_si(high_f)}F"})
