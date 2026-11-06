@@ -1,0 +1,29 @@
+WARNING: fp-lib-table file was not found. Component footprints are not available.
+WARNING: fp-lib-table file was not found. Component footprints are not available.
+WARNING: fp-lib-table file was not found. Component footprints are not available.
+WARNING: fp-lib-table file was not found. Component footprints are not available.
+WARNING: fp-lib-table file was not found. Component footprints are not available.
+WARNING: Missing tag on TPS563201 instantiated at /home/user/sparky-ee-llm-tools/src/sparky/circuits/buck.py:35.
+WARNING: Random tag vRwuKAcp57 generated for TPS563201.
+WARNING: Missing tag on R instantiated at /home/user/sparky-ee-llm-tools/src/sparky/circuits/passives.py:18.
+WARNING: Random tag Yd2Ez9D9Ap generated for R.
+WARNING: Missing tag on R instantiated at /home/user/sparky-ee-llm-tools/src/sparky/circuits/passives.py:18.
+WARNING: Random tag IcG_rWj9nq generated for R.
+WARNING: Missing tag on L instantiated at /home/user/sparky-ee-llm-tools/src/sparky/circuits/passives.py:18.
+WARNING: Random tag OLlt_uw8sk generated for L.
+WARNING: Missing tag on C instantiated at /home/user/sparky-ee-llm-tools/src/sparky/circuits/passives.py:18.
+WARNING: Random tag nqtFmRy0og generated for C.
+WARNING: Missing tag on C instantiated at /home/user/sparky-ee-llm-tools/src/sparky/circuits/passives.py:18.
+WARNING: Random tag uW4x9SNRvG generated for C.
+WARNING: Missing tag on C instantiated at /home/user/sparky-ee-llm-tools/src/sparky/circuits/passives.py:18.
+WARNING: Random tag _hZZ0VZfos generated for C.
+WARNING: Missing tag on C instantiated at /home/user/sparky-ee-llm-tools/src/sparky/circuits/passives.py:18.
+WARNING: Random tag e87SsnhEVP generated for C.
+WARNING: Missing tag on C instantiated at /home/user/sparky-ee-llm-tools/src/sparky/circuits/passives.py:18.
+WARNING: Random tag o9obOShrSg generated for C.
+WARNING: Missing tag on C instantiated at /home/user/sparky-ee-llm-tools/src/sparky/circuits/passives.py:18.
+WARNING: Random tag lrLpVXjJo3 generated for C.
+WARNING: Missing tag on  instantiated at /home/user/sparky-ee-llm-tools/tests/test_circuit_buck.py:14.
+INFO: 26 warnings found while generating netlist.
+INFO: 0 errors found while generating netlist.
+

@@ -59,15 +59,21 @@ Not open-source equivalents of Cadence/Synopsys at full parity: that gap is real
 2. **Part research on a picker miss** (stage C fallback): returns schema-validated JSON *with evidence quotes*; deterministic code verifies the quotes occur in the datasheet.
 Nothing else. No LLM in routing, placement, DRC, equations, export, or sourcing. Prompts and schemas live in `prompts/` and are versioned.
 
+## 5b. Decision: circuit model = SKiDL (decided, no spike)
+SKiDL 3.0.0: pure Python (one technology), circuits are ordinary Python objects, reads KiCad's own symbol libraries (pins by NAME, so no hand-written
+pinout tables - KiCad's TPS563201 symbol independently matched the pinout we had typed by hand), emits KiCad netlists. atopile is a separate language;
+circuit-synth is much younger. **Architecture per block = two layers:** `sparky/equations/` (pure, SI units, datasheet procedures, device numbers passed in)
+and `sparky/circuits/` (SKiDL, takes the numbers + a KiCad library part). Reference slice: `equations/buck.py` + `circuits/buck.py` (tested against the
+datasheet's own numbers). All other blocks migrate to this pattern; the old `Circuit` model is deleted when the last block is ported.
+
 ## 6. Decisions that need a spike before code
 * **Placement.** KiCad has no autoplacer. Candidates: keep our small simulated-annealing placer behind a file contract (netlist+constraints → placed
   `.kicad_pcb`), or an open-source placer if one fits. *Decision gate:* benchmark ≥ 2 options on 3 real boards; keep ours only if it wins.
-* **Circuit IR.** SKiDL vs atopile vs circuit-synth: pick by (a) KiCad output fidelity, (b) library integration, (c) maintenance. One day, written result.
 * **Checks.** Prefer KiCad ERC/DRC and ngspice; write rules only for what they cannot express (current/voltage ratings, sequencing, pull-ups) and keep each rule a tiny, cited function.
 
 ## 7. Roadmap (each step ships something runnable; nothing speculative)
 1. **Repo + tooling**: move to this repo, `sparky` console entry, tool discovery (Win/macOS/Linux), CI with scoped fast tests. *(this commit)*
-2. **IR spike** → choose SKiDL/atopile/circuit-synth; port blocks to it; delete our `Circuit`.
+2. **Circuit model = SKiDL** (decided, §5b). Buck block ported (equations + circuit); port the rest, then delete our `Circuit`.
 3. **Part picker** on jlcparts + KiCad libs; delete the hand-written seed catalogue.
 4. **KiCad 10 backend**: DRC/ERC/step/IPC-2581 through `kicad-cli`; delete our Gerber/Excellon/KiCad-file writers, SVG, DRC.
 5. **Router**: Freerouting only; delete our grid router, plane/pour fill, stitching.
