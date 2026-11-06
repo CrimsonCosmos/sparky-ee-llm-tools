@@ -1,2 +1,1 @@
-"""Verification framework: every check returns structured Issues (never bare strings)."""
-from .issues import Issue, Severity, Report  # noqa: F401
+"""Verification of generated circuits against independent references (ngspice)."""

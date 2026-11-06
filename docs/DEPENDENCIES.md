@@ -35,3 +35,11 @@
 |---|---|---|---|
 | kicad-irdrop | DC IR drop on real copper | Apache-2.0 | `pip install` into the interpreter that can import pcbnew |
 | pcb-analysis 0.12.1 | thermal FEM, EMC (CISPR 32/FCC) | MIT | beta. **Needs its C++ kernels**: without them rasterising is pure NumPy (80 s at a 1 mm grid, ~20 min at 0.25 mm); with them 0.3 s. Build: clone AFLOY/pcb-analysis at the tag, `pip install pybind11`, `cmake -S . -B build/native -G Ninja -Dpybind11_DIR=$(python -m pybind11 --cmakedir)` and `cmake --build build/native`; the build FetchContents SuperLU 7.0.1 and pocketfft (pass `-DFETCHCONTENT_SOURCE_DIR_SUPERLU=` / `_POCKETFFT=` to use local clones if tarball downloads are blocked). Needs cmake, ninja, a C++17 compiler (OpenMP). Heavy install on Windows/macOS: expect to ship prebuilt wheels or document it. |
+
+## Notes (current)
+* Python >= 3.13. Versions are pinned in `pyproject.toml` (numpy 2.3, shapely 2.2, skidl 3.0.0, pint 0.26, platformdirs 4.14; dev: pytest 9, gerbonara 1.6.3, kiutils 1.4.8).
+* KiCad >= 8 (developed against 10.0.8): `kicad-cli` and its `pcbnew` Python module. Freerouting 2.1.0 (SHA-256 pinned, auto-downloaded) needs Java.
+* ngspice (external process) for the recipe power-stage checks.
+* `kicad-irdrop` (Apache-2.0) must be installed into the **KiCad Python** (the interpreter that imports pcbnew): `<kicad-python> -m pip install git+https://github.com/firedanceio/kicad-irdrop`.
+* `easyeda2kicad` 1.0.1 is AGPL-3.0: only ever run as an external command by `libsrc` (flagged-unreviewed fallback; the EasyEDA API returned HTTP 403 after a few requests, so imports are cached).
+* pcb-analysis (thermal + EMC) needs its compiled kernels; without them rasterising is pure NumPy (80 s at 1 mm, ~20 min at 0.25 mm) and `available()` returns False.
