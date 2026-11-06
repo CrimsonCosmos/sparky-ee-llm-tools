@@ -4,3 +4,8 @@ __pycache__/
 *.egg-info/
 out/
 .sparky/
+
+# SKiDL run logs
+_caller.log
+*.erc
+*_sklib.py
