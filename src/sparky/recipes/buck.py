@@ -19,7 +19,8 @@ def datasheet_fields(vout: float) -> dict:
     """Numbers to take from the OFFICIAL datasheet. The recommended inductor range is tabulated per output voltage, so it is requested for this vout."""
     return {"vref": "feedback reference voltage, V", "fsw": "switching frequency, Hz",
             f"l_min@{vout:g}V": f"datasheet-recommended minimum inductance for Vout={vout:g} V, H", f"l_max@{vout:g}V": f"datasheet-recommended maximum inductance for Vout={vout:g} V, H",
-            "c_boot": "bootstrap capacitor value, F", "v_boot": "highest voltage across the bootstrap capacitor (BOOT-SW), V"}
+            "c_boot": "bootstrap capacitor value, F", "v_boot": "highest voltage across the bootstrap capacitor (BOOT-SW), V",
+            "en_to_vin": "1 if the EN pin's absolute maximum allows tying it to VIN (enable always on), else 0"}
 
 
 def ports(policy, vin_min=None, vin_max=None, vout=None, iout=None, rail=None, vout_actual=None, **_):
@@ -43,6 +44,8 @@ def build(ctx, symbol, vin_min, vin_max, vout, iout, rail, inductor_footprint=No
     for p in pins(ic, "pad", required=False):
         p += gnd
     for p in pins(ic, "en", required=False):
+        if not ds["en_to_vin"]:
+            raise NotImplementedError(f"buck: {ic.name}'s EN cannot be tied to VIN (datasheet); extend the recipe with an enable divider")
         p += vin
     r_top, r_bot = ctx.resistor(d.r_top), ctx.resistor(d.r_bottom)
     vo & r_top & fb & r_bot & gnd

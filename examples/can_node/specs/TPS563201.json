@@ -1,0 +1,16 @@
+{
+ "values": {
+  "vref": 0.768,
+  "fsw": 580000.0,
+  "l_min@3.3V": 2.2e-06,
+  "l_max@3.3V": 4.7e-06,
+  "c_boot": 1e-07,
+  "v_boot": 5.5,
+  "rds_on": 0.095,
+  "en_to_vin": 1.0
+ },
+ "sources": [
+  "TI TPS563201 datasheet https://www.ti.com/lit/ds/symlink/tps563201.pdf: Electrical Characteristics, Table 7-2, VBST pin",
+  "TI TPS563201 datasheet 5.1 Absolute Maximum Ratings: 'VIN, EN' share one row (EN may be tied to VIN)"
+ ]
+}

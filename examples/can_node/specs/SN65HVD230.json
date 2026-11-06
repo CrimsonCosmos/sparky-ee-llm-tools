@@ -1,0 +1,12 @@
+{
+ "values": {
+  "vcc_min": 3.0,
+  "vcc_max": 3.6,
+  "bitrate_max": 1000000.0,
+  "c_bypass": 1e-07,
+  "icc_max": 0.017
+ },
+ "sources": [
+  "TI SN65HVD23x datasheet https://www.ti.com/lit/ds/symlink/sn65hvd230.pdf: 8.3 Recommended Operating Conditions (VCC 3-3.6 V), Features (1 Mbps), 8.5 ICC max 17 mA, decoupling 100 nF per VCC pin"
+ ]
+}

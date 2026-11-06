@@ -10,7 +10,8 @@ PARAMS = [Param("symbol", "string", None, "KiCad symbol 'Library:Name' of the re
           Param("vout", "number", None, "fixed output (V)", True), Param("iout", "number", None, "load (A)", True),
           Param("c_in", "number", None, "input capacitance (F), from the regulator datasheet", True),
           Param("c_out", "number", None, "output capacitance (F), from the regulator datasheet", True),
-          Param("rail", "string", None, "output rail net name", True)]
+          Param("rail", "string", None, "output rail net name", True),
+          Param("en_tied_to_vin", "bool", False, "tie the EN/SHDN pin to VIN (only if the datasheet's absolute maximum for EN allows VIN)", False)]
 
 
 def ports(policy, vin_min=None, vin_max=None, vout=None, iout=None, rail=None, **_):
@@ -20,7 +21,7 @@ def ports(policy, vin_min=None, vin_max=None, vout=None, iout=None, rail=None, *
             PortSpec("vout", rail or "VOUT", "power", "out", vout or 0.0, iout, meta=dict(source="ldo")), PortSpec("gnd", "GND", "ground")]
 
 
-def build(ctx, symbol, vin_min, vin_max, vout, iout, c_in, c_out, rail):
+def build(ctx, symbol, vin_min, vin_max, vout, iout, c_in, c_out, rail, en_tied_to_vin=False):
     s, pol = ctx.s, ctx.policy
     u, ch = ctx.ic(symbol, needs.ldo(vout, iout * pol.current_margin))
     mpn = ch.mpn if ch else u.name
@@ -31,6 +32,8 @@ def build(ctx, symbol, vin_min, vin_max, vout, iout, c_in, c_out, rail):
     for p in pins(u, "pad", required=False):
         p += gnd
     for p in pins(u, "en", required=False):
+        if not en_tied_to_vin:
+            raise ValueError(f"ldo: {u.name} has an enable pin; set en_tied_to_vin=true if its datasheet allows EN at VIN, or extend the recipe")
         p += vin
     cin, cout = ctx.capacitor(c_in, vin_max), ctx.capacitor(c_out, vout)
     vin & cin & gnd

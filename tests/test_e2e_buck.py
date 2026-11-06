@@ -12,7 +12,7 @@ pytestmark = [pytest.mark.slow, pytest.mark.skipif(not db_path().exists() or not
 
 def test_real_buck_routes_clean_and_spice_agrees(tmp_path, monkeypatch):
     monkeypatch.setenv("SPARKY_HOME", str(tmp_path / "home"))
-    datasheet.save("TPS563201", {"vref": 0.768, "fsw": 580e3, "l_min@3.3V": 2.2e-6, "l_max@3.3V": 4.7e-6, "c_boot": 1e-7, "v_boot": 5.5, "rds_on": 0.095},
+    datasheet.save("TPS563201", {"vref": 0.768, "fsw": 580e3, "l_min@3.3V": 2.2e-6, "l_max@3.3V": 4.7e-6, "c_boot": 1e-7, "v_boot": 5.5, "rds_on": 0.095, "en_to_vin": 1},
                    "TI TPS563201 datasheet (ti.com/lit/ds/symlink/tps563201.pdf): Electrical Characteristics, Table 7-2, VBST pin description")
     from sparky.export.package import write_package
     from sparky.pcb.flow import BoardSpec, build_board

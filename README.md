@@ -40,6 +40,10 @@ As an MCP server for Claude Code: `claude mcp add sparky -- python -m sparky.mcp
   The catalogue is a spec check and sourcing source, never a silent substitute. Vendor imports (`libsrc`, easyeda2kicad) are a flagged fallback.
 * Datasheet numbers (Vref, fsw, bypass values...) are requested explicitly (`NeedsDatasheet`) and stored with their source: `sparky save-spec`.
 
+## Example
+`examples/can_node/`: a 12 V -> buck -> STM32F103 + CAN transceiver board, planned and built from recipes with datasheet numbers taken from the official
+datasheets (sources recorded in `specs/*.json`). `pytest -m slow tests/test_e2e_system.py` builds it (place, Freerouting, KiCad DRC, package, shopping list).
+
 ## What it does NOT do (stated in every report)
 Loop stability, EMC and enclosure thermals are not verified (the buck power stage is checked in ngspice against the design equations). PCB fabrication and
 assembly are not priced (catalogue prices are snapshots). Mechanical design, live distributor APIs and automatic purchasing are out of scope

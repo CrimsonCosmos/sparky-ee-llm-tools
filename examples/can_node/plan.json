@@ -1,0 +1,14 @@
+{"name": "can_node_board", "request": "CAN-connected STM32 controller board powered from 12 V", "budget_usd": 50,
+ "assumptions": ["12 V supply 11-13 V from a purchased PSU", "500 kbit/s CAN, 3.3 V logic", "STM32F103C8 at 72 MHz, all peripherals enabled (worst-case supply current)"],
+ "boards": [{"id": "ctrl", "qty": 1, "layers": 2, "blocks": [
+   {"id": "pwr_in", "recipe": "connector_breakout", "params": {"symbol": "Connector_Generic:Conn_01x02", "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical", "pins": ["VIN12", "GND"]}},
+   {"id": "buck", "recipe": "buck", "params": {"symbol": "Regulator_Switching:TPS563201", "vin_min": 11, "vin_max": 13, "vout": 3.3, "rail": "+3V3"}},
+   {"id": "mcu", "recipe": "mcu_core", "params": {"symbol": "MCU_ST_STM32F1:STM32F103C8Tx", "vdd": 3.3, "rail": "+3V3",
+      "signals": {"CAN_TX": {"pin": "PA12", "kind": "can_logic", "port": "can0", "role": "tx"}, "CAN_RX": {"pin": "PA11", "kind": "can_logic", "port": "can0", "role": "rx"}},
+      "swd_header_symbol": "Connector_Generic:Conn_01x04", "swd_header_footprint": "Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical"}},
+   {"id": "can", "recipe": "can_node", "params": {"symbol": "Interface_CAN_LIN:SN65HVD230", "vcc": 3.3, "bitrate": 500000, "terminated": true}},
+   {"id": "can_conn", "recipe": "connector_breakout", "params": {"symbol": "Connector_Generic:Conn_01x03", "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical", "pins": ["canh", "canl", "GND"]}}]}],
+ "purchased": [{"id": "psu", "title": "12 V DC supply", "category": "power", "qty": 1, "unit_cost_usd": 12, "cost_is_estimate": true, "spec": "12 V, >= 1 A",
+                "ports": [{"name": "out", "kind": "bundle", "direction": "bidir", "voltage": 12, "current_a": 1}]}],
+ "links": [{"a": "psu.out", "b": "ctrl.pwr_in.pins"}, {"a": "ctrl.pwr_in.VIN12", "b": "ctrl.buck.vin"}, {"a": "ctrl.buck.vout", "b": "ctrl.mcu.vcc"},
+           {"a": "ctrl.buck.vout", "b": "ctrl.can.vcc"}, {"a": "ctrl.mcu.can0", "b": "ctrl.can.logic"}, {"a": "ctrl.can.bus", "b": "ctrl.can_conn.pins"}]}

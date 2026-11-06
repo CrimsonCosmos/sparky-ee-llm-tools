@@ -1,0 +1,14 @@
+{
+ "values": {
+  "vdd_min": 2.0,
+  "vdd_max": 3.6,
+  "c_bypass_pin": 1e-07,
+  "c_bulk": 4.7e-06,
+  "idd_max": 0.05,
+  "c_bypass@VDDA#1": 1e-08,
+  "c_bypass@VDDA#2": 1e-06
+ },
+ "sources": [
+  "ST STM32F103x8/xB datasheet (DS5319, via LCSC file C8734): Operating voltage 2.0-3.6 V; 5.1.6 Fig.14 Power supply scheme (5x100 nF + 1x4.7 uF; VDDA 10 nF + 1 uF); Table 13 IDD max 50.0 mA at 72 MHz, all peripherals enabled, 85 C"
+ ]
+}
