@@ -17,8 +17,16 @@ _PWR_PIN = re.compile(r"^(VDD|VCC|VIN|PVIN|AVIN|VBAT|VBUS|V\+|VS|VDDA|VDDIO\d*|V
 _CATEGORY = [(r"^R", "resistor"), (r"^C", "capacitor"), (r"^L", "inductor"), (r"^FB", "ferrite"), (r"^F\d", "fuse"), (r"^D", "diode"),
              (r"^LED", "led"), (r"^Q", "transistor"), (r"^(J|P|X)", "connector"), (r"^Y", "crystal"), (r"^(TP|T)\d", "testpoint"),
              (r"^(H|MH)", "mounting"), (r"^U", "ic")]
-_ETYPE = {"input": "input", "output": "output", "bidir": "bidir", "tristate": "bidir", "passive": "passive", "pwrin": "power_in", "pwrout": "power_out",
-          "openc": "output", "opene": "output", "nc": "nc", "free": "passive", "unspec": "passive"}
+# SKiDL pin function codes (skidl.pin.Pin.types), observed on KiCad symbols: 1 input, 2 output, 3 bidir, 4 tristate, 5 passive, 6 unspecified,
+# 7 power input, 8 power output, 9 open collector, 10 open emitter, 11 pull-up, 12 pull-down, 13 no-connect
+_ETYPE = {1: "input", 2: "output", 3: "bidir", 4: "bidir", 5: "passive", 6: "passive", 7: "power_in", 8: "power_out", 9: "output", 10: "output", 11: "passive", 12: "passive", 13: "nc"}
+
+
+def _etype(pin: Any) -> str:
+    try:
+        return _ETYPE.get(int(pin.func), "passive")
+    except (TypeError, ValueError):
+        return "passive"
 
 
 def _symbol_id(p: Any) -> str:
@@ -33,10 +41,6 @@ def _category(ref: str) -> str:
         if re.match(pat, ref):
             return cat
     return "ic"
-
-
-def _etype(pin: Any) -> str:
-    return _ETYPE.get(str(getattr(pin, "func", "passive")).split(".")[-1].lower(), "passive")
 
 
 def from_skidl(circ: Any | None = None, name: str = "design") -> Circuit:
