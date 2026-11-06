@@ -29,6 +29,8 @@ class Rules:
     mask_bridge: float = 0.1
     silk_width: float = 0.15
     temp_rise_c: float = 20.0
+    min_dielectric_mm: float = 0.1   # thinnest prepreg/core between copper layers the fab stocks (fab-profile value); sets the minimum board thickness for high layer counts
+    max_aspect_ratio: float = 10.0   # board thickness : finished drill; plated through-holes beyond this are not reliable (fab-profile value)
     hole_clearance: float = 0.25     # copper to drill hole (KiCad min_hole_clearance); fab-profile value
     microvia_dia: float = 0.2        # only used by HDI/advanced profiles; recorded so DRC has an explicit value
     microvia_drill: float = 0.1
@@ -59,7 +61,22 @@ def rules_for(layers: int = 2, profile: str | None = None, **over) -> Rules:
     kw["layers"] = layers
     r = Rules(**kw)
     r.profile = name
+    _fit_stackup(r)
     return r
+
+
+def _fit_stackup(r: Rules) -> None:
+    """High layer counts need a thicker board (copper + the thinnest dielectrics + mask) and then a larger drill (thickness / max aspect ratio); both follow from the
+    fab-profile limits. Explicit overrides larger than the derived minimum are kept."""
+    n = r.layers
+    cu = (2 * r.copper_oz_outer + (n - 2) * r.copper_oz_inner) * OZ_CU_MM
+    need = cu + 2 * r.mask_thickness_mm + (n - 1) * r.min_dielectric_mm
+    r.thickness_mm = max(r.thickness_mm, math.ceil(need / WIDTH_RESOLUTION_MM) * WIDTH_RESOLUTION_MM)
+    drill = math.ceil(r.thickness_mm / r.max_aspect_ratio / WIDTH_RESOLUTION_MM) * WIDTH_RESOLUTION_MM
+    if drill > r.min_drill:
+        r.min_drill = drill
+    r.via_drill = max(r.via_drill, r.min_drill)
+    r.via_dia = max(r.via_dia, r.via_drill + 2 * r.min_annular)
 
 
 def layer_names(n: int) -> list[str]:
