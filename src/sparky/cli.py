@@ -127,6 +127,25 @@ def cmd_footprints(a):
           f"official geometry is cached and used automatically by builds ({apply_official()} cached).")
 
 
+def cmd_pick(a):
+    """sparky pick inductor henries=4.7e-6 isat_min=4.7 [--qty 10]  (recipes live in sparky.picker.recipes)"""
+    from .picker import Catalog, recipes
+    fn = getattr(recipes, a.recipe, None)
+    if fn is None:
+        raise SystemExit(f"unknown recipe '{a.recipe}'. Available: " + ", ".join(n for n in dir(recipes) if not n.startswith("_") and callable(getattr(recipes, n))
+                                                                               and getattr(getattr(recipes, n), "__module__", "") == recipes.__name__))
+    kw = {k: float(v) for k, v in (x.split("=", 1) for x in a.args)}
+    for c in Catalog().pick(fn(**kw), qty=a.qty, limit=a.limit):
+        print(f"{c.lcsc:10} {c.mpn:24} {c.package:14} {'basic' if c.library_type == 'base' else 'pref ' if c.preferred else '     '} stock={c.stock:<8} "
+              f"${c.unit_price}  {c.url}")
+
+
+def cmd_download_parts(a):
+    from .picker import ensure_db
+    p = ensure_db(progress=lambda done, total: print(f"\r{done / 1e6:.0f}/{total / 1e6:.0f} MB", end="", flush=True))
+    print(f"\n{p}")
+
+
 def cmd_mcp(a):
     from .mcp_server import serve
     serve()
@@ -162,6 +181,10 @@ def main(argv=None):
     s.add_argument("--out", default="forge_out/system"); s.add_argument("--supplier"); s.add_argument("--checkout", action="store_true"); s.add_argument("--confirm", default="")
     s.set_defaults(fn=cmd_buy)
     s = sub.add_parser("footprints", help="compare/sync generator footprints with KiCad's official library"); s.set_defaults(fn=cmd_footprints)
+    s = sub.add_parser("pick", help="deterministic part picker over the open JLCPCB/LCSC catalogue")
+    s.add_argument("recipe"); s.add_argument("args", nargs="*", help="key=value requirement parameters"); s.add_argument("--qty", type=int, default=1)
+    s.add_argument("--limit", type=int, default=5); s.set_defaults(fn=cmd_pick)
+    s = sub.add_parser("download-parts", help="download the parts catalogue (~400 MB, resumable)"); s.set_defaults(fn=cmd_download_parts)
     s = sub.add_parser("mcp"); s.set_defaults(fn=cmd_mcp)
     s = sub.add_parser("doctor"); s.set_defaults(fn=cmd_doctor)
     a = ap.parse_args(argv)

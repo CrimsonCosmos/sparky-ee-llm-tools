@@ -16,3 +16,9 @@ keep going until the limitations list is empty (do not just report limitations).
 7. Thermal (Elmer FEM) and EMI (openEMS) adapters; mechanical floor plan (default small, roughly square outline; STEP export; FreeCAD/CadQuery later).
 8. Remaining limitations to close: STM32 pinout/datasheet verification (research agent / manual download), distributor links & live prices (APIs with keys), agent purchasing tested with a browser when available, BGA/diff-pair/length matching via Freerouting+KiCad rules, doubled-sided assembly, scope beyond ten blocks (parts research + SKiDL-based custom circuits).
 9. Hygiene: rename package to `sparky`, dependency pins from docs/DEPENDENCIES.md (newest versions), keep fast suite under 10 s, CI scoped by changed files.
+
+## Status update (picker)
+* DONE: `sparky/picker/` = deterministic parametric picker over CDFER/jlcpcb-parts-database (SQLite ~400 MB, 495k in-stock parts, ~330k with parametric attributes; LCSC SKU, stock, price tiers, datasheet).
+  Recipes (`picker/recipes.py`) hold only the catalogue's attribute vocabulary. CLI: `sparky pick <recipe> k=v ...`, `sparky download-parts`. Data path: $SPARKY_PARTS_DB or <data_dir>/jlcpcb-components.sqlite3.
+* TODO picker: TVS polarity filter (unidirectional for DC rails); footprint mapping (catalogue package -> KiCad footprint via KiCad library search); IC recipes via datasheet; SQL prefilter for slow categories (inductors ~3 s).
+* TODO: delete the hand-written seed catalogue (`parts/seed.py`, `parts/generic.py`, `parts/db.py`) once blocks are ported to equations+SKiDL+picker (the old blocks still depend on it).
