@@ -4,12 +4,17 @@ from __future__ import annotations
 from ..units import fmt_si
 from . import skidl
 
-_METRIC = {"0201": "0603", "0402": "1005", "0603": "1608", "0805": "2012", "1206": "3216", "1210": "3225", "2512": "6332"}
+_LIB = {"R": ("Resistor_SMD", "R"), "C": ("Capacitor_SMD", "C"), "L": ("Inductor_SMD", "L"), "F": ("Fuse", "Fuse")}
 
 
-def chip_footprint(kind: str, size: str) -> str:
-    lib = {"R": "Resistor_SMD", "C": "Capacitor_SMD", "L": "Inductor_SMD", "D": "LED_SMD"}[kind]
-    return f"{lib}:{kind}_{size}_{_METRIC[size]}Metric"
+def chip_footprint(kind: str, code: str) -> str:
+    """KiCad chip footprint for an imperial code, found in KiCad's library (see picker.footprints); raises if the library has no single match."""
+    from ..picker.footprints import chip
+    lib, prefix = _LIB[kind]
+    fp = chip(lib, prefix, code)
+    if fp is None:
+        raise LookupError(f"no unique KiCad footprint for {kind} {code} in {lib}")
+    return fp
 
 
 def passive(kind: str, value: float, size: str = "0402", **fields):

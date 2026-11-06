@@ -62,3 +62,12 @@ def mlcc_between(low_f: float, high_f: float, volts_min: float, package: tuple[s
     """MLCC whose nominal capacitance lies in [low_f, high_f] and whose rating is at least volts_min."""
     return Need("Multilayer Ceramic Capacitors MLCC - SMD/SMT", package=package, minimum={"Capacitance": f"{fmt_si(low_f)}F", "Voltage Rating": f"{volts_min}V"},
                 maximum={"Capacitance": f"{fmt_si(high_f)}F"})
+
+
+def electrolytic(farads_min: float, volts_min: float, farads_max: float) -> Need:
+    return Need("Aluminum Electrolytic Capacitors - SMD", minimum={"Capacitance": f"{fmt_si(farads_min)}F", "Voltage Rating": f"{volts_min}V"},
+                maximum={"Capacitance": f"{fmt_si(farads_max)}F"})
+
+
+def fuse(amps_min: float, volts_min: float, package: tuple[str, ...]) -> Need:
+    return Need("Fuses", package=package, minimum={"Current Rating": f"{amps_min}A", "Voltage Rating": f"{volts_min}V"})
