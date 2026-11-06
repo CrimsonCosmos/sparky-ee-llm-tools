@@ -20,4 +20,4 @@ def reset():
     """Start a fresh SKiDL circuit (SKiDL keeps one global default circuit)."""
     import builtins
     skidl()
-    builtins.default_circuit.reset()
+    builtins.default_circuit.mini_reset()      # clears parts/nets but keeps parsed symbol libraries (reset() re-parses them: ~0.2 s per library per build)

@@ -5,12 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "sparky"
 version = "0.1.0"
-description = "Claude Code + deterministic EDA pipelines: prompt -> system plan -> boards -> fab files -> purchasing"
-requires-python = ">=3.10"
-dependencies = ["numpy>=1.24", "shapely>=2.0"]
+description = "Claude Code + deterministic EDA: system description -> KiCad boards -> fab files -> shopping list"
+requires-python = ">=3.13"
+dependencies = ["numpy>=2.3,<2.4", "shapely>=2.2,<3", "skidl==3.0.0", "pint>=0.26,<0.27", "platformdirs>=4.14,<5"]
 
 [project.optional-dependencies]
-dev = ["pytest", "gerbonara", "kiutils"]
+dev = ["pytest>=9,<10", "gerbonara==1.6.3", "kiutils==1.4.8"]
+analysis = ["pcb-analysis==0.12.1"]       # thermal/EMC; needs its compiled kernels (docs/DEPENDENCIES.md). kicad-irdrop: pip install git+https://github.com/firedanceio/kicad-irdrop into the KiCad Python
+vendor-import = ["easyeda2kicad==1.0.1"]  # AGPL-3.0: run only as an external command (libsrc), never imported
 anthropic = ["anthropic"]
 
 [project.scripts]
