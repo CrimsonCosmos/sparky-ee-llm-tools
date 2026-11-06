@@ -150,6 +150,9 @@ def run_drc(pcb_path: str | Path, refill: bool = True, rules=None, report_path: 
         work = Path(td) / pcb.name
         shutil.copy(pcb, work)
         pro = pcb.with_suffix(".kicad_pro")
+        dru = pcb.with_suffix(".kicad_dru")
+        if dru.exists():                                  # custom rules (length/skew constraints) travel with the board
+            shutil.copy(dru, work.with_suffix(".kicad_dru"))
         shutil.copy(pro, work.with_suffix(".kicad_pro")) if pro.exists() else write_kicad_pro(work.with_suffix(".kicad_pro"), _need_rules(rules))
         out = Path(td) / "drc.json"
         cmd = [exe, "pcb", "drc", "--format", "json", "--severity-all", "--all-track-errors", "--output", str(out)]

@@ -49,4 +49,4 @@ MIT, https://github.com/drandyhaas/KiCadRoutingTools (needs KiCad 9/10 files; nu
 fanout (`constraints.DiffPair / LengthGroup / Fanout`, declared by recipes in `Result.constraints`); other boards keep using Freerouting. Install:
 `git clone https://github.com/drandyhaas/KiCadRoutingTools <data_dir>/tools/KiCadRoutingTools && python build_router.py` (downloads a prebuilt binary or builds with cargo), or point `SPARKY_KRT` at a checkout.
 Our `Rules` are passed to it as its fab-floor file (so its via/annular/track/clearance limits equal ours); `Rules.fab_tier='standard'` forbids via-in-pad and its own escalation.
-Pair/skew and group spread are re-measured from the routed copper (tracks + via barrels): the tool's own reports have disagreed with its written copper.
+Each constraint becomes a named KiCad custom rule (`.kicad_dru`, `sparky_<i>`): the router reads it and KiCad's own DRC (`skew_out_of_range`) is the authoritative verdict; we also measure the copper (tracks + via barrels) as a cross-check (it differs from KiCad by a few hundredths of a mm). Without the rule file the tool graded its own different metric and left the bus unmatched.

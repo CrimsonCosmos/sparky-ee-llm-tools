@@ -61,6 +61,18 @@ def net_lengths(pcb_text: str, layer_z: dict[str, float] | None = None) -> dict[
     return out
 
 
+def _hit(viol: list[dict], i: int) -> bool:
+    return any(f"rule 'sparky_{i}'" in v.get("description", "") for v in viol)
+
+
+def _actual(viol: list[dict], i: int) -> float | None:
+    for v in viol:
+        m = re.search(rf"rule 'sparky_{i}'.*?actual (-?[\d.]+) mm", v.get("description", ""))
+        if m:
+            return abs(float(m.group(1)))
+    return None
+
+
 def _run(args: list[str], cwd: Path, timeout: int) -> tuple[int, str]:
     r = subprocess.run([sys.executable, *args], cwd=cwd, capture_output=True, text=True, timeout=timeout)
     return r.returncode, (r.stdout or "") + (r.stderr or "")
@@ -94,6 +106,8 @@ def route(raw: Path, out: Path, *, rules, constraints: list, all_nets: list[str]
     cur = work / "step0.kicad_pcb"
     shutil.copy(raw, cur)
     shutil.copy(raw.with_suffix(".kicad_pro"), cur.with_suffix(".kicad_pro"))
+    if raw.with_suffix(".kicad_dru").exists():
+        shutil.copy(raw.with_suffix(".kicad_dru"), cur.with_suffix(".kicad_dru"))
     res, t0 = KrtResult(), time.time()
     pairs = [c for c in constraints if isinstance(c, DiffPair)]
     groups = [c for c in constraints if isinstance(c, LengthGroup)]
@@ -107,6 +121,8 @@ def route(raw: Path, out: Path, *, rules, constraints: list, all_nets: list[str]
         nonlocal cur
         nxt = work / f"{name}.kicad_pcb"
         shutil.copy(cur.with_suffix(".kicad_pro"), nxt.with_suffix(".kicad_pro"))
+        if cur.with_suffix(".kicad_dru").exists():
+            shutil.copy(cur.with_suffix(".kicad_dru"), nxt.with_suffix(".kicad_dru"))
         t = time.time()
         io = [cur.name, "-o", nxt.name] if args[0] == "bga_fanout.py" else [cur.name, nxt.name]        # fanout names its output with -o; the routers take it positionally
         rc, text = _run([str(root / "py_router" / args[0]), *io, *args[1:], *tier], work, timeout)
@@ -145,18 +161,41 @@ def route(raw: Path, out: Path, *, rules, constraints: list, all_nets: list[str]
     return res
 
 
-def verify(pcb_text: str, constraints: list, layer_z: dict[str, float]) -> list[dict]:
-    """Re-measure pair skew and group mismatch (tracks + via barrels) from the routed copper and compare with each requirement."""
+def pair_base(p: str, n: str) -> str:
+    """KiCad's inDiffPair() takes the pair's base name (the net name without its polarity suffix)."""
+    for pat, repl in _PAIR:
+        if re.match(pat, p) and re.sub(pat, repl, p) == n:
+            return re.sub(pat, r"\1", p)
+    raise ValueError(f"'{p}'/'{n}' is not a recognised pair")
+
+
+def dru_text(constraints: list) -> str:
+    """KiCad custom rules (.kicad_dru) for the constraints: each gets a rule named `sparky_<i>` so a DRC violation maps back to it. KiCad's own measurement then
+    decides (skew_out_of_range); the router reads the same file."""
+    out = ["(version 1)"]
+    for i, c in enumerate(constraints):
+        if isinstance(c, DiffPair):
+            out.append(f'(rule "sparky_{i}"\n  (condition "A.inDiffPair(\'{pair_base(c.p, c.n)}\')")\n  (constraint skew (max {c.skew_mm:g}mm)))')
+        elif isinstance(c, LengthGroup):
+            cond = " || ".join(f"A.NetName == '{n}'" for n in c.nets)
+            out.append(f'(rule "sparky_{i}"\n  (condition "{cond}")\n  (constraint skew (max {c.tolerance_mm:g}mm)))')
+    return "\n".join(out) + "\n"
+
+
+def verify(pcb_text: str, constraints: list, layer_z: dict[str, float], drc_violations: list[dict] | None = None) -> list[dict]:
+    """Per constraint: KiCad's DRC verdict (authoritative: the rule `sparky_<i>` from dru_text was or was not violated) plus our own measurement of the routed copper
+    (centre-line tracks + via barrels, a cross-check that differs from KiCad by a few hundredths of a mm)."""
+    viol = drc_violations or []
     L = net_lengths(pcb_text, layer_z)
     rows = []
-    for c in constraints:
+    for i, c in enumerate(constraints):
         if isinstance(c, DiffPair):
             lp, ln = L.get(c.p, 0.0), L.get(c.n, 0.0)
             rows.append({"kind": "diff_pair", "name": f"{c.p}/{c.n}", "lengths_mm": [round(lp, 3), round(ln, 3)], "skew_mm": round(abs(lp - ln), 3),
-                         "limit_mm": c.skew_mm, "ok": lp > 0 and ln > 0 and abs(lp - ln) <= c.skew_mm + 1e-6})
+                         "limit_mm": c.skew_mm, "ok": lp > 0 and ln > 0 and not _hit(viol, i), "kicad": _actual(viol, i)})
         elif isinstance(c, LengthGroup):
             ls = [L.get(n, 0.0) for n in c.nets]
             spread = max(ls) - min(ls) if ls else 0.0
             rows.append({"kind": "length_group", "name": "+".join(c.nets), "lengths_mm": [round(x, 3) for x in ls], "skew_mm": round(spread, 3),
-                         "limit_mm": c.tolerance_mm, "ok": min(ls, default=0) > 0 and spread <= c.tolerance_mm + 1e-6})
+                         "limit_mm": c.tolerance_mm, "ok": min(ls, default=0) > 0 and not _hit(viol, i), "kicad": _actual(viol, i)})
     return rows

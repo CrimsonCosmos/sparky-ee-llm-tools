@@ -20,14 +20,21 @@ def test_lengths_are_segments_plus_via_barrels_by_hand():
     assert krt.net_lengths(t)["A"] == pytest.approx(7.0)                      # without a stackup the via adds nothing
 
 
-def test_verify_flags_skew_and_spread_against_the_requirement():
+def test_verify_takes_the_verdict_from_kicads_drc_and_keeps_our_measurement():
     t = board([(1, (0, 0), (10, 0)), (2, (0, 1), (10.4, 1))])
-    ok_pair = krt.verify(t, [DiffPair("A", "B", 0.2, 0.2, 0.5)], {})[0]
-    bad_pair = krt.verify(t, [DiffPair("A", "B", 0.2, 0.2, 0.1)], {})[0]
-    assert ok_pair["skew_mm"] == pytest.approx(0.4) and ok_pair["ok"] and not bad_pair["ok"]            # 0.4 mm skew: within 0.5, not within 0.1
-    grp = krt.verify(t, [LengthGroup(["A", "B"], 0.3)], {})[0]
-    assert not grp["ok"] and grp["skew_mm"] == pytest.approx(0.4)
-    assert not krt.verify(t, [LengthGroup(["A", "MISSING"], 5.0)], {})[0]["ok"]                          # an unrouted net can never "meet" a group
+    cons = [DiffPair("A", "B", 0.2, 0.2, 0.1), LengthGroup(["A", "B"], 0.3)]
+    violated = [{"description": "Skew between tracks out of range (rule 'sparky_0' max skew 0.1000 mm; actual -0.4000 mm; target net length 10.4)"}]
+    rows = krt.verify(t, cons, {}, violated)
+    assert rows[0]["ok"] is False and rows[0]["kicad"] == pytest.approx(0.4) and rows[0]["skew_mm"] == pytest.approx(0.4)    # KiCad flagged the pair
+    assert rows[1]["ok"] is True and rows[1]["kicad"] is None                                                             # no violation for rule sparky_1
+    assert not krt.verify(t, [LengthGroup(["A", "MISSING"], 5.0)], {}, [])[0]["ok"]                                       # an unrouted net can never meet a group
+
+
+def test_dru_has_one_named_rule_per_constraint_and_kicad_syntax():
+    txt = krt.dru_text([DiffPair("DATA_P", "DATA_N", 0.2, 0.2, 0.1), LengthGroup(["S1", "S2"], 0.5)])
+    assert txt.startswith("(version 1)")
+    assert "(rule \"sparky_0\"" in txt and "A.inDiffPair('DATA')" in txt and "(constraint skew (max 0.1mm))" in txt
+    assert "(rule \"sparky_1\"" in txt and "A.NetName == 'S1' || A.NetName == 'S2'" in txt and "(max 0.5mm)" in txt
 
 
 def test_constraints_follow_net_renames_and_merges():

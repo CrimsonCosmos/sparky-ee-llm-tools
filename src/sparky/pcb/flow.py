@@ -75,8 +75,10 @@ def build_board(circuit: Circuit, spec: BoardSpec | None = None, log=print) -> B
             tag = f"{layers}L_u{util}"
             raw, routed = work / f"{tag}.kicad_pcb", work / f"{tag}_routed.kicad_pcb"
             raw.write_text(to_kicad_pcb(board, circuit.name))
-            kicad_backend.write_kicad_pro(raw.with_suffix(".kicad_pro"), rules, net_classes=net_classes_for(circuit, rules))
             special = [c for c in circuit.constraints if isinstance(c, (DiffPair, LengthGroup, Fanout))]
+            if special:                                    # KiCad grades length/skew itself from this rules file (router and DRC both read it)
+                raw.with_suffix(".kicad_dru").write_text(krt.dru_text([c for c in special if not isinstance(c, Fanout)]))
+            kicad_backend.write_kicad_pro(raw.with_suffix(".kicad_pro"), rules, net_classes=net_classes_for(circuit, rules))
             say(f"{layers}L util={util}: board {board.width}x{board.height} mm; routing with {'KiCadRoutingTools (' + str(len(special)) + ' routing constraints)' if special else 'Freerouting'}")
             try:
                 if special:
@@ -97,10 +99,12 @@ def build_board(circuit: Circuit, spec: BoardSpec | None = None, log=print) -> B
                 continue
             routed.write_text(add_pours(routed.read_text(), board))        # outer pours go in after routing (see export.kicad)
             routed.with_suffix(".kicad_pro").write_bytes(raw.with_suffix(".kicad_pro").read_bytes())
+            if raw.with_suffix(".kicad_dru").exists():
+                routed.with_suffix(".kicad_dru").write_bytes(raw.with_suffix(".kicad_dru").read_bytes())
             filled = work / f"{tag}_final.kicad_pcb"
             drc = kicad_backend.run_drc(routed, refill=True, rules=rules, save_to=filled)
             filled.with_suffix(".kicad_pro").write_bytes(raw.with_suffix(".kicad_pro").read_bytes())
-            checks = krt.verify(routed.read_text(), special, layer_z_mm(rules, layers)) if special else []
+            checks = krt.verify(routed.read_text(), [c for c in special if not isinstance(c, Fanout)], layer_z_mm(rules, layers), drc.violations) if special else []
             miss = [c["name"] for c in checks if not c["ok"]]
             if miss:
                 say(f"   routing constraints NOT met (re-measured): {', '.join(miss)}")
