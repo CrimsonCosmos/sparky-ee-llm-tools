@@ -202,6 +202,12 @@ def export_fab(pcb_path: str | Path, outdir: str | Path, project: str | None = N
         _cli("pcb", "export", "svg", "-o", str(svg), "-l", ",".join(gerber_layers(n)[:1] + ["Edge.Cuts"]), "--page-size-mode", "2", "--exclude-drawing-sheet", str(src))
         if svg.exists():
             files["svg"] = svg
+        step = out / f"{project}.step"                              # mechanical hand-off (board body + pads/tracks; 3D models if footprints carry them)
+        try:
+            _cli("pcb", "export", "step", "-o", str(step), "--force", "--include-tracks", "--include-pads", "--include-zones", str(src))
+            files["step"] = step
+        except RuntimeError:
+            pass
         shutil.copy(src, out / f"{project}.kicad_pcb")              # the routed + filled board is the deliverable
         files["kicad_pcb"] = out / f"{project}.kicad_pcb"
     for p in sorted(gdir.iterdir()):

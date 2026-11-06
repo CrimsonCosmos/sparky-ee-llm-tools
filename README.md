@@ -24,7 +24,6 @@ request ──► supervisor LLM (Claude Code) ──► SystemPlan (boards, pur
           EXPORT                                      Gerber RS-274X, Excellon, BOM (+JLCPCB), CPL, KiCad .kicad_pcb + netlist, SVG, REPORT.md
                 ▼
           PURCHASE                                    aggregated BOM × quantities + spares, supplier choice, cart CSVs, shopping list,
-                                                      optional agent cart-fill (stops before payment)
 ```
 
 ## Architecture decision: integrate KiCad, don't re-implement it
@@ -98,7 +97,7 @@ compares the **actually computed** build cost (BOM + PCB + assembly at the real 
 * Autorouter is a grid router (Python): small/medium boards route in seconds-minutes; very dense/large boards need the time budget raised or a different tool (Specctra DSN export for Freerouting is a planned adapter).
 * Single-sided SMT assembly, no differential-pair/length-matching, no BGA fanout yet.
 * "Anything an EE can build" is bounded by the block library + `custom_netlist` escape hatch + part research; mechanical, firmware and software are out of scope (planned as purchased items with estimated cost).
-* Agent purchasing (browser/computer use) is implemented safely (cart-fill only; checkout requires an exact confirmation phrase) but not exercised in CI. Prices are estimates until refreshed from suppliers (`purchase/mouser.py` API adapter needs a key).
+* Automatic purchasing is out of scope: the tool outputs a shopping list and cart CSVs; the user buys. Prices are estimates until refreshed from suppliers (`purchase/mouser.py` API adapter needs a key).
 
 ## Layout
 `src/sparky/` — `model.py` data model · `footprints.py`/`kicad_mod.py` · `parts/` catalog, research, docs · `blocks/` builders ·

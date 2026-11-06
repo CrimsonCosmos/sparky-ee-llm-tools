@@ -43,3 +43,8 @@ def test_package_contents_parse_independently(built):
     assert re.search(r"\(segment\s", txt)                                           # Freerouting really routed something
     assert (out / "kicad_drc.json").exists() and "fab.zip" in files and "ipc2581" in files
     assert len(zipfile.ZipFile(files["fab.zip"]).namelist()) >= 8
+
+
+def test_step_export(built):
+    layers, res, out, files = built
+    assert "step" in files and files["step"].stat().st_size > 1000

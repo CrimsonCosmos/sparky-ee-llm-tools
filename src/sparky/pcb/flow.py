@@ -23,7 +23,7 @@ class BoardSpec:
     seed: int = 1
     copper_oz: float = 1.0
     max_layers: int = 6
-    utilizations: tuple = (0.42, 0.32, 0.24)
+    utilizations: tuple = (0.42, 0.32, 0.24, 0.18)
     time_budget_s: float = 1200.0
     passes: int = 20                       # Freerouting optimisation passes
     rule_overrides: dict = field(default_factory=dict)

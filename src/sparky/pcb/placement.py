@@ -39,7 +39,7 @@ class PlaceOptions:
     width: float | None = None
     height: float | None = None
     utilization: float = 0.38
-    aspect: float = 1.35
+    aspect: float = 1.15  # small, roughly square floor plan by default (chassis fit)
     seed: int = 1
     iterations: int | None = None
     courtyard_margin: float = 0.2
