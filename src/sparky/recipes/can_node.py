@@ -10,13 +10,16 @@ PARAMS = [Param("symbol", "string", None, "KiCad symbol of the CAN transceiver (
           Param("vcc", "number", None, "logic supply (V)", True), Param("bitrate", "number", None, "bus speed (bit/s)", True),
           Param("terminated", "bool", False, "fit the 120 ohm termination resistor (end nodes only)", False),
           Param("termination_jumper_footprint", "string", None, "KiCad footprint of a 2-pin solder jumper in series with the termination (else fixed)", False)]
-DATASHEET = {"vcc_min": "minimum supply, V", "vcc_max": "maximum supply, V", "bitrate_max": "maximum bit rate, bit/s", "c_bypass": "recommended VCC bypass capacitor, F"}
+DATASHEET = {"vcc_min": "minimum supply, V", "vcc_max": "maximum supply, V", "bitrate_max": "maximum bit rate, bit/s", "c_bypass": "recommended VCC bypass capacitor, F", "icc_max": "maximum supply current, A"}
 
 
-def ports(policy=None, vcc=None, vcc_min=None, vcc_max=None, **_):
+def ports(policy=None, vcc=None, vcc_min=None, vcc_max=None, symbol=None, icc_max=None, **_):
+    if icc_max is None and symbol:
+        from sparky.datasheet import load
+        icc_max = load(symbol.split(":")[-1]).get("values", {}).get("icc_max")
     return [PortSpec("logic", "TXD", "can_logic", "bidir", vcc or 0.0, signals={"tx": "TXD", "rx": "RXD"}, meta=dict(role="device")),
             PortSpec("bus", "CANH", "can_bus", "bidir", 0.0, signals={"canh": "CANH", "canl": "CANL"}, meta=dict(role="peer", needs_connector=True)),
-            PortSpec("vcc", "VCC", "power", "in", vcc or 0.0, 0.0, meta=dict(vmin=vcc_min, vmax=vcc_max)), PortSpec("gnd", "GND", "ground")]
+            PortSpec("vcc", "VCC", "power", "in", vcc or 0.0, icc_max or 0.0, meta=dict(vmin=vcc_min, vmax=vcc_max)), PortSpec("gnd", "GND", "ground")]
 
 def build(ctx, symbol, vcc, bitrate, terminated=False, termination_jumper_footprint=None):
     s = ctx.s
@@ -44,5 +47,5 @@ def build(ctx, symbol, vcc, bitrate, terminated=False, termination_jumper_footpr
     res = Result(calcs={"can": f"{u.name}: {bitrate / 1e3:g} kbit/s at {vcc:g} V, slope pin to GND, termination "
                                f"{'none' if not terminated else 'jumper-selectable' if termination_jumper_footprint else 'fixed'} {CAN_TERMINATION_OHM:g} ohm"})
     res.warnings += [f"not in the parts catalogue (no price/stock): {n}" for n in ctx.unsourced]
-    res.ports = ports(None, vcc, ds["vcc_min"], ds["vcc_max"])
+    res.ports = ports(None, vcc, ds["vcc_min"], ds["vcc_max"], icc_max=ds["icc_max"])
     return res

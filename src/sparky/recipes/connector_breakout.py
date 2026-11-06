@@ -10,7 +10,9 @@ PARAMS = [Param("symbol", "string", None, "KiCad symbol of the connector (pin co
 
 def ports(policy=None, pins=None, kind="bundle", voltage=0.0, current_a=0.0, **_):
     names = list(dict.fromkeys(pins or []))
-    return [PortSpec(n, n, "ground" if n == "GND" else kind, "bidir", voltage, current_a) for n in names]
+    one = [PortSpec(n, n, "ground" if n == "GND" else kind, "bidir", voltage, current_a) for n in names]
+    # plus one grouped port carrying every pin as a named signal, so a multi-signal port (e.g. CAN H/L) can be linked in one step
+    return one + ([PortSpec("pins", names[0], "bundle", "bidir", voltage, current_a, signals={n: n for n in names})] if names else [])
 
 
 def build(ctx, symbol, footprint, pins, kind, voltage, current_a):

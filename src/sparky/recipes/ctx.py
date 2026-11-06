@@ -145,7 +145,9 @@ class Ctx:
         if not si.footprint:
             raise NoPart(f"KiCad symbol '{symbol}' has no default footprint; pass the footprint explicitly")
         p = self.s.Part(si.lib, si.name, footprint=si.footprint)
-        got = self.catalog.pick(Need("%", text=si.name, min_stock=1), qty=self.qty, limit=1) if self._has_catalog() else []
+        import re
+        search = re.sub(r"x+$", "", si.name) if re.search(r"[A-Z0-9]x+$", si.name) else si.name      # vendors (ST) use a trailing lowercase x for "any variant"
+        got = self.catalog.pick(Need("%", text=search, min_stock=1), qty=self.qty, limit=1) if self._has_catalog() else []
         if got:
             if need is not None and not Catalog._ok(got[0].attributes, need):
                 raise NoPart(f"{si.name} ({got[0].mpn}) does not meet the requirement {need}; catalogue says {got[0].attributes}")

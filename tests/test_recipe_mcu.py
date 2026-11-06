@@ -32,7 +32,7 @@ def env(tmp_path, monkeypatch):
         c.execute("insert into jlc_components values (?,?,?,?,?,?,?,?,?,?,?,?,?)", (i, "x", sub, mpn, pkg, "m", "base", 1, "", "", 9000, "1-:0.1", json.dumps(attrs)))
     c.commit()
     c.close()
-    datasheet.save("STM32F103C8Tx", {"vdd_min": 2.0, "vdd_max": 3.6, "c_bypass_pin": 100e-9, "c_bulk": 4.7e-6, "c_nrst": 100e-9, "r_boot0": 10e3,
+    datasheet.save("STM32F103C8Tx", {"vdd_min": 2.0, "vdd_max": 3.6, "c_bypass_pin": 100e-9, "c_bulk": 4.7e-6, "idd_max": 0.05, "c_nrst": 100e-9, "r_boot0": 10e3,
                                      "c_bypass@VDDA#1": 10e-9, "c_bypass@VDDA#2": 1e-6}, "test fixture (ST DS5319 Figure 14 for supply; NRST/BOOT0 values are test inputs)")
     return Catalog(p)
 

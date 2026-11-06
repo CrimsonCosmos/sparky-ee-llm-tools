@@ -6,19 +6,35 @@ META = dict(name="mcu_core", summary="Microcontroller core: supply/ground pins f
                                      "and named signals bound to pins by alternate function (or explicit pin).", category="compute")
 PARAMS = [Param("symbol", "string", None, "KiCad symbol of the MCU (e.g. MCU_ST_STM32F1:STM32F103C8Tx)", True),
           Param("vdd", "number", None, "supply voltage (V)", True), Param("rail", "string", "+3V3", "supply net name", False),
-          Param("signals", "dict", None, "{net_name: {'function': regex} | {'pin': 'PA9'}, 'kind': 'uart|spi|i2c|can|pwm|gpio|analog'} - one entry per external signal", True),
+          Param("signals", "dict", None, "{net_name: {'function': regex} | {'pin': 'PA9'}, 'kind': '...', optional 'port': group name + 'role': tx|rx|...} - one entry per external signal; entries sharing a 'port' form one multi-signal port", True),
           Param("swd_header_symbol", "string", None, "KiCad symbol of a 1x04 header for SWD (pins: 1=VDD 2=SWDIO 3=SWCLK 4=GND)", True),
           Param("swd_header_footprint", "string", None, "KiCad footprint for the SWD header", True)]
 DATASHEET = {"vdd_min": "minimum supply, V", "vdd_max": "maximum supply, V", "c_bypass_pin": "bypass capacitor per supply pin, F",
-             "c_bulk": "bulk capacitor on the supply, F"}
+             "c_bulk": "bulk capacitor on the supply, F", "idd_max": "maximum supply current in the intended operating mode, A"}
 # Optional values (only when the datasheet / the vendor's hardware application note gives them; otherwise the recipe warns and does not invent them):
 #   c_nrst            capacitor from NRST to ground, F          r_boot0         BOOT0 pull-down resistor, ohm
 #   c_bypass@<PIN>#n  n-th capacitor for supply pins named <PIN> (e.g. c_bypass@VDDA#1 = 10 nF, c_bypass@VDDA#2 = 1 uF) instead of c_bypass_pin
 SWD = {"swdio": r".*SWDIO", "swclk": r".*SWCLK"}
 
 
-def ports(policy=None, vdd=None, rail="+3V3", vdd_min=None, vdd_max=None, **_):
-    return [PortSpec("vcc", rail, "power", "in", vdd or 0.0, 0.0, meta=dict(vmin=vdd_min, vmax=vdd_max)), PortSpec("gnd", "GND", "ground")]
+def signal_ports(signals, vdd) -> list:
+    """One port per signal, or one grouped multi-signal port per 'port' name; derived from the parameters alone (pins are bound in build)."""
+    out, groups = [], {}
+    for net, spec in (signals or {}).items():
+        if spec.get("port"):
+            g = groups.setdefault(spec["port"], PortSpec(spec["port"], net, spec.get("kind", "gpio"), "bidir", vdd or 0.0, 0.0, signals={}))
+            g.signals[spec.get("role", net)] = net
+        else:
+            out.append(PortSpec(net, net, spec.get("kind", "gpio"), "bidir", vdd or 0.0, 0.0))
+    return out + list(groups.values())
+
+
+def ports(policy=None, vdd=None, rail="+3V3", vdd_min=None, vdd_max=None, symbol=None, idd_max=None, signals=None, **_):
+    """The supply current comes from the stored datasheet numbers (idd_max) so the resolver can propagate demand before anything is built."""
+    if idd_max is None and symbol:
+        from sparky.datasheet import load
+        idd_max = load(symbol.split(":")[-1]).get("values", {}).get("idd_max")
+    return signal_ports(signals, vdd) + [PortSpec("vcc", rail, "power", "in", vdd or 0.0, idd_max or 0.0, meta=dict(vmin=vdd_min, vmax=vdd_max)), PortSpec("gnd", "GND", "ground")]
 
 def build(ctx, symbol, vdd, rail, signals, swd_header_symbol, swd_header_footprint):
     s = ctx.s
@@ -65,7 +81,7 @@ def build(ctx, symbol, vdd, rail, signals, swd_header_symbol, swd_header_footpri
     hdr[2] += swdio
     hdr[3] += swclk
     hdr[4] += gnd
-    used, sig_ports = {"NRST", "BOOT0"} | {str(p.name) for p in sup}, []
+    used, bound = {"NRST", "BOOT0"} | {str(p.name) for p in sup}, {}
     for net_name, spec in signals.items():
         if "pin" in spec:
             cands = [p for p in u.pins if str(p.name) == spec["pin"]]
@@ -75,12 +91,12 @@ def build(ctx, symbol, vdd, rail, signals, swd_header_symbol, swd_header_footpri
         if p is None:
             raise LookupError(f"{u.name}: no pin for signal {net_name} ({spec})")
         used.add(str(p.name))
+        bound[net_name] = str(p.name)
         n = s.Net(net_name)
         p += n
-        sig_ports.append(PortSpec(net_name, net_name, spec.get("kind", "gpio"), "bidir", vdd, 0.0, meta=dict(pin=str(p.name))))
-    res = Result(calcs={"mcu": f"{u.name}: {len(sup)} supply pins bypassed, SWD header, {len(signals)} signals bound ({', '.join(f'{k}->{sig_ports[i].meta['pin']}' for i, k in enumerate(signals))})"})
+    res = Result(calcs={"mcu": f"{u.name}: {len(sup)} supply pins bypassed, SWD header, {len(signals)} signals bound ({', '.join(f'{k}->{v}' for k, v in bound.items())})"})
     res.warnings += warnings + [f"not in the parts catalogue (no price/stock): {n}" for n in ctx.unsourced]
-    res.ports = sig_ports + ports(None, vdd, rail, ds["vdd_min"], ds["vdd_max"])
+    res.ports = ports(None, vdd, rail, ds["vdd_min"], ds["vdd_max"], idd_max=ds["idd_max"], signals=signals)
     return res
 
 

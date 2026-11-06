@@ -26,7 +26,7 @@ def env(tmp_path, monkeypatch):
         c.execute("insert into jlc_components values (?,?,?,?,?,?,?,?,?,?,?,?,?)", (i, "x", sub, mpn, pkg, "m", "base", 1, "", "", 9000, "1-:0.1", json.dumps(attrs)))
     c.commit()
     c.close()
-    datasheet.save("SN65HVD230", dict(vcc_min=3.0, vcc_max=3.6, bitrate_max=1e6, c_bypass=100e-9), "SYNTHETIC test fixture")
+    datasheet.save("SN65HVD230", dict(vcc_min=3.0, vcc_max=3.6, bitrate_max=1e6, c_bypass=100e-9, icc_max=0.017), "SYNTHETIC test fixture")
     return Catalog(p)
 
 

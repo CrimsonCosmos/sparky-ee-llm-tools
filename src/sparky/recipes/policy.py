@@ -22,6 +22,9 @@ class Policy:
     spice_cycles: int = 600
     spice_settle_cycles: int = 550
     spice_points_per_cycle: int = 200
+    spice_settle_tol: float = 0.01           # steady state: mean Vout and inductor ripple agree within this between the last two windows
+    spice_max_cycles: int = 9600             # give up (NOT VERIFIED) if the converter has not settled by then; each retry runs 4x longer
+    spice_vout_tolerance: float = 0.10       # open-loop Vout (duty = Vout/Vin) may differ this much: switch drop, dead time, light-load clamping
     spice_tolerance: float = 0.05            # simulated vs equation ripple/peak must agree within this fraction
     cap_esr_ohm: float = 5e-3                # typical MLCC ESR at switching frequency; override from the capacitor datasheet
     switch_ron_ohm: float = 50e-3            # used when the regulator datasheet gives no Rds(on)
