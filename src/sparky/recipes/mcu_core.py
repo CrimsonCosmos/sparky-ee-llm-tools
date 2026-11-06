@@ -55,6 +55,7 @@ def build(ctx, symbol, vdd, rail, signals, swd_header_symbol, swd_header_footpri
         for farads in own or [ds["c_bypass_pin"]]:
             vnet & ctx.capacitor(farads, vdd) & gnd                # datasheet values are NOMINAL part values: no DC-bias derating here
     vnet & ctx.capacitor(ds["c_bulk"], vdd) & gnd
+    u.fields["PowerW"] = vdd * ds["idd_max"]         # worst-case power drawn from the supply (datasheet maximum supply current x VDD), used for placement and thermal
     nrst = s.Net("NRST")
     for p in pins_named(u, "NRST"):
         p += nrst

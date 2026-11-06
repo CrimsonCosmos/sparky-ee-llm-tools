@@ -29,6 +29,7 @@ def build(ctx, symbol, vcc, bitrate, terminated=False, termination_jumper_footpr
         raise ValueError(f"can_node: {u.name} supply range is {ds['vcc_min']:g}-{ds['vcc_max']:g} V, requested {vcc:g} V")
     if bitrate > ds["bitrate_max"]:
         raise ValueError(f"can_node: {u.name} supports up to {ds['bitrate_max']:g} bit/s, requested {bitrate:g}")
+    u.fields["PowerW"] = vcc * ds["icc_max"]         # worst-case supply power (datasheet maximum supply current x VCC)
     vnet, gnd, txd, rxd, canh, canl = s.Net("VCC"), s.Net("GND"), s.Net("TXD"), s.Net("RXD"), s.Net("CANH"), s.Net("CANL")
     for role, net in (("vin", vnet), ("gnd", gnd), ("txd", txd), ("rxd", rxd), ("canh", canh), ("canl", canl)):
         for p in pins(u, role):

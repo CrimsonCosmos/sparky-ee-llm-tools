@@ -65,8 +65,10 @@ def _thermal(res: BuildResult, out: Path, files: dict, pol: Policy) -> str:
     """Steady-state board temperature from the dissipation the recipes declared. Says plainly when it did not run."""
     b = res.board
     power = {ref: c.power_w for ref, c in b.circuit.components.items() if c.power_w > 0}
+    unmodelled = sorted(ref for ref, c in b.circuit.components.items() if c.part.category == "ic" and c.power_w <= 0)
+    note = f"\n\n**Not modelled (no dissipation declared): {', '.join(unmodelled)}.**" if unmodelled else ""
     if not power:
-        return "NOT RUN: no component declared a dissipation (recipes set `PowerW` where they can compute it)."
+        return "NOT RUN: no component declared a dissipation (recipes set `PowerW` where they can compute it)." + note
     if not thermalx.available():
         return "NOT RUN: pcb-analysis with its compiled kernels is not installed (see docs/DEPENDENCIES.md); the unverified dissipations are: " + \
                ", ".join(f"{r} {w:.2f} W" for r, w in power.items())
@@ -76,10 +78,11 @@ def _thermal(res: BuildResult, out: Path, files: dict, pol: Policy) -> str:
     import json
     (out / "thermal.json").write_text(json.dumps(r.__dict__, indent=1))
     files["thermal.json"] = out / "thermal.json"
-    rows = "\n".join(f"- {ref}: {power[ref]:.2f} W -> +{r.part_rise_k.get(ref, 0):.1f} K at its footprint" for ref in power)
+    rows = "\n".join(f"- {ref}: {power[ref] * 1e3:.1f} mW -> +{r.part_rise_k.get(ref, 0):.1f} K at its footprint" for ref in power)
     return (f"Ambient {r.ambient_c:g} C, natural convection h = {pol.convection_h_w_m2k:g} W/m2K on both faces, emissivity {pol.emissivity:g}; heat balance error "
-            f"{r.balance_error_w:.1e} W. **Peak rise {r.peak_rise_k:.1f} K** above ambient (total {r.heat_in_w:.2f} W).\n\n{rows}\n\n"
-            "Dissipation inputs are the recipes' own estimates (e.g. regulator conduction loss), not measurements; package thermal resistance and an enclosure are not modelled.")
+            f"{r.balance_error_w:.1e} W. **Peak rise {r.peak_rise_k:.1f} K** above ambient (total {r.heat_in_w * 1e3:.1f} mW).\n\n{rows}\n\n"
+            "Dissipation inputs are the recipes' own estimates (datasheet maximum supply current x voltage; regulator conduction loss only), not measurements; "
+            "package thermal resistance and an enclosure are not modelled." + note)
 
 
 def _irdrop(res: BuildResult, out: Path, files: dict, pol: Policy) -> str:
