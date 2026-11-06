@@ -16,7 +16,7 @@ def ports(policy, vout=None, iout=None, **_):          # interface from paramete
 
 def build(ctx, symbol, vout, iout, ...):               # ctx.s is SKiDL; build parts and nets; return a Result
     ic, choice = ctx.ic(symbol, need)                  # KiCad symbol; the catalogue is a SPEC CHECK + sourcing, never a silent substitution
-    ds = ctx.datasheet(...)                            # datasheet numbers: from sparky.datasheet.need(); raises NeedsDatasheet if not cached
+    ds = sparky.datasheet.need(part, {"vref": "V"})    # datasheet numbers; raises NeedsDatasheet (listing what is missing) if not cached
     ...
     return Result(ports=ports(ctx.policy, ...), calcs={"my_recipe": "..."}, warnings=[...])
 ```
