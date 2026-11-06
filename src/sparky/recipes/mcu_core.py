@@ -10,7 +10,10 @@ PARAMS = [Param("symbol", "string", None, "KiCad symbol of the MCU (e.g. MCU_ST_
           Param("swd_header_symbol", "string", None, "KiCad symbol of a 1x04 header for SWD (pins: 1=VDD 2=SWDIO 3=SWCLK 4=GND)", True),
           Param("swd_header_footprint", "string", None, "KiCad footprint for the SWD header", True)]
 DATASHEET = {"vdd_min": "minimum supply, V", "vdd_max": "maximum supply, V", "c_bypass_pin": "bypass capacitor per supply pin, F",
-             "c_bulk": "bulk capacitor on the supply, F", "c_nrst": "capacitor from NRST to ground, F", "r_boot0": "BOOT0 pull-down resistor, ohm"}
+             "c_bulk": "bulk capacitor on the supply, F"}
+# Optional values (only when the datasheet / the vendor's hardware application note gives them; otherwise the recipe warns and does not invent them):
+#   c_nrst            capacitor from NRST to ground, F          r_boot0         BOOT0 pull-down resistor, ohm
+#   c_bypass@<PIN>#n  n-th capacitor for supply pins named <PIN> (e.g. c_bypass@VDDA#1 = 10 nF, c_bypass@VDDA#2 = 1 uF) instead of c_bypass_pin
 SWD = {"swdio": r".*SWDIO", "swclk": r".*SWCLK"}
 
 
@@ -29,17 +32,28 @@ def build(ctx, symbol, vdd, rail, signals, swd_header_symbol, swd_header_footpri
         p += vnet
     for p in pins(u, "gnd"):
         p += gnd
-    for _ in sup:                                    # one bypass capacitor per supply pin, as the datasheet's power-supply scheme requires
-        vnet & ctx.capacitor(ds["c_bypass_pin"], vdd) & gnd       # datasheet values are NOMINAL part values: no DC-bias derating here
+    from sparky.datasheet import load as ds_load
+    opt = ds_load(u.name).get("values", {})
+    for p in sup:                                    # bypass per supply pin, as the datasheet's power-supply scheme requires (per-pin-name overrides when given)
+        own = [opt[k] for k in sorted(opt) if k.startswith(f"c_bypass@{p.name}#")]
+        for farads in own or [ds["c_bypass_pin"]]:
+            vnet & ctx.capacitor(farads, vdd) & gnd                # datasheet values are NOMINAL part values: no DC-bias derating here
     vnet & ctx.capacitor(ds["c_bulk"], vdd) & gnd
     nrst = s.Net("NRST")
     for p in pins_named(u, "NRST"):
         p += nrst
-    nrst & ctx.capacitor(ds["c_nrst"], vdd) & gnd
+    warnings = []
+    if "c_nrst" in opt:
+        nrst & ctx.capacitor(opt["c_nrst"], vdd) & gnd
+    else:
+        warnings.append(f"{u.name}: NRST capacitor NOT fitted (no value in the stored datasheet numbers; see the vendor's hardware-development application note)")
     for p in pins_named(u, "BOOT0"):
-        r = ctx.resistor(ds["r_boot0"])
-        p += r[1]
-        r[2] += gnd
+        if "r_boot0" in opt:
+            r = ctx.resistor(opt["r_boot0"])
+            p += r[1]
+            r[2] += gnd
+        else:
+            warnings.append(f"{u.name}: BOOT0 is FLOATING (no pull-down value stored); add r_boot0 from the vendor's hardware-development application note")
     hdr = ctx.generic(swd_header_symbol, swd_header_footprint)
     swdio, swclk = s.Net("SWDIO"), s.Net("SWCLK")
     for key, net in (("swdio", swdio), ("swclk", swclk)):
@@ -65,7 +79,7 @@ def build(ctx, symbol, vdd, rail, signals, swd_header_symbol, swd_header_footpri
         p += n
         sig_ports.append(PortSpec(net_name, net_name, spec.get("kind", "gpio"), "bidir", vdd, 0.0, meta=dict(pin=str(p.name))))
     res = Result(calcs={"mcu": f"{u.name}: {len(sup)} supply pins bypassed, SWD header, {len(signals)} signals bound ({', '.join(f'{k}->{sig_ports[i].meta['pin']}' for i, k in enumerate(signals))})"})
-    res.warnings += [f"not in the parts catalogue (no price/stock): {n}" for n in ctx.unsourced]
+    res.warnings += warnings + [f"not in the parts catalogue (no price/stock): {n}" for n in ctx.unsourced]
     res.ports = sig_ports + ports(None, vdd, rail, ds["vdd_min"], ds["vdd_max"])
     return res
 
