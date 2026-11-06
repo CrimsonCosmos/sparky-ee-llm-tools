@@ -55,7 +55,8 @@ class Ctx:
         return self._tag(p, ch)
 
     def capacitor(self, farads: float, working_v: float):
-        """Ceramic cap rated >= working_v / policy.cap_voltage_derating."""
+        """One ceramic cap of NOMINAL value `farads` (as a datasheet specifies), rated >= working_v / policy.cap_voltage_derating. For capacitance computed
+        from equations (where usable capacitance matters) use `capacitors`."""
         rated = working_v / self.policy.cap_voltage_derating
         ch = self._first(needs.mlcc(farads, rated, self.policy.chip_capacitor), f"MLCC {farads:g} F >= {rated:g} V")
         p = self.s.Part("Device", "C", value=_val(farads), footprint=chip_footprint("C", ch.package))
