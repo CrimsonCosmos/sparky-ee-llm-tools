@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import math
+
+OZ_CU_MM = 0.035   # unit conversion: 1 oz/ft^2 copper = 35 um
 from dataclasses import dataclass, field
 
 
@@ -11,6 +13,9 @@ class Rules:
     copper_oz_outer: float = 1.0
     copper_oz_inner: float = 0.5
     thickness_mm: float = 1.6
+    mask_thickness_mm: float = 0.01      # stackup inputs: set per fab profile / real stackup, never inline in code
+    dielectric_er: float = 4.5
+    dielectric_tan_d: float = 0.02
     track: float = 0.2             # default signal width
     min_track: float = 0.127
     clearance: float = 0.2

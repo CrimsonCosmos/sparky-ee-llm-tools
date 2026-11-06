@@ -29,6 +29,25 @@ def _layers_def(n: int):
     return ["layers"] + layers
 
 
+def _stackup(rules, n: int) -> list:
+    """(stackup ...) describing the physical layers, derived entirely from `rules` (copper weights, board thickness, mask, dielectric)."""
+    from ..pcb.rules import OZ_CU_MM
+    names = ["F.Cu"] + [f"In{i}.Cu" for i in range(1, n - 1)] + ["B.Cu"]
+    cu = [rules.copper_oz_outer * OZ_CU_MM if k in (0, n - 1) else rules.copper_oz_inner * OZ_CU_MM for k in range(n)]
+    diel = max((rules.thickness_mm - sum(cu) - 2 * rules.mask_thickness_mm) / (n - 1), 0.0)
+    st: list = ["stackup", ["layer", Q("F.SilkS"), ["type", Q("Top Silk Screen")]], ["layer", Q("F.Paste"), ["type", Q("Top Solder Paste")]],
+                ["layer", Q("F.Mask"), ["type", Q("Top Solder Mask")], ["thickness", rules.mask_thickness_mm]]]
+    for i, nm in enumerate(names):
+        st.append(["layer", Q(nm), ["type", Q("copper")], ["thickness", round(cu[i], 5)]])
+        if i < n - 1:
+            st.append(["layer", Q(f"dielectric {i + 1}"), ["type", Q("core")], ["thickness", round(diel, 4)], ["material", Q("FR4")],
+                       ["epsilon_r", rules.dielectric_er], ["loss_tangent", rules.dielectric_tan_d]])
+    st += [["layer", Q("B.Mask"), ["type", Q("Bottom Solder Mask")], ["thickness", rules.mask_thickness_mm]],
+           ["layer", Q("B.Paste"), ["type", Q("Bottom Solder Paste")]], ["layer", Q("B.SilkS"), ["type", Q("Bottom Silk Screen")]],
+           ["copper_finish", Q("None")], ["dielectric_constraints", "no"]]
+    return st
+
+
 def to_kicad_pcb(board: Board, title: str = "sparky") -> str:
     c = board.circuit
     nets = {"": 0}
@@ -37,7 +56,7 @@ def to_kicad_pcb(board: Board, title: str = "sparky") -> str:
     root: list = ["kicad_pcb", ["version", 20221018], ["generator", Q("sparky")],
                   ["general", ["thickness", board.rules.thickness_mm]], ["paper", Q("A4")],
                   _layers_def(len(board.layers)),
-                  ["setup", ["pad_to_mask_clearance", board.rules.mask_expansion],
+                  ["setup", _stackup(board.rules, len(board.layers)), ["pad_to_mask_clearance", board.rules.mask_expansion],
                    ["pcbplotparams", ["layerselection", "0x00010fc_ffffffff"], ["usegerberextensions", "false"]]]]
     for n, i in nets.items():
         root.append(["net", i, Q(n)])

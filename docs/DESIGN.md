@@ -1,5 +1,12 @@
 # sparky-ee-llm-tools — system design
 
+## NO HARDCODED ENGINEERING VALUES (top rule)
+Never put a physical, electrical, process or fab number in code (copper weights, thicknesses, permittivity, clearances, currents,
+conductivities, limits, part values, pin tables). Each value comes from exactly one of: the user's spec, a rules/fab-profile object
+(`pcb/rules.py`, overridable), a library (KiCad symbols/footprints, jlcparts data, the analysis tool itself), or a datasheet-derived input
+passed in. Only true unit conversions and physical constants may be literals, and they are named. If a value has no source, add a field
+with a documented source - do not inline a "reasonable" number. Violations are bugs; review every diff for them.
+
 ## 1. Purpose (the one thing this program does)
 > Given a system-level description with named **inputs and outputs** (rails, buses, connectors, loads, budget), produce a
 > **KiCad project** (schematic + placed + routed PCB + fab files) and a **bill of materials with sourcing**.

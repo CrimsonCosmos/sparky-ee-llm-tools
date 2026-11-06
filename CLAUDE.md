@@ -5,6 +5,13 @@ geometry, numerics, placement, routing, DRC, manufacturing export and purchasing
 
 Register the tools once: `claude mcp add sparky -- python -m sparky.mcp_server` (or use the repo's `.mcp.json`).
 
+## NO HARDCODED ENGINEERING VALUES (top rule)
+Never put a physical, electrical, process or fab number in code (copper weights, thicknesses, permittivity, clearances, currents,
+conductivities, limits, part values, pin tables). Each value comes from exactly one of: the user's spec, a rules/fab-profile object
+(`pcb/rules.py`, overridable), a library (KiCad symbols/footprints, jlcparts data, the analysis tool itself), or a datasheet-derived input
+passed in. Only true unit conversions and physical constants may be literals, and they are named. If a value has no source, add a field
+with a documented source - do not inline a "reasonable" number. Violations are bugs; review every diff for them.
+
 ## Workflow for "build me <X>, budget $<Y>"
 1. Call `forge_list_blocks` to see the builders. Restate requirements and assumptions.
 2. Decompose recursively into subsystems -> leaves that are blocks or purchased items. Research unknowns on the web
