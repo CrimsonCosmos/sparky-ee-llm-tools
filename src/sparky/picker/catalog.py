@@ -100,6 +100,7 @@ class Need:
     near: dict[str, tuple[str, float]] = field(default_factory=dict)  # attribute ~= value within relative tolerance: ("100nF", 0.01)
     minimum: dict[str, str] = field(default_factory=dict)       # attribute >= quantity, e.g. {"Current - Saturation(Isat)": "5A"}
     maximum: dict[str, str] = field(default_factory=dict)       # attribute <= quantity, e.g. {"RDS(on)": "10mohm"}
+    covers: dict[str, tuple[str, str]] = field(default_factory=dict)   # range attribute "a~b" must cover [lo, hi], e.g. {"Voltage - Supply": ("9V", "17V")}
     text: str | None = None                            # free-text FTS match (MPN / description)
     basic_only: bool = False
     min_stock: int = 100
@@ -180,6 +181,19 @@ class Catalog:
             q = quantity(target)
             have = _value(attrs[attr], str(q.units)) if q is not None else None
             if have is None or q is None or abs(have - q.magnitude) > abs(q.magnitude) * tol:
+                return False
+        for attr, (lo, hi) in need.covers.items():
+            m = str(attrs.get(attr, "")).split("~")
+            if len(m) != 2:
+                return False
+            a, b = quantity(m[0]), quantity(m[1])
+            ql, qh = quantity(lo), quantity(hi)
+            if None in (a, b, ql, qh):
+                return False
+            try:
+                if float(a.to(ql.units).magnitude) > ql.magnitude + 1e-9 or float(b.to(qh.units).magnitude) < qh.magnitude - 1e-9:
+                    return False
+            except Exception:
                 return False
         for attr, bound in need.minimum.items():
             q = quantity(bound)

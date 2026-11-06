@@ -48,3 +48,11 @@ def tvs(standoff_min: float, max_over: float = 0.35) -> Need:
 
 def ldo(vout: float, iout_min: float) -> Need:
     return Need("Voltage Regulators - Linear, Low Drop Out (LDO) Regulators", near={"Output Voltage": (f"{vout}V", 0.01)}, minimum={"Output Current": f"{iout_min}A"})
+
+
+def buck_regulator(vin_min: float, vin_max: float, iout_min: float, adjustable: bool = True) -> Need:
+    """Step-down regulator whose supply range covers the whole input window and whose output current covers the load."""
+    n = Need("DC-DC Converters", equals={"Topology": "Buck"}, minimum={"Output Current": f"{iout_min}A"}, covers={"Voltage - Supply": (f"{vin_min}V", f"{vin_max}V")})
+    if adjustable:
+        n.equals["Output Type"] = "Adjustable"
+    return n
