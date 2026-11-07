@@ -25,3 +25,5 @@ def test_real_buck_routes_clean_and_spice_agrees(tmp_path, monkeypatch):
     assert files["fab.zip"].exists() and "step" in files
     bom = (tmp_path / "pkg" / "bom.csv").read_text()
     assert "TPS563201" in bom and "LCSC #" in bom
+    report = (tmp_path / "pkg" / "REPORT.md").read_text()
+    assert "Radiated emission" in report and "NOT RUN: no switching loop declared" in report        # no sourced edge time stored -> no EMC claim, said plainly

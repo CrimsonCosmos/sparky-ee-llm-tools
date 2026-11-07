@@ -55,7 +55,8 @@ def build(ctx, symbol, vin_min, vin_max, vout, iout, rail, inductor_footprint=No
         cb = ctx.capacitor(ds["c_boot"], ds["v_boot"])
         p += cb[1]
         cb[2] += sw
-    for c in ctx.capacitors(d.cin_required, vin_max):
+    cin_parts = ctx.capacitors(d.cin_required, vin_max)
+    for c in cin_parts:
         vin & c & gnd
     for c in ctx.capacitors(d.cout_required, vout):
         vo & c & gnd
@@ -66,6 +67,11 @@ def build(ctx, symbol, vin_min, vin_max, vout, iout, rail, inductor_footprint=No
     res = Result(notes=list(d.notes), calcs={"buck": f"{mpn}: {vin_min:g}-{vin_max:g} V -> {vout:g} V @ {iout:g} A; L={d.inductance * 1e6:g} uH "
                                                      f"(ripple {d.inductor_ripple:.2f} A, peak {d.inductor_peak:.2f} A, Isat>={d.inductor_isat_min:.2f} A); "
                                                      f"Cout>={d.cout_required * 1e6:.1f} uF; divider {d.r_top:g}/{d.r_bottom:g} -> {d.vout_actual:.3f} V"})
+    t_rise = ds_load(ic.name).get("values", {}).get("t_rise")
+    if t_rise:                                    # only with a SOURCED edge time (datasheet / measurement): no number, no EMC claim
+        from sparky.constraints import HotLoop
+        caps_in = [c for c in cin_parts]
+        res.constraints.append(HotLoop(ic.ref, str(pins(ic, "vin")[0].num), str(pins(ic, "gnd")[0].num), [c.ref for c in caps_in], d.inductor_peak, vout / vin_min, ds["fsw"], t_rise))
     res.net_attrs = {"SW": {"current_a": d.inductor_peak, "voltage": vin_max},      # switch node: peak inductor current, input-rail voltage
                      "GND": {"current_a": iout}}                                    # return current of the load
     res.warnings += [f"not in the parts catalogue (no price/stock): {n}" for n in ctx.unsourced]

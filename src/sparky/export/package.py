@@ -9,6 +9,7 @@ from .. import kicad_backend
 from ..pcb.flow import BuildResult
 from . import bom as bomx
 from . import kicad
+from ..analysis import emc_network as emcx
 from ..analysis import irdrop as irdropx
 from ..analysis import thermal as thermalx
 from ..recipes.policy import Policy
@@ -45,6 +46,7 @@ def write_package(res: BuildResult, outdir: str | Path, project: str, extra: dic
         extra["Routing constraints (re-measured from the routed copper, tracks + via barrels)"] = "\n".join(rows)
     extra["DC IR drop (open-source: kicad-irdrop)"] = _irdrop(res, out, files, pol)
     extra["Thermal (open-source FEM: pcb-analysis)"] = _thermal(res, out, files, pol)
+    extra["Radiated emission, switching loop (pcb-analysis network model)"] = _emc(res, out, files, pol)
 
     def w(name: str, text: str) -> None:
         p = out / name
@@ -114,3 +116,44 @@ def _irdrop(res: BuildResult, out: Path, files: dict, pol: Policy) -> str:
         if r.get("unreached"):
             L.append(f"\n**Not connected to the source in copper: {', '.join(r['unreached'])}**")
     return "\n".join(L)
+
+
+def _emc(res: BuildResult, out: Path, files: dict, pol: Policy) -> str:
+    """Radiated emission of each declared switching loop (HotLoop): copper network + input capacitors + harmonic source. Pre-compliance screening only."""
+    from ..constraints import HotLoop
+    from ..units import parse_si
+    loops = [c for c in res.board.circuit.constraints if isinstance(c, HotLoop)]
+    if not loops:
+        return ("NOT RUN: no switching loop declared. A recipe declares one only when the switch-node edge time has a source (datasheet or measurement): "
+                "store `t_rise` with `sparky save-spec` to enable it.")
+    if not emcx.available():
+        return "NOT RUN: pcb-analysis with its compiled kernels is not installed (see docs/DEPENDENCIES.md)."
+    b = res.board
+    c = b.circuit
+    pin_net = c.pin_net_map()
+    rows, blocks = ["| Loop | f (MHz) | Field @ %g m (dBuV/m) | Limit | Margin (dB) |" % pol.emc_distance_m, "|--|--|--|--|--|"], []
+    for k, lp in enumerate(loops):
+        def pad(ref: str, pin: str) -> "emcx.LoopPad":
+            p = next(q for q in b.pads_of(ref) if q.number == pin)
+            return emcx.LoopPad(f"{ref}.{pin}", pin_net[f"{ref}.{pin}"], p.x, p.y, "F.Cu", p.w / 2, p.h / 2)
+        hi, lo = pad(lp.ref, lp.hi_pin), pad(lp.ref, lp.lo_pin)
+        pads, refs, parts = [hi, lo], {}, []
+        for cref in lp.cap_refs:
+            pa, pb = (pad(cref, "1"), pad(cref, "2"))
+            if pa.net != hi.net:
+                pa, pb = pb, pa                                           # pa on the supply net, pb on the ground net
+            pads += [pa, pb]
+            refs[pa.name], refs[pb.name] = hi.name, lo.name
+            parts.append(emcx.CapPart(f"C_{cref}", pa.name, pb.name, parse_si(c.components[cref].value), pol.cap_esr_ohm, pol.mlcc_esl_h))
+        amps = {f: emcx.trapezoid_envelope_a(lp.ipk_a, lp.duty, lp.fsw_hz, lp.rise_s, f) for f in pol.emc_frequencies_hz}
+        try:
+            harm = emcx.run_hot_loop(res.pcb_path, pads=pads, references=refs, parts=parts, source_hi=hi.name, source_lo=lo.name, amps_by_f=amps, rules=b.rules,
+                                     plating_mm=pol.via_plating_mm, pitch_mm=pol.emc_pitch_mm, distance_m=pol.emc_distance_m, limit=pol.emc_limit)
+        except Exception as e:                                           # a failed solve is reported, never a made-up number
+            return f"NOT RUN: {type(e).__name__}: {e}"
+        for h in harm:
+            rows.append(f"| {lp.ref} | {h.frequency_hz / 1e6:g} | {h.field_dbuv_per_m:.1f} | {'-' if h.limit_dbuv_per_m is None else f'{h.limit_dbuv_per_m:.1f}'} | "
+                        f"{'-' if h.margin_db is None else f'{h.margin_db:+.1f}' + ('' if h.margin_db >= 0 else ' **OVER**')} |")
+        blocks.append(f"{lp.ref}: peak switched current {lp.ipk_a:.2f} A, duty {lp.duty:.2f}, fsw {lp.fsw_hz / 1e3:g} kHz, edge time {lp.rise_s * 1e9:g} ns.")
+    return ("\n".join(rows) + "\n\n" + " ".join(blocks) + f" Harmonic amplitudes use the worst-case envelope. Capacitor ESR {pol.cap_esr_ohm * 1e3:g} mOhm and ESL {pol.mlcc_esl_h * 1e9:g} nH are "
+            "typical values, not measured. Free-space estimate of the board's copper loop only: cables, enclosure and the other loops are not modelled.")

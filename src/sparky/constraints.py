@@ -120,6 +120,24 @@ class ControlledImpedance(_NetRemap):
 
 
 @dataclass
+class HotLoop:
+    """A switching loop to assess for radiated emission: the switch IC's supply and ground pins, the input capacitors that close the loop, and the switched current
+    (peak, duty at its maximum, switching frequency, edge time). Declared only when every number has a source (datasheet / measurement)."""
+    ref: str                 # switch IC
+    hi_pin: str              # its supply pin number
+    lo_pin: str              # its ground pin number
+    cap_refs: list[str]      # input capacitors closing the loop
+    ipk_a: float
+    duty: float
+    fsw_hz: float
+    rise_s: float
+
+    def remap(self, refmap: dict[str, str], netmap: dict[str, str]) -> None:
+        self.ref = refmap.get(self.ref, self.ref)
+        self.cap_refs = [refmap.get(r, r) for r in self.cap_refs]
+
+
+@dataclass
 class Fanout:
     """Escape-route the balls of this array package (BGA/QFN) before routing the nets."""
     ref: str

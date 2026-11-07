@@ -13,8 +13,7 @@ EMC adapter (pcb-analysis dipole superposition) validated against Ott's small-lo
 * The old hand-written motor driver was not ported: buy it (buy-vs-build policy) or have Claude author a recipe from a vendor reference design.
 
 ## Next (in order)
-1. EMC in the flow: each recipe must declare its switching-current model (hot-loop terminals + harmonic amplitude from fsw/rise time/duty) so the adapter can run per board;
-   the proper tool for parts joining nets is pcb-analysis' `BoardNetwork`/`network_emission` (the adapter's single straight return element is the simple case).
+1. DONE: EMC in the flow via pcb-analysis' network model (copper port network + input capacitors + harmonic source), validated against Ott's formula within 2 dB; a buck declares its HotLoop only when a SOURCED switch-node edge time (`t_rise`) is stored (the TPS563201 datasheet has none), otherwise the report says NOT RUN. Capacitor ESR/ESL are typical Policy values. Open: other loops (SW node, output), cables, enclosure, spectrum from a SPICE waveform instead of the trapezoid envelope.
 2. Thermal needs package theta_JA / enclosure: only copper spreading + convection is modelled; report says so.
 3. Recipes Claude should author from datasheet reference designs when needed (motor driver, USB, IMU...). The old hand-written 3-phase driver was deliberately not ported.
 4. Dependency pins are in pyproject; document prebuilt wheels / setup for the pcb-analysis kernels on Windows/macOS.

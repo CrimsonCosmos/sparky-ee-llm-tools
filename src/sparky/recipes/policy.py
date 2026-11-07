@@ -39,6 +39,12 @@ class Policy:
     convection_h_w_m2k: float = 10.0         # natural convection, still air, both board faces (typical 5-25); set from the enclosure
     emissivity: float = 0.9                  # solder mask / FR4 surface
     thermal_pitch_mm: float = 0.25           # thermal grid resolution
+    mlcc_esl_h: float = 0.5e-9               # typical equivalent series inductance of a small ceramic capacitor mounted on pads (override from the maker's data)
+    emc_frequencies_hz: tuple = (30e6, 100e6, 300e6)   # radiated-emission evaluation frequencies (CISPR 32 radiated band starts at 30 MHz)
+    emc_distance_m: float = 10.0             # CISPR 32 class B measurement distance
+    emc_limit: str = "CISPR32_CLASS_B"
+    emc_pitch_mm: float = 0.25               # copper grid for the EMC solve
+    via_plating_mm: float = 0.02             # plated barrel thickness assumed for via resistance (kicad-irdrop's default too)
     capacity_warn_fraction: float = 0.8      # warn when a supply is loaded beyond this fraction of its rating
     contingency_fraction: float = 0.10       # added to the system cost roll-up
     buy_ratio: float = 1.15                  # buy instead of build when the purchased price <= build BOM x this + buy_abs_usd (buy-vs-build policy)

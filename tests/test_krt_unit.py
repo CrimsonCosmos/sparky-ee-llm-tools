@@ -51,3 +51,10 @@ def test_microstrip_formula_by_hand():
     # sqrt(5.91) = 2.4310 ; 87/2.4310 = 35.787 ; 5.98*0.4917 = 2.9404 ; 0.8*0.9104+0.035 = 0.76332 ; ln(3.8520) = 1.3484 ; Z0 = 48.25 ohm
     assert krt.microstrip_z0(0.9104, 0.4917, 0.035, 4.5) == pytest.approx(48.25, abs=0.05)
     assert krt.microstrip_z0(0.5, 0.4917, 0.035, 4.5) > krt.microstrip_z0(0.9, 0.4917, 0.035, 4.5)     # narrower trace -> higher impedance
+
+
+def test_hot_loop_follows_ref_renumbering():
+    from sparky.constraints import HotLoop
+    h = HotLoop("U1", "3", "1", ["C1", "C2"], 2.0, 0.3, 5e5, 5e-9)
+    h.remap({"U1": "buck.U1", "C1": "buck.C1"}, {})
+    assert h.ref == "buck.U1" and h.cap_refs == ["buck.C1", "C2"]
