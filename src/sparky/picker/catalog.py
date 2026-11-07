@@ -26,13 +26,14 @@ def ensure_db(path: Path | None = None, url: str = DB_URL, progress=None) -> Pat
     """Download (resumable) the catalogue if it is not present. Returns the path."""
     path = path or db_path()
     import requests
-    head = requests.head(url, allow_redirects=True, timeout=60)
+    raw = {"Accept-Encoding": "identity"}      # a compressed transfer reports the compressed length, which never equals the file size (nor can it be resumed by byte range)
+    head = requests.head(url, allow_redirects=True, timeout=60, headers=raw)
     total = int(head.headers.get("content-length", 0))
     have = path.stat().st_size if path.exists() else 0
     if total and have == total:
         return path
     path.parent.mkdir(parents=True, exist_ok=True)
-    with requests.get(url, stream=True, headers={"Range": f"bytes={have}-"} if have and total and have < total else {}, timeout=60) as r:
+    with requests.get(url, stream=True, headers={**raw, **({"Range": f"bytes={have}-"} if have and total and have < total else {})}, timeout=60) as r:
         r.raise_for_status()
         mode = "ab" if r.status_code == 206 else "wb"
         with open(path, mode) as f:
