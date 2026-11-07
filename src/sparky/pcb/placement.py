@@ -266,7 +266,7 @@ class _Placer:
                 self.x[i], self.y[i], self.rot[i] = comp.fixed
                 self.fixed[i] = True
             elif corner:
-                inset = 4.0
+                inset = self.r.corner_inset_mm
                 self.x[i] = inset if "l" in corner else W - inset
                 self.y[i] = inset if "t" in corner else H - inset
                 self.fixed[i] = True

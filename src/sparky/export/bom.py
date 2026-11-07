@@ -9,6 +9,9 @@ from ..model import Circuit
 from ..pcb.board import Board
 
 
+UNASSEMBLED = ("mounting", "testpoint", "fiducial")        # on the board but not parts the assembler places or buys
+
+
 def _fp_name(c) -> str:
     fp = c.part.footprint
     return fp if isinstance(fp, str) else fp.name
@@ -18,7 +21,7 @@ def group_bom(circuit: Circuit) -> list[dict]:
     """One row per (MPN, value, footprint). Prices/links come from the catalogue fields recorded on each component (a snapshot, not a live quote)."""
     groups: "OrderedDict[tuple, dict]" = OrderedDict()
     for ref, c in circuit.components.items():
-        mech = c.dnp or c.part.category in ("mounting", "testpoint")
+        mech = c.dnp or c.part.category in UNASSEMBLED
         key = ("__mech__", c.part.mpn) if mech else (c.part.mpn, c.value, _fp_name(c))
         g = groups.setdefault(key, {"refs": [], "comp": c, "dnp": mech})
         g["refs"].append(ref)
@@ -71,7 +74,7 @@ def cpl_csv(board: Board) -> str:
     w = csv.writer(out)
     w.writerow(["Designator", "Val", "Package", "Mid X", "Mid Y", "Rotation", "Layer"])
     for ref, comp in board.circuit.components.items():
-        if comp.dnp or comp.part.category in ("mounting", "testpoint"):
+        if comp.dnp or comp.part.category in UNASSEMBLED:
             continue
         pl = board.place[ref]
         w.writerow([ref, comp.value, comp.part.package, f"{pl.x:.3f}mm", f"{H - pl.y:.3f}mm", f"{pl.rot % 360:g}", pl.side.capitalize()])

@@ -15,6 +15,7 @@ from pathlib import Path
 
 from .. import kicad_symbols as ks
 from .. import sexpr
+from .bom import UNASSEMBLED
 from ..model import Circuit, Component, PartDef
 from ..sexpr import Q, dump
 
@@ -179,7 +180,7 @@ def to_kicad_sch(circuit: Circuit, title: str | None = None, use_kicad_symbols: 
         ox, oy = placement[ref]
         rx, ry = _prop_at(node, "Reference")
         vx, vy = _prop_at(node, "Value")
-        sym: list = ["symbol", ["lib_id", Q(lid)], ["at", ox, oy, 0], ["unit", 1], ["in_bom", "yes" if comp.part.category not in ("mounting",) else "no"],
+        sym: list = ["symbol", ["lib_id", Q(lid)], ["at", ox, oy, 0], ["unit", 1], ["in_bom", "no" if comp.part.category in UNASSEMBLED else "yes"],
                      ["on_board", "yes"], ["dnp", "yes" if comp.dnp else "no"], ["fields_autoplaced"], ["uuid", _u("sym:" + ref)],
                      ["property", Q("Reference"), Q(ref), ["at", round(ox + rx, 4), round(oy - ry, 4), 0], _FONT],
                      ["property", Q("Value"), Q(comp.value or comp.part.mpn), ["at", round(ox + vx, 4), round(oy - vy, 4), 0], _FONT],

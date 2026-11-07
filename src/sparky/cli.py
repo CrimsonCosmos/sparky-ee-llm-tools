@@ -43,7 +43,8 @@ def cmd_board(a):
     from .pcb.flow import BoardSpec, build_board
     from .recipes import build_recipe
     c = build_recipe(a.recipe, json.loads(a.params or "{}"))
-    res = build_board(c, BoardSpec(layers=a.layers, copper_oz=a.copper_oz))
+    tp = a.test_points if a.test_points == "rails" else tuple(x for x in (a.test_points or "").split(",") if x)
+    res = build_board(c, BoardSpec(layers=a.layers, copper_oz=a.copper_oz, fiducials=a.fiducials, test_points=tp))
     out = Path(a.out)
     write_package(res, out, a.recipe)
     print(f"{'OK' if res.success else 'INCOMPLETE'}: {res.board.width}x{res.board.height} mm, {res.board.rules.layers}L, DRC {res.drc.summary()}; files in {out}")
@@ -134,6 +135,7 @@ def main(argv=None):
     s.add_argument("--source", required=True, help="datasheet URL/page the numbers came from"); s.set_defaults(fn=cmd_save_spec)
     s = sub.add_parser("board", help="build one recipe into a routed board package")
     s.add_argument("recipe"); s.add_argument("--params"); s.add_argument("--layers", type=int); s.add_argument("--copper-oz", type=float, default=1.0)
+    s.add_argument("--fiducials", type=int, default=0, help="global assembly fiducials (0-3)"); s.add_argument("--test-points", help="comma-separated nets, or 'rails'")
     s.add_argument("--out", default="sparky_out/board"); s.set_defaults(fn=cmd_board)
     s = sub.add_parser("plan"); s.add_argument("request"); s.add_argument("--budget", type=float); s.add_argument("--out", default="plan.json"); s.set_defaults(fn=cmd_plan)
     for name, fn in (("build", cmd_build), ("build-plan", cmd_build_plan)):

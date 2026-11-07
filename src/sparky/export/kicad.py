@@ -61,6 +61,9 @@ def _stackup(rules, n: int) -> list:
     return st
 
 
+from .bom import UNASSEMBLED  # noqa: E402
+
+
 def to_kicad_pcb(board: Board, title: str = "sparky") -> str:
     c = board.circuit
     nets = {"": 0}
@@ -98,7 +101,8 @@ def to_kicad_pcb(board: Board, title: str = "sparky") -> str:
                      eff, ["tstamp", _uuid(ref + "-val")]],
                     ["property", Q("MPN"), Q(comp.part.mpn)],
                     ["property", Q("Datasheet"), Q(comp.part.datasheet_url or "~")],
-                    ["attr", "smd" if not any(p.thru for p in fp.pads) else "through_hole"]]
+                    ["attr", "smd" if not any(p.thru for p in fp.pads) else "through_hole"]
+                    + (["exclude_from_pos_files", "exclude_from_bom"] if comp.part.category in UNASSEMBLED else [])]
         for s in fp.silk:
             if s[0] == "line":
                 fl.append(["fp_line", ["start", mx(s[1]), s[2]], ["end", mx(s[3]), s[4]], ["stroke", ["width", 0.12], ["type", "solid"]], ["layer", Q(f"{F}.SilkS")], ["tstamp", _uuid(f"{ref}-s{len(fl)}")]])

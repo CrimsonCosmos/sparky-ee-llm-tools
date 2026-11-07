@@ -31,6 +31,9 @@ class BoardSpec:
     passes: int = 20                       # Freerouting optimisation passes
     rule_overrides: dict = field(default_factory=dict)
     workdir: str | None = None
+    fiducials: int = 0                     # global assembly fiducials on the top face (0-3); the assembler's machine decides whether it needs them
+    test_points: tuple | str = ()          # net names to give a test point, or 'rails' for every power and ground net
+    testpoint_footprint: str = "TestPoint:TestPoint_Pad_D1.5mm"    # the designer's probe choice (KiCad library footprint)
 
 
 @dataclass
@@ -48,6 +51,15 @@ def build_board(circuit: Circuit, spec: BoardSpec | None = None, log=print) -> B
     from .. import kicad_backend, routing
     from ..export.kicad import add_pours, to_kicad_pcb
     spec = spec or BoardSpec()
+    if spec.fiducials or spec.test_points:
+        import copy
+        from . import features
+        circuit = copy.deepcopy(circuit)                  # never add parts to the caller's circuit
+        probe = features.rail_nets(circuit) if spec.test_points == "rails" else list(spec.test_points)
+        if probe:
+            features.add_test_points(circuit, probe, spec.testpoint_footprint)
+        if spec.fiducials:
+            features.add_fiducials(circuit, spec.fiducials, rules_for(spec.layers or 2, spec.profile).fiducial_footprint)
     t_start = time.time()
     work = Path(spec.workdir or tempfile.mkdtemp(prefix=f"sparky_{circuit.name}_"))
     work.mkdir(parents=True, exist_ok=True)

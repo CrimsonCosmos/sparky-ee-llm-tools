@@ -15,7 +15,7 @@ _GND = re.compile(r"^(GND|PGND|AGND|DGND|VSS|VSSA|V-|COM)\w*$", re.I)
 _SW = re.compile(r"^(SW|LX|PH|SWITCH|SW_?\d)$", re.I)
 _PWR_PIN = re.compile(r"^(VDD|VCC|VIN|PVIN|AVIN|VBAT|VBUS|V\+|VS|VDDA|VDDIO\d*|VCCIO\d*)\w*$", re.I)
 _CATEGORY = [(r"^R", "resistor"), (r"^C", "capacitor"), (r"^L", "inductor"), (r"^FB", "ferrite"), (r"^F\d", "fuse"), (r"^D", "diode"),
-             (r"^LED", "led"), (r"^Q", "transistor"), (r"^(J|P|X)", "connector"), (r"^Y", "crystal"), (r"^(TP|T)\d", "testpoint"),
+             (r"^LED", "led"), (r"^Q", "transistor"), (r"^(J|P|X)", "connector"), (r"^Y", "crystal"), (r"^(TP|T)\d", "testpoint"), (r"^FID", "fiducial"),
              (r"^(H|MH)", "mounting"), (r"^U", "ic")]
 # SKiDL pin function codes (skidl.pin.Pin.types), observed on KiCad symbols: 1 input, 2 output, 3 bidir, 4 tristate, 5 passive, 6 unspecified,
 # 7 power input, 8 power output, 9 open collector, 10 open emitter, 11 pull-up, 12 pull-down, 13 no-connect
