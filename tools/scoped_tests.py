@@ -26,7 +26,7 @@ AREA_TESTS = {
     "verify": ["test_spice_*.py", "test_recipe_buck.py"], "analysis": ["test_irdrop_*.py", "test_thermal.py", "test_emc.py"], "krt": ["test_krt*.py"],
     "constraints": ["test_krt*.py", "test_design.py"], "system": ["test_system.py", "test_cli.py"], "purchase": ["test_system.py"], "libsrc": ["test_libsrc.py"],
     "routing": ["test_routing.py"], "kicad_backend": ["test_kicad_drc_json.py"], "kicad_symbols": ["test_kicad_sch.py", "test_cli.py"], "mcp_server": ["test_cli.py"],
-    "cli": ["test_cli.py"], "export": ["test_kicad_sch.py", "test_flow_kicad.py"], "mechanical": [], "sourcing": [],
+    "cli": ["test_cli.py"], "export": ["test_kicad_sch.py", "test_flow_kicad.py", "test_two_sided.py"], "pcb": ["test_two_sided.py", "test_planes_stackup.py", "test_net_classes.py", "test_routing.py"], "mechanical": [], "sourcing": [],
 }
 
 

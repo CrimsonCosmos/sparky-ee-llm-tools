@@ -37,3 +37,7 @@ A recipe can declare high-speed requirements in `Result.constraints` (net names 
 `DiffPair(p, n, width_mm, gap_mm, skew_mm)` (nets must follow a pairing convention: `X_P/X_N`, `X+/X-`, `XP/XN`; the numbers come from the interface standard or an impedance target,
 never a default), `LengthGroup(nets, tolerance_mm)`, `Fanout(ref)` for BGA/QFN escape. Boards with any of these route through KiCadRoutingTools; if it is not installed the build fails with a message.
 A pair finer than the fab profile allows is refused up front with the reason.
+
+## Assembling on the bottom face
+
+A recipe may append `constraints.Side(refs)` (default `side='bottom'`) to its `Result.constraints`, e.g. bypass capacitors under the MCU. It is honoured when `Rules.assembly_sides >= 2`; otherwise the part stays on top and the board carries a warning. Through-hole parts always stay on top.

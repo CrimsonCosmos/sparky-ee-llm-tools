@@ -17,6 +17,7 @@ class Placement:
     x: float
     y: float
     rot: float = 0.0
+    side: str = "top"             # 'bottom': the footprint is flipped about the Y axis (pads mirrored in x, on B.* layers)
 
 
 @dataclass
@@ -34,6 +35,7 @@ class PlacedPad:
     paste: bool
     slot: float = 0.0
     slot_y: bool = True
+    side: str = "top"
 
     @property
     def thru(self) -> bool:
@@ -49,6 +51,12 @@ class PlacedPad:
                 core = Point(self.x, self.y)
             return core.buffer(r + grow, 12)
         return box(self.x - self.w / 2 - grow, self.y - self.h / 2 - grow, self.x + self.w / 2 + grow, self.y + self.h / 2 + grow)
+
+
+def _mirrored(p):
+    """The pad as it lies on a part flipped to the bottom face (mirror about the footprint's Y axis)."""
+    from dataclasses import replace
+    return replace(p, x=-p.x)
 
 
 class Board:
@@ -80,10 +88,10 @@ class Board:
             if pl is None:
                 continue
             for p in comp.footprint.pads:
-                x, y, w, h = oriented_pad(p, pl.rot)
+                x, y, w, h = oriented_pad(_mirrored(p) if pl.side == "bottom" else p, pl.rot)
                 net = pn.get(f"{ref}.{p.number}") if p.number else None
                 sy = p.slot_y if int(round(pl.rot)) % 180 == 0 else (not p.slot_y)
-                out.append(PlacedPad(ref, p.number, net, pl.x + x, pl.y + y, w, h, p.shape, p.drill, p.plated, p.paste, p.slot, sy))
+                out.append(PlacedPad(ref, p.number, net, pl.x + x, pl.y + y, w, h, p.shape, p.drill, p.plated, p.paste, p.slot, sy, pl.side))
         return out
 
     def pads_of(self, ref: str) -> list[PlacedPad]:
@@ -95,14 +103,14 @@ class Board:
         pl = self.place[ref]
         for p in comp.footprint.pads:
             if p.number == num:
-                x, y = rot_point(p.x, p.y, pl.rot)
+                x, y = rot_point(-p.x if pl.side == "bottom" else p.x, p.y, pl.rot)
                 return pl.x + x, pl.y + y
         raise KeyError(pin)
 
     def courtyard(self, ref: str) -> tuple[float, float, float, float]:
         comp = self.circuit.components[ref]
         pl = self.place[ref]
-        x0, y0, x1, y1 = comp.footprint.oriented_courtyard(pl.rot)
+        x0, y0, x1, y1 = comp.footprint.oriented_courtyard(pl.rot, pl.side == "bottom")
         return pl.x + x0, pl.y + y0, pl.x + x1, pl.y + y1
 
     def holes(self) -> list[tuple[float, float, float, bool, str]]:

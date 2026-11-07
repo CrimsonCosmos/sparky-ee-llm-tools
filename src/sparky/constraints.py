@@ -144,3 +144,14 @@ class Fanout:
 
     def remap(self, refmap: dict[str, str], netmap: dict[str, str]) -> None:
         self.ref = refmap.get(self.ref, self.ref)
+
+
+@dataclass
+class Side:
+    """Assemble these parts on the given board face ('top' | 'bottom'). Honoured only where the fab profile allows
+    two-sided assembly (`Rules.assembly_sides`); through-hole parts stay on top."""
+    refs: list[str]
+    side: str = "bottom"
+
+    def remap(self, refmap: dict[str, str], netmap: dict[str, str]) -> None:
+        self.refs = [refmap.get(r, r) for r in self.refs]

@@ -64,7 +64,8 @@ def bom_jlcpcb(circuit: Circuit) -> str:
 
 def cpl_csv(board: Board) -> str:
     """Pick-and-place (JLCPCB column names). Origin = board bottom-left, y up, mm.
-    NOTE: assemblers apply per-part rotation offsets; verify rotation of polarised parts."""
+    Same convention as `kicad-cli pcb export pos` (checked against it in tests): the footprint's file rotation, counter-clockwise on a y-up
+    sheet, unchanged for the bottom face. NOTE: assemblers apply per-part rotation offsets (and their own bottom-face rule); verify polarised parts."""
     H = board.height
     out = io.StringIO()
     w = csv.writer(out)
@@ -73,8 +74,7 @@ def cpl_csv(board: Board) -> str:
         if comp.dnp or comp.part.category in ("mounting", "testpoint"):
             continue
         pl = board.place[ref]
-        rot = (-pl.rot) % 360        # KiCad file rotation is CCW; assembler y-up CCW
-        w.writerow([ref, comp.value, comp.part.package, f"{pl.x:.3f}mm", f"{H - pl.y:.3f}mm", f"{rot:g}", "Top"])
+        w.writerow([ref, comp.value, comp.part.package, f"{pl.x:.3f}mm", f"{H - pl.y:.3f}mm", f"{pl.rot % 360:g}", pl.side.capitalize()])
     return out.getvalue()
 
 
@@ -85,7 +85,7 @@ def cpl_generic(board: Board) -> str:
     w.writerow(["Ref", "Val", "MPN", "Package", "PosX", "PosY", "Rot", "Side"])
     for ref, comp in board.circuit.components.items():
         pl = board.place[ref]
-        w.writerow([ref, comp.value, comp.part.mpn, comp.part.package, f"{pl.x:.3f}", f"{H - pl.y:.3f}", f"{(-pl.rot) % 360:g}", "top"])
+        w.writerow([ref, comp.value, comp.part.mpn, comp.part.package, f"{pl.x:.3f}", f"{H - pl.y:.3f}", f"{pl.rot % 360:g}", pl.side])
     return out.getvalue()
 
 

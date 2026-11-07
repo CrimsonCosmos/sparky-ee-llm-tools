@@ -135,7 +135,7 @@ def _emc(res: BuildResult, out: Path, files: dict, pol: Policy) -> str:
     for k, lp in enumerate(loops):
         def pad(ref: str, pin: str) -> "emcx.LoopPad":
             p = next(q for q in b.pads_of(ref) if q.number == pin)
-            return emcx.LoopPad(f"{ref}.{pin}", pin_net[f"{ref}.{pin}"], p.x, p.y, "F.Cu", p.w / 2, p.h / 2)
+            return emcx.LoopPad(f"{ref}.{pin}", pin_net[f"{ref}.{pin}"], p.x, p.y, b.layers[-1] if p.side == "bottom" else b.layers[0], p.w / 2, p.h / 2)
         hi, lo = pad(lp.ref, lp.hi_pin), pad(lp.ref, lp.lo_pin)
         pads, refs, parts = [hi, lo], {}, []
         for cref in lp.cap_refs:

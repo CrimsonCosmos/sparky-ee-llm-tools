@@ -78,28 +78,35 @@ def to_kicad_pcb(board: Board, title: str = "sparky") -> str:
         pl = board.place[ref]
         fp = comp.footprint
         pn = c.pin_net_map()
-        fl: list = ["footprint", Q(f"sparky:{fp.name}"), ["layer", Q("F.Cu")], ["tstamp", _uuid(ref)],
+        bot = pl.side == "bottom"
+        F = "B" if bot else "F"
+        mx = (lambda v: -v) if bot else (lambda v: v)          # a bottom part is the footprint flipped about its Y axis
+        eff = ["effects", ["font", ["size", 0.8, 0.8], ["thickness", 0.12]]] + ([["justify", "mirror"]] if bot else [])
+        fl: list = ["footprint", Q(f"sparky:{fp.name}"), ["layer", Q(f"{F}.Cu")], ["tstamp", _uuid(ref)],
                     ["at", pl.x, pl.y, pl.rot] if pl.rot else ["at", pl.x, pl.y],
-                    ["fp_text", "reference", Q(ref), ["at", 0, -(abs(fp.courtyard[1]) + 1.0), 0], ["layer", Q("F.SilkS")],
-                     ["effects", ["font", ["size", 0.8, 0.8], ["thickness", 0.12]]], ["tstamp", _uuid(ref + "-ref")]],
-                    ["fp_text", "value", Q(comp.value or comp.part.mpn), ["at", 0, abs(fp.courtyard[3]) + 1.0, 0], ["layer", Q("F.Fab")],
-                     ["effects", ["font", ["size", 0.8, 0.8], ["thickness", 0.12]]], ["tstamp", _uuid(ref + "-val")]],
+                    ["fp_text", "reference", Q(ref), ["at", 0, -(abs(fp.courtyard[1]) + 1.0), 0], ["layer", Q(f"{F}.SilkS")],
+                     eff, ["tstamp", _uuid(ref + "-ref")]],
+                    ["fp_text", "value", Q(comp.value or comp.part.mpn), ["at", 0, abs(fp.courtyard[3]) + 1.0, 0], ["layer", Q(f"{F}.Fab")],
+                     eff, ["tstamp", _uuid(ref + "-val")]],
                     ["property", Q("MPN"), Q(comp.part.mpn)],
                     ["attr", "smd" if not any(p.thru for p in fp.pads) else "through_hole"]]
         for s in fp.silk:
             if s[0] == "line":
-                fl.append(["fp_line", ["start", s[1], s[2]], ["end", s[3], s[4]], ["stroke", ["width", 0.12], ["type", "solid"]], ["layer", Q("F.SilkS")], ["tstamp", _uuid(f"{ref}-s{len(fl)}")]])
+                fl.append(["fp_line", ["start", mx(s[1]), s[2]], ["end", mx(s[3]), s[4]], ["stroke", ["width", 0.12], ["type", "solid"]], ["layer", Q(f"{F}.SilkS")], ["tstamp", _uuid(f"{ref}-s{len(fl)}")]])
             elif s[0] == "circle":
-                fl.append(["fp_circle", ["center", s[1], s[2]], ["end", s[1] + s[3], s[2]], ["stroke", ["width", 0.12], ["type", "solid"]], ["fill", "none"], ["layer", Q("F.SilkS")], ["tstamp", _uuid(f"{ref}-c{len(fl)}")]])
+                fl.append(["fp_circle", ["center", mx(s[1]), s[2]], ["end", mx(s[1]) + s[3], s[2]], ["stroke", ["width", 0.12], ["type", "solid"]], ["fill", "none"], ["layer", Q(f"{F}.SilkS")], ["tstamp", _uuid(f"{ref}-c{len(fl)}")]])
         x0, y0, x1, y1 = fp.courtyard
-        fl.append(["fp_rect", ["start", x0, y0], ["end", x1, y1], ["stroke", ["width", 0.05], ["type", "solid"]], ["fill", "none"], ["layer", Q("F.CrtYd")], ["tstamp", _uuid(f"{ref}-cy")]])
+        if bot:
+            x0, x1 = -x1, -x0
+        fl.append(["fp_rect", ["start", x0, y0], ["end", x1, y1], ["stroke", ["width", 0.05], ["type", "solid"]], ["fill", "none"], ["layer", Q(f"{F}.CrtYd")], ["tstamp", _uuid(f"{ref}-cy")]])
         for pad in fp.pads:
             net = pn.get(f"{ref}.{pad.number}") if pad.number else None
             thru = pad.thru
             ptype = "thru_hole" if (thru and pad.plated) else ("np_thru_hole" if thru else "smd")
             shape = {"rect": "rect", "circle": "circle", "oval": "oval", "roundrect": "roundrect"}.get(pad.shape, "rect")
-            layers = ["*.Cu", "*.Mask"] if thru else ["F.Cu", "F.Paste", "F.Mask"] if pad.paste else ["F.Cu", "F.Mask"]
-            pl_ = ["pad", Q(pad.number), ptype, shape, ["at", pad.x, pad.y, pl.rot] if pl.rot else ["at", pad.x, pad.y],
+            layers = ["*.Cu", "*.Mask"] if thru else [f"{F}.Cu", f"{F}.Paste", f"{F}.Mask"] if pad.paste else [f"{F}.Cu", f"{F}.Mask"]
+            px = mx(pad.x)
+            pl_ = ["pad", Q(pad.number), ptype, shape, ["at", px, pad.y, pl.rot] if pl.rot else ["at", px, pad.y],
                    ["size", pad.w, pad.h]]
             if thru:
                 pl_.append(["drill", pad.drill])

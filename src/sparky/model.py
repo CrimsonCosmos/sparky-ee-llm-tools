@@ -69,9 +69,11 @@ class Footprint:
     def pad_numbers(self) -> set[str]:
         return {p.number for p in self.pads if p.number}
 
-    def oriented_courtyard(self, rot: float) -> tuple[float, float, float, float]:
+    def oriented_courtyard(self, rot: float, bottom: bool = False) -> tuple[float, float, float, float]:
         xs, ys = [], []
         x0, y0, x1, y1 = self.courtyard
+        if bottom:                      # flipped about the Y axis
+            x0, x1 = -x1, -x0
         for px, py in ((x0, y0), (x1, y0), (x1, y1), (x0, y1)):
             rx, ry = rot_point(px, py, rot)
             xs.append(rx); ys.append(ry)
@@ -134,6 +136,7 @@ class Component:
     props: dict[str, Any] = field(default_factory=dict)
     fixed: tuple[float, float, float] | None = None   # x, y, rot
     dnp: bool = False
+    side: str = "top"             # board face the part is assembled on: 'top' | 'bottom'
 
     _fp: Footprint | None = field(default=None, repr=False, compare=False)
 

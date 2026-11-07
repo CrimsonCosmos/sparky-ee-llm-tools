@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from ..constraints import Cluster, Decouple, Edge, Loop, Separate
+from ..constraints import Cluster, Decouple, Edge, Loop, Separate, Side
 from ..model import Circuit, rot_point, oriented_pad
 from .board import Board, Placement
 from .rules import Rules
@@ -66,21 +66,28 @@ class _Placer:
         self.x = [0.0] * n
         self.y = [0.0] * n
         self.fixed = [False] * n
+        # board face per part: a `Side` request is honoured when the fab can populate two faces; through-hole parts occupy both
+        want = {r: k.side for k in circuit.constraints if isinstance(k, Side) for r in k.refs}
+        self.side = ["bottom" if (want.get(r, comp.side) == "bottom" and rules.assembly_sides >= 2
+                                  and not any(p.thru for p in comp.footprint.pads)) else "top"
+                     for r, comp in zip(self.refs, comps)]
+        self.refused = sorted(r for r in want if want[r] == "bottom" and r in self.idx and self.side[self.idx[r]] != "bottom")
         # per-comp, per-rotation geometry
         self.court = []                      # court[i][rot] = (x0,y0,x1,y1) relative to origin
         self.padoff = []                     # padoff[i][rot] = {padnumber: (dx,dy)}
-        for comp in comps:
+        for comp, side in zip(comps, self.side):
             fp = comp.footprint
+            bottom = side == "bottom"
             npads = len(fp.pads)
             # breakout room: fine-pitch / many-pin parts need escape channels around them
             cm = self.o.courtyard_margin / 2 + breakout_margin(npads)
             per_c, per_p = {}, {}
             for rt in ROTS:
-                x0, y0, x1, y1 = fp.oriented_courtyard(rt)
+                x0, y0, x1, y1 = fp.oriented_courtyard(rt, bottom)
                 per_c[rt] = (x0 - cm, y0 - cm, x1 + cm, y1 + cm)
                 d = {}
                 for p in fp.pads:
-                    px, py = rot_point(p.x, p.y, rt)
+                    px, py = rot_point(-p.x if bottom else p.x, p.y, rt)
                     d.setdefault(p.number, (px, py))
                 per_p[rt] = d
             self.court.append(per_c)
@@ -137,6 +144,9 @@ class _Placer:
                         self.seps[self.idx[r]].append(k)
             except KeyError:
                 continue
+        # parts whose courtyards compete for board area: same face, or either one through-hole (both faces)
+        thru = [any(p.thru for p in c.footprint.pads) for c in comps]
+        self.conf = np.array([[self.side[i] == self.side[j] or thru[i] or thru[j] for j in range(n)] for i in range(n)], dtype=bool)
         # extents arrays (incl. margin)
         self.ex = np.zeros((4, n))
         self.cx = np.zeros(n)
@@ -180,6 +190,7 @@ class _Placer:
         dy = np.minimum(ex[3], ex[3, i]) - np.maximum(ex[1], ex[1, i])
         ov = np.clip(dx, 0, None) * np.clip(dy, 0, None)
         ov[i] = 0.0
+        ov *= self.conf[i]
         c += ov_w * float(ov.sum())
         # board bounds
         m = o.edge_margin
@@ -421,7 +432,7 @@ class _Placer:
             dy = np.minimum(ex[3], ex[3, i]) - np.maximum(ex[1], ex[1, i])
             ov = np.clip(dx, 0, None) * np.clip(dy, 0, None)
             ov[i] = 0
-            tot += ov.sum()
+            tot += (ov * self.conf[i]).sum()
         return tot / 2
 
     def legalize(self, passes: int = 400) -> bool:
@@ -432,6 +443,8 @@ class _Placer:
             moved = False
             for i in range(n):
                 for j in range(i + 1, n):
+                    if not self.conf[i, j]:
+                        continue
                     dx = min(ex[2, i], ex[2, j]) - max(ex[0, i], ex[0, j])
                     dy = min(ex[3, i], ex[3, j]) - max(ex[1, i], ex[1, j])
                     if dx > 1e-4 and dy > 1e-4:
@@ -509,7 +522,9 @@ def place(circuit: Circuit, rules: Rules, opt: PlaceOptions | None = None) -> Bo
         W, H = round(W * 1.12, 1), round(H * 1.12, 1)
     board = Board(circuit, rules, W, H)
     for i, ref in enumerate(pl.refs):
-        board.place[ref] = Placement(round(pl.x[i], 3), round(pl.y[i], 3), pl.rot[i])
+        board.place[ref] = Placement(round(pl.x[i], 3), round(pl.y[i], 3), pl.rot[i], pl.side[i])
+    for ref in pl.refused:
+        board.warnings.append(f"{ref}: bottom-side assembly requested but not possible here (fab assembles {rules.assembly_sides} face(s), or the part is through-hole); placed on top")
     if not ok:
         board.warnings.append("placement could not remove all courtyard overlaps; enlarge the board")
     board.stats["place_attempts"] = attempts
