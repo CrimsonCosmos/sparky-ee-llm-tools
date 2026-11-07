@@ -10,9 +10,10 @@ requires-python = ">=3.13"
 dependencies = ["numpy>=2.3,<2.4", "shapely>=2.2,<3", "skidl==3.0.0", "pint>=0.26,<0.27", "platformdirs>=4.14,<5"]
 
 [project.optional-dependencies]
-dev = ["pytest>=9,<10", "gerbonara==1.6.3", "kiutils==1.4.8"]
+dev = ["pytest>=9,<10", "gerbonara==1.6.3", "kiutils==1.4.8", "pypdf", "pillow"]
 analysis = ["pcb-analysis==0.12.1"]       # thermal/EMC; needs its compiled kernels (docs/DEPENDENCIES.md). kicad-irdrop: pip install git+https://github.com/firedanceio/kicad-irdrop into the KiCad Python
 vendor-import = ["easyeda2kicad==1.0.1"]  # AGPL-3.0: run only as an external command (libsrc), never imported
+rf = ["scikit-rf==2.2.0"]                  # transmission-line impedance (analysis/lines.py); KiCad's PCB Calculator has no CLI
 anthropic = ["anthropic"]
 
 [project.scripts]

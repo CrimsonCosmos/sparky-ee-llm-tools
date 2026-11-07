@@ -33,6 +33,10 @@ class BoardSpec:
     workdir: str | None = None
     fiducials: int = 0                     # global assembly fiducials on the top face (0-3); the assembler's machine decides whether it needs them
     test_points: tuple | str = ()          # net names to give a test point, or 'rails' for every power and ground net
+    stitch_pitch_mm: float | None = None   # ground-stitching via grid pitch; or give stitch_hz and the pitch is lambda/20 at that frequency
+    stitch_hz: float | None = None
+    corner_radius_mm: float = 0.0          # rounded board corners (0 = square)
+    silk_text: str = ""                    # title/revision printed on the front silkscreen
     testpoint_footprint: str = "TestPoint:TestPoint_Pad_D1.5mm"    # the designer's probe choice (KiCad library footprint)
 
 
@@ -83,6 +87,8 @@ def build_board(circuit: Circuit, spec: BoardSpec | None = None, log=print) -> B
             rules = rules_for(layers, spec.profile, **over)
             board = place(circuit, rules, PlaceOptions(width=spec.width, height=spec.height, utilization=util, seed=spec.seed,
                                                        fixed_outline=bool(spec.width and spec.height)))
+            board.set_corner_radius(spec.corner_radius_mm)
+            board.silk_text = spec.silk_text
             assign_planes(board)
             tag = f"{layers}L_u{util}"
             raw, routed = work / f"{tag}.kicad_pcb", work / f"{tag}_routed.kicad_pcb"
@@ -110,6 +116,16 @@ def build_board(circuit: Circuit, spec: BoardSpec | None = None, log=print) -> B
                 say(f"   routing failed: {e}")
                 continue
             routed.write_text(add_pours(routed.read_text(), board))        # outer pours go in after routing (see export.kicad)
+            if spec.stitch_pitch_mm or spec.stitch_hz:
+                from . import stitching
+                from .planes import _ground_net
+                gnd = _ground_net(board)
+                pitch = spec.stitch_pitch_mm or stitching.pitch_for_frequency(spec.stitch_hz, rules.dielectric_er)
+                if gnd:
+                    text, nv = stitching.add_stitching_vias(routed.read_text(), board, gnd, pitch)
+                    routed.write_text(text)
+                    board.stats["stitch_vias"], board.stats["stitch_pitch_mm"] = nv, round(pitch, 3)
+                    say(f"   {nv} ground-stitching vias on a {pitch:.2f} mm grid")
             routed.with_suffix(".kicad_pro").write_bytes(raw.with_suffix(".kicad_pro").read_bytes())
             if raw.with_suffix(".kicad_dru").exists():
                 routed.with_suffix(".kicad_dru").write_bytes(raw.with_suffix(".kicad_dru").read_bytes())

@@ -62,3 +62,17 @@ Only Linux has been exercised (every line in the table below that says "not trie
 | ngspice | distro package | `brew install ngspice` / ngspice installer; put it on PATH |
 
 A tool that is missing never produces a passing result: its report section reads NOT RUN with the reason.
+
+## KiCad and open-source companions we call (adapters only; nothing re-implemented)
+| Need | Tool we call | Where | Status |
+|---|---|---|---|
+| Schematic ERC, board<->schematic parity | `kicad-cli sch erc`, `kicad-cli pcb drc --schematic-parity` | `kicad_backend.run_erc/run_drc` | verified (fails when a rail flag or a pad net is removed) |
+| Layer PDF, 3D renders, schematic PDF, IPC-D-356, ODB++, GenCAD, GLB, VRML, DXF outline, board statistics | `kicad-cli pcb export ...`, `sch export pdf` | `kicad_backend.export_extras` | verified by opening each file independently |
+| Generic circuit simulation | `kicad-cli sch export netlist --format spice` + `ngspice` | `analysis/simulate.py` | verified against the analytic RC low pass (AC and step) |
+| Microstrip / CPW impedance | scikit-rf (`pip install scikit-rf`) | `analysis/lines.py` | verified against Pozar's design equation; KiCad's PCB Calculator has no CLI |
+| Interactive placement/BOM page | InteractiveHtmlBom (MIT) | `export/external.py` | verified; run headless (`INTERACTIVE_HTML_BOM_NO_DISPLAY`) |
+| Panelisation (rails, tabs, V-cuts, tooling, fiducials) | KiKit (MIT) | `export/external.py` | adapter written; **NOT RUN in the development container** (wxPython unusable there). Its test skips and says so; the panel must pass KiCad DRC when it does run |
+| Fiducials, test points, mounting holes | KiCad library footprints/symbols | `pcb/features.py`, `recipes/mounting_holes.py` | verified through KiCad DRC and parity |
+
+Not built, on purpose: teardrops (KiCad implements them in its GUI/pcbnew core with no scripting or CLI entry point; use KiCad's own Edit > Add Teardrops on the delivered board), a PCB calculator (scikit-rf), a simulator (ngspice), panelisation (KiKit).
+Ground-stitching vias (`pcb/stitching.py`) are our own small step because KiCad has no CLI for them; KiCad DRC judges the result.

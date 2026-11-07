@@ -12,6 +12,9 @@ conductivities, limits, part values, pin tables). Each value comes from exactly 
 passed in. Only true unit conversions and physical constants may be literals, and they are named. If a value has no source, add a field
 with a documented source - do not inline a "reasonable" number. Violations are bugs; review every diff for them.
 
+## INTEGRATE, DO NOT REINVENT (top rule)
+Before writing a feature, check whether KiCad (kicad-cli, pcbnew, its libraries), or an open-source package already does it. If so, write a thin adapter (loose coupling: external process or optional import, detected at runtime, reported "NOT RUN" when missing) and validate its output; never re-implement it. Own code is for system design glue only.
+
 ## A CONFIDENTLY WRONG TEST SYSTEM IS WORSE THAN NONE (top rule)
 A check that passes while the design is wrong is worse than no check, because people stop looking. Therefore: every checker, analysis
 and test must be validated against an independent reference (hand calculation, datasheet number, a second solver, real fab/KiCad

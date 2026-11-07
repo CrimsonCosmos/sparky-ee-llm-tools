@@ -66,6 +66,8 @@ class Board:
         self.width = width
         self.height = height
         self.outline: Polygon = box(0, 0, width, height)
+        self.corner_radius = 0.0                      # mm; > 0 rounds the four outline corners (set with `set_corner_radius`)
+        self.silk_text = ""                           # board title / revision printed on the front silkscreen
         self.place: dict[str, Placement] = {}
         self.layers = layer_names(rules.layers)
         self.plane_nets: dict[str, str] = {}          # layer -> net (solid plane layers)
@@ -74,6 +76,12 @@ class Board:
         self.notes: list[str] = []
         self.warnings: list[str] = []
         self.stats: dict = {}
+
+    def set_corner_radius(self, r: float) -> None:
+        if r < 0 or 2 * r > min(self.width, self.height):
+            raise ValueError(f"corner radius {r} mm does not fit a {self.width} x {self.height} mm board")
+        self.corner_radius = r
+        self.outline = box(r, r, self.width - r, self.height - r).buffer(r, quad_segs=32) if r > 0 else box(0, 0, self.width, self.height)
 
     # ---- geometry -------------------------------------------------------------------------
     @property

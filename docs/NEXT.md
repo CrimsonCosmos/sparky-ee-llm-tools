@@ -23,3 +23,7 @@ EMC adapter (pcb-analysis dipole superposition) validated against Ott's small-lo
 
 Out of scope (marked in code): mechanical integration (`mechanical.py`), live distributor data and purchasing (`sourcing.py`).
 Owner's rules: no sub-agents; Python only; console app on Win/macOS/Linux; adopt open source; minimal LLM use; fast scoped tests; no hardcoded values; no confidently wrong tests.
+
+## KiCad-parity pass (this session)
+Added as adapters (see docs/DEPENDENCIES.md): ERC + parity, review/test/mechanical exports, generic SPICE, scikit-rf lines, iBOM, KiKit (not runnable here). Own code: fiducial/test-point/corner-radius/silk-title/stitching options in `BoardSpec`. Found and fixed on the way: KiCad >= 9 files name nets on items, so outer pours were silently never added (now added and tested); catalogue download failed on compressed transfers; CPL rotation did not match `kicad-cli pos`.
+Open: teardrops (no API), hierarchical/multi-sheet schematics and drawn wires/power symbols (the generated schematic uses global labels on every pin: correct but not pretty), KiKit verification, a `sparky simulate` CLI.

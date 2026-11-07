@@ -92,6 +92,12 @@ def _schematic(res: BuildResult, out: Path, files: dict, project: str) -> dict[s
             sec["Exports that did not run"] = "\n".join(f"- `{k}`: {v}" for k, v in problems.items())
     except RuntimeError as e:
         sec["Exports that did not run"] = f"kicad-cli review/test/mechanical exports: {e}"
+    from . import external
+    if external.ibom_available():
+        try:
+            files["review/ibom.html"] = external.interactive_bom(out / f"{project}.kicad_pcb", out / "review")
+        except RuntimeError as e:
+            sec["Interactive BOM"] = f"NOT RUN: {e}"
     try:
         erc = kicad_backend.run_erc(sch)
         (out / "kicad_erc.json").write_text(json.dumps(erc.to_dict(), indent=1))

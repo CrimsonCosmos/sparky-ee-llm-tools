@@ -132,11 +132,23 @@ def to_kicad_pcb(board: Board, title: str = "sparky") -> str:
             fl.append(pl_)
         root.append(fl)
     k = 0
-    # outline
-    pts = list(board.outline.exterior.coords)
-    for a, b in zip(pts[:-1], pts[1:]):
+    # outline: straight edges as lines, rounded corners as true arcs
+    W, H, r = board.width, board.height, board.corner_radius
+    stroke = [["stroke", ["width", 0.1], ["type", "default"]], ["layer", Q("Edge.Cuts")]]
+    seg = [((r, 0), (W - r, 0)), ((W, r), (W, H - r)), ((W - r, H), (r, H)), ((0, H - r), (0, r))]
+    for a_, b_ in seg:
+        if a_ != b_:
+            k += 1
+            root.append(["gr_line", ["start", *a_], ["end", *b_], *stroke, ["tstamp", _uuid(f"e{k}")]])
+    if r > 0:
+        d = r * (1 - 0.5 ** 0.5)
+        for (st, mid, en) in (((W, r), (W - d, d), (W - r, 0)), ((W - r, H), (W - d, H - d), (W, H - r)), ((r, H), (d, H - d), (0, H - r)), ((0, r), (d, d), (r, 0))):
+            k += 1
+            root.append(["gr_arc", ["start", *st], ["mid", *mid], ["end", *en], *stroke, ["tstamp", _uuid(f"e{k}")]])
+    if board.silk_text:
         k += 1
-        root.append(["gr_line", ["start", a[0], a[1]], ["end", b[0], b[1]], ["stroke", ["width", 0.1], ["type", "default"]], ["layer", Q("Edge.Cuts")], ["tstamp", _uuid(f"e{k}")]])
+        root.append(["gr_text", Q(board.silk_text), ["at", board.rules.edge_clearance + 1.5, H - board.rules.edge_clearance - 1.5], ["layer", Q("F.SilkS")],
+                     ["effects", ["font", ["size", 1.0, 1.0], ["thickness", board.rules.silk_width]], ["justify", "left"]], ["tstamp", _uuid(f"t{k}")]])
     # inner-layer planes are exported with the board (Freerouting routes the net through vias to the plane). Outer-layer POURS are added after routing
     # (`add_pours`): the router must not treat a fragmenting outer pour as connectivity, so those nets are routed as ordinary tracks first.
     for layer, net in board.plane_nets.items():
@@ -146,9 +158,11 @@ def to_kicad_pcb(board: Board, title: str = "sparky") -> str:
     return dump(root) + "\n"
 
 
-def _zone(board: Board, net_id: int, net: str, layer: str, seed: str) -> list:
+def _zone(board: Board, net_id: int | None, net: str, layer: str, seed: str) -> list:
+    """`net_id=None` writes the net by name (KiCad >= 9 files carry no net table); otherwise the older id + name form."""
     outline = board.outline.buffer(-board.rules.edge_clearance)
-    return ["zone", ["net", net_id], ["net_name", Q(net)], ["layer", Q(layer)], ["tstamp", _uuid(seed)], ["hatch", "edge", 0.5],
+    netref = [["net", Q(net)]] if net_id is None else [["net", net_id], ["net_name", Q(net)]]
+    return ["zone", *netref, ["layer", Q(layer)], ["tstamp", _uuid(seed)], ["hatch", "edge", 0.5],
             ["connect_pads", "yes", ["clearance", board.rules.clearance]], ["min_thickness", max(0.127, board.rules.min_track)],
             ["fill", "yes", ["thermal_gap", board.rules.plane_thermal_gap], ["thermal_bridge_width", board.rules.plane_spoke], ["island_removal_mode", 1]],
             ["polygon", ["pts"] + [["xy", x, y] for x, y in outline.exterior.coords[:-1]]]]
@@ -158,11 +172,12 @@ def add_pours(pcb_text: str, board: Board) -> str:
     """Append the outer-layer copper pours to a ROUTED board, using the net ids the routed file itself defines (pcbnew may renumber nets)."""
     import re
     ids = {m.group(2): int(m.group(1)) for m in re.finditer(r'\(net (\d+) "([^"]*)"\)', pcb_text)}
+    named = not ids and bool(re.search(r'\(net "[^"]*"\)', pcb_text))      # KiCad >= 9 names nets on every item instead of keeping a net table
     zones = []
     for net, layers in board.pour_nets.items():
         for layer in layers:
-            if layer not in board.plane_nets and net in ids:
-                zones.append(dump(_zone(board, ids[net], net, layer, f"pour-{net}-{layer}")))
+            if layer not in board.plane_nets and (net in ids or named):
+                zones.append(dump(_zone(board, None if named else ids[net], net, layer, f"pour-{net}-{layer}")))
     if not zones:
         return pcb_text
     i = pcb_text.rstrip().rfind(")")

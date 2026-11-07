@@ -11,12 +11,14 @@ from sparky.picker.catalog import db_path
 from sparky.toolchain import kicad_has
 
 EX = Path(__file__).resolve().parents[1] / "examples" / "can_node"
-pytestmark = [pytest.mark.slow, pytest.mark.skipif(not db_path().exists() or not routing.available() or not kicad_has("pcb_drc"),
+REAL_DB = db_path()          # resolved before SPARKY_HOME is pointed at a temporary directory
+pytestmark = [pytest.mark.slow, pytest.mark.skipif(not REAL_DB.exists() or not routing.available() or not kicad_has("pcb_drc"),
                                                     reason="needs the downloaded parts catalogue, KiCad >= 8, Java and pcbnew")]
 
 
 def test_can_node_system_builds_and_the_netlist_matches_the_plan(tmp_path, monkeypatch):
     monkeypatch.setenv("SPARKY_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("SPARKY_PARTS_DB", str(REAL_DB))
     (tmp_path / "home" / "specs").mkdir(parents=True)
     for f in (EX / "specs").glob("*.json"):
         shutil.copy(f, tmp_path / "home" / "specs" / f.name)
