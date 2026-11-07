@@ -22,8 +22,11 @@ def kikit_available() -> bool:
     exe = _exe("SPARKY_KIKIT", "kikit")
     if not exe:
         return False
-    r = subprocess.run([exe, "--version"], capture_output=True, text=True)
-    return r.returncode == 0
+    try:                                                    # `kikit --version` passes without wxPython; panelize does not: probe its interpreter
+        py = Path(exe).read_text(errors="ignore").splitlines()[0].removeprefix("#!").strip()
+        return subprocess.run([py, "-c", "import pcbnew, wx._core"], capture_output=True).returncode == 0
+    except (OSError, IndexError):
+        return False
 
 
 def interactive_bom(pcb: str | Path, outdir: str | Path, name: str = "ibom") -> Path:
