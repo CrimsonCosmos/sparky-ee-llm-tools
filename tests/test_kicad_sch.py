@@ -46,8 +46,10 @@ def test_schematic_parses_with_kiutils_and_has_properties(tmp_path):
     p = tmp_path / "a.kicad_sch"
     res = write_kicad_sch(c, p)
     sch = Schematic.from_file(str(p))
-    assert len(sch.schematicSymbols) == len(c.components)
-    by_ref = {s.properties[0].value: s for s in sch.schematicSymbols}
+    real = [s for s in sch.schematicSymbols if not s.properties[0].value.startswith("#FLG")]      # PWR_FLAGs are not parts
+    assert len(real) == len(c.components)
+    assert any(s.libId == "power:PWR_FLAG" for s in sch.schematicSymbols)
+    by_ref = {s.properties[0].value: s for s in real}
     assert by_ref["C1"].libId == "Device:C"
     props = {pr.key: pr.value for pr in by_ref["C1"].properties}
     assert props["Footprint"].startswith("Capacitor_SMD:C_0402") and props["Value"]

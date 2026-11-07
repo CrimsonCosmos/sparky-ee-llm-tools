@@ -34,6 +34,7 @@ def write_package(res: BuildResult, outdir: str | Path, project: str, extra: dic
         (out / f"{project}.kicad_pro").write_bytes(res.pcb_path.with_suffix(".kicad_pro").read_bytes())
 
     pol = policy or Policy()
+    extra.update(_schematic(res, out, files, project))
     if res.routing_checks:
         rows = ["| Constraint | Measured | Limit | Met | Note |", "|--|--|--|--|--|"]
         for c in res.routing_checks:
@@ -71,6 +72,40 @@ def write_package(res: BuildResult, outdir: str | Path, project: str, extra: dic
         z.write(out / "cpl_jlcpcb.csv", "cpl.csv")
     files["assembly.zip"] = zp2
     return files
+
+
+def _schematic(res: BuildResult, out: Path, files: dict, project: str) -> dict[str, str]:
+    """Schematic + library tables beside the board, KiCad's ERC on the schematic, and board<->schematic parity on the final board."""
+    from . import kicad_project, kicad_sch
+    c = res.board.circuit
+    sch = out / f"{project}.kicad_sch"
+    kicad_sch.write_kicad_sch(c, sch)
+    files[sch.name] = sch
+    files.update(kicad_project.write_lib_tables(c, out))
+    sec: dict[str, str] = {}
+    try:
+        erc = kicad_backend.run_erc(sch)
+        (out / "kicad_erc.json").write_text(json.dumps(erc.to_dict(), indent=1))
+        files["kicad_erc.json"] = out / "kicad_erc.json"
+        sec["KiCad ERC on the generated schematic"] = _erc_text(erc)
+        par = kicad_backend.run_drc(out / f"{project}.kicad_pcb", refill=False, rules=res.board.rules)
+        bad = par.footprint_errors
+        sec["Schematic <-> board parity (KiCad)"] = ("**PARITY OK**: every schematic symbol has its footprint on the board with the same nets." if not bad else
+                                                     f"**{len(bad)} parity problem(s)**: " + "; ".join(f"{v['type']}: {v['description']}" for v in bad[:10]))
+    except RuntimeError as e:
+        sec["KiCad ERC on the generated schematic"] = f"NOT RUN: {e}"
+    return sec
+
+
+def _erc_text(erc) -> str:
+    errs = erc.errors
+    head = f"KiCad {erc.version or '?'} ERC: **{'CLEAN' if not errs else 'ERRORS'}** - {len(errs)} errors, {len(erc.warnings)} warnings."
+    if not erc.violations:
+        return head
+    counts: dict[tuple[str, str], int] = {}
+    for v in erc.violations:
+        counts[(v["type"], v["severity"])] = counts.get((v["type"], v["severity"]), 0) + 1
+    return head + "\n\n| Type | Severity | Count |\n|--|--|--|\n" + "\n".join(f"| {t} | {sv} | {n} |" for (t, sv), n in sorted(counts.items()))
 
 
 def _thermal(res: BuildResult, out: Path, files: dict, pol: Policy) -> str:

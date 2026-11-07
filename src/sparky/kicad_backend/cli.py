@@ -81,6 +81,7 @@ class DrcReport:
     footprint_errors: list[dict] = field(default_factory=list)
     refilled: bool = True
     raw: str = ""
+    tool: str = "kicad-cli pcb drc"
 
     @property
     def by_type(self) -> dict[str, int]:
@@ -106,7 +107,7 @@ class DrcReport:
                 f"{len(self.footprint_errors)} footprint errors")
 
     def to_dict(self) -> dict:
-        return {"tool": "kicad-cli pcb drc", "version": self.version, "zones_refilled": self.refilled, "clean": self.clean,
+        return {"tool": self.tool, "version": self.version, "zones_refilled": self.refilled, "clean": self.clean,
                 "counts": {"errors": len(self.errors), "warnings": len(self.warnings), "unconnected": len(self.unconnected),
                            "footprint_errors": len(self.footprint_errors)},
                 "by_type": self.by_type, "violations": self.violations, "unconnected_items": self.unconnected,
@@ -156,6 +157,12 @@ def run_drc(pcb_path: str | Path, refill: bool = True, rules=None, report_path: 
         shutil.copy(pro, work.with_suffix(".kicad_pro")) if pro.exists() else write_kicad_pro(work.with_suffix(".kicad_pro"), _need_rules(rules))
         out = Path(td) / "drc.json"
         cmd = [exe, "pcb", "drc", "--format", "json", "--severity-all", "--all-track-errors", "--output", str(out)]
+        sch = pcb.with_suffix(".kicad_sch")
+        if sch.exists():                                   # the schematic beside the board: KiCad also checks board <-> schematic parity
+            for f in (sch, pcb.parent / "sym-lib-table", pcb.parent / "fp-lib-table"):
+                if f.exists():
+                    shutil.copy(f, Path(td) / f.name)
+            cmd.append("--schematic-parity")
         if refill:
             cmd.append("--refill-zones")
         if save_to:
@@ -173,6 +180,37 @@ def run_drc(pcb_path: str | Path, refill: bool = True, rules=None, report_path: 
 
 
 # ---------------------------------------------------------------------------------------------------- manufacturing export
+def run_erc(sch_path: str | Path, report_path: str | Path | None = None) -> DrcReport:
+    """KiCad's own electrical rules check of a schematic (`kicad-cli sch erc`), with the project's library tables beside it."""
+    exe = kicad_cli()
+    if not exe or not kicad_has("sch_erc"):
+        raise RuntimeError("KiCad >= 8 (kicad-cli with `sch erc`) is required")
+    sch = Path(sch_path).resolve()
+    with tempfile.TemporaryDirectory(prefix="kierc_") as td:
+        for f in [sch] + [sch.parent / n for n in ("sym-lib-table", "fp-lib-table", sch.stem + ".kicad_pro")]:
+            if f.exists():
+                shutil.copy(f, Path(td) / f.name)
+        pro = Path(td) / (sch.stem + ".kicad_pro")
+        if not pro.exists():                               # KiCad reads the project library tables only when a project file sits beside the schematic
+            pro.write_text(json.dumps({"meta": {"filename": pro.name, "version": 1}}))
+        out = Path(td) / "erc.json"
+        r = subprocess.run([exe, "sch", "erc", "--format", "json", "--severity-all", "--output", str(out), str(Path(td) / sch.name)],
+                           capture_output=True, text=True, timeout=300)
+        if not out.exists():
+            raise RuntimeError(f"kicad-cli sch erc failed (rc={r.returncode}): {(r.stderr or r.stdout).strip()[-600:]}")
+        d = json.loads(out.read_text(errors="replace"))
+    rep = DrcReport(version=d.get("kicad_version"), raw=json.dumps(d))
+    for sheet in d.get("sheets", []):
+        for v in sheet.get("violations", []):
+            rep.violations.append({"type": v.get("type"), "description": v.get("description"), "severity": v.get("severity"),
+                                   "items": [{"desc": i.get("description"), "x": i.get("pos", {}).get("x"), "y": i.get("pos", {}).get("y")} for i in v.get("items", [])]})
+    rep.refilled = False
+    rep.tool = "kicad-cli sch erc"
+    if report_path:
+        Path(report_path).write_text(json.dumps(rep.to_dict(), indent=1))
+    return rep
+
+
 def gerber_layers(n_copper: int) -> list[str]:
     """Untranslated KiCad layer names for a fab set. Works for 2/4/6/... layer boards."""
     cu = ["F.Cu"] + [f"In{i}.Cu" for i in range(1, n_copper - 1)] + ["B.Cu"]

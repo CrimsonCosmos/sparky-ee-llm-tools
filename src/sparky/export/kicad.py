@@ -66,6 +66,14 @@ def to_kicad_pcb(board: Board, title: str = "sparky") -> str:
     nets = {"": 0}
     for n in c.nets:
         nets[n] = len(nets)
+    pn = c.pin_net_map()
+    nc: dict[str, str] = {}                           # KiCad's own names for pins left unconnected in the schematic (parity needs them on the pads)
+    for ref, comp in c.components.items():
+        for pin in comp.part.pins:
+            if f"{ref}.{pin.number}" not in pn:
+                nc[f"{ref}.{pin.number}"] = f"unconnected-({ref}-{pin.name}-Pad{pin.number})" if pin.name else f"unconnected-({ref}-Pad{pin.number})"
+    for n in nc.values():
+        nets[n] = len(nets)
     root: list = ["kicad_pcb", ["version", 20221018], ["generator", Q("sparky")],
                   ["general", ["thickness", board.rules.thickness_mm]], ["paper", Q("A4")],
                   _layers_def(len(board.layers)),
@@ -82,13 +90,14 @@ def to_kicad_pcb(board: Board, title: str = "sparky") -> str:
         F = "B" if bot else "F"
         mx = (lambda v: -v) if bot else (lambda v: v)          # a bottom part is the footprint flipped about its Y axis
         eff = ["effects", ["font", ["size", 0.8, 0.8], ["thickness", 0.12]]] + ([["justify", "mirror"]] if bot else [])
-        fl: list = ["footprint", Q(f"sparky:{fp.name}"), ["layer", Q(f"{F}.Cu")], ["tstamp", _uuid(ref)],
+        fl: list = ["footprint", Q(fp.lib_id or f"sparky:{fp.name}"), ["layer", Q(f"{F}.Cu")], ["tstamp", _uuid(ref)],
                     ["at", pl.x, pl.y, pl.rot] if pl.rot else ["at", pl.x, pl.y],
                     ["fp_text", "reference", Q(ref), ["at", 0, -(abs(fp.courtyard[1]) + 1.0), 0], ["layer", Q(f"{F}.SilkS")],
                      eff, ["tstamp", _uuid(ref + "-ref")]],
                     ["fp_text", "value", Q(comp.value or comp.part.mpn), ["at", 0, abs(fp.courtyard[3]) + 1.0, 0], ["layer", Q(f"{F}.Fab")],
                      eff, ["tstamp", _uuid(ref + "-val")]],
                     ["property", Q("MPN"), Q(comp.part.mpn)],
+                    ["property", Q("Datasheet"), Q(comp.part.datasheet_url or "~")],
                     ["attr", "smd" if not any(p.thru for p in fp.pads) else "through_hole"]]
         for s in fp.silk:
             if s[0] == "line":
@@ -100,7 +109,7 @@ def to_kicad_pcb(board: Board, title: str = "sparky") -> str:
             x0, x1 = -x1, -x0
         fl.append(["fp_rect", ["start", x0, y0], ["end", x1, y1], ["stroke", ["width", 0.05], ["type", "solid"]], ["fill", "none"], ["layer", Q(f"{F}.CrtYd")], ["tstamp", _uuid(f"{ref}-cy")]])
         for pad in fp.pads:
-            net = pn.get(f"{ref}.{pad.number}") if pad.number else None
+            net = (pn.get(f"{ref}.{pad.number}") or nc.get(f"{ref}.{pad.number}")) if pad.number else None
             thru = pad.thru
             ptype = "thru_hole" if (thru and pad.plated) else ("np_thru_hole" if thru else "smd")
             shape = {"rect": "rect", "circle": "circle", "oval": "oval", "roundrect": "roundrect"}.get(pad.shape, "rect")
