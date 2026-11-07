@@ -50,3 +50,15 @@ fanout (`constraints.DiffPair / LengthGroup / Fanout`, declared by recipes in `R
 `git clone https://github.com/drandyhaas/KiCadRoutingTools <data_dir>/tools/KiCadRoutingTools && python build_router.py` (downloads a prebuilt binary or builds with cargo), or point `SPARKY_KRT` at a checkout.
 Our `Rules` are passed to it as its fab-floor file (so its via/annular/track/clearance limits equal ours); `Rules.fab_tier='standard'` forbids via-in-pad and its own escalation.
 Each constraint becomes a named KiCad custom rule (`.kicad_dru`, `sparky_<i>`): the router reads it and KiCad's own DRC (`skew_out_of_range`) is the authoritative verdict; we also measure the copper (tracks + via barrels) as a cross-check (it differs from KiCad by a few hundredths of a mm). Without the rule file the tool graded its own different metric and left the bus unmatched.
+
+## Optional analysis/routing tools per platform
+Only Linux has been exercised (every line in the table below that says "not tried" has NOT been run; treat it as the expected route, not a result). `sparky doctor` shows which of these are usable.
+
+| Tool | Linux (verified) | macOS / Windows (not tried) |
+|---|---|---|
+| pcb-analysis compiled kernels | cmake + ninja + g++ (OpenMP) as above | Same CMake build: macOS needs `brew install cmake ninja libomp` and Apple clang with `-Xpreprocessor -fopenmp`; Windows needs the MSVC Build Tools (OpenMP is built in) and `cmake -G Ninja` from an "x64 Native Tools" prompt. No prebuilt wheel exists upstream; until one does, `available()` stays False and the thermal/EMC report sections say NOT RUN. |
+| KiCadRoutingTools Rust router | `python build_router.py` (cargo) | `build_router.py` also downloads a prebuilt binary for some platforms (see its README); otherwise `rustup` + `cargo build --release`. Without it boards with DiffPair/LengthGroup/Fanout/ControlledImpedance constraints are not routed (reported, not silently ignored). |
+| kicad-irdrop | `pip install` into KiCad's Python | KiCad's bundled Python (`SPARKY_KICAD_PYTHON` points at it) |
+| ngspice | distro package | `brew install ngspice` / ngspice installer; put it on PATH |
+
+A tool that is missing never produces a passing result: its report section reads NOT RUN with the reason.
