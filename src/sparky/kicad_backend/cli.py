@@ -274,3 +274,69 @@ def export_fab(pcb_path: str | Path, outdir: str | Path, project: str | None = N
                 z.write(p, p.name)
         files["fab_zip"] = zp
     return files
+
+
+# ---------------------------------------------------------------------------------------------------- review / test / mechanical exports
+def export_extras(pcb_path: str | Path, outdir: str | Path, project: str, sch_path: str | Path | None = None) -> tuple[dict[str, Path], dict[str, str]]:
+    """Everything else an engineer asks KiCad for, all produced by kicad-cli: review plots (layer PDF, 3D renders, schematic PDF), the e-test netlist
+    (IPC-D-356), ODB++ and GenCAD for fabs that take them, GLB / VRML / DXF outline for the mechanical team, and the board statistics.
+    Returns (files, problems): a step that fails is reported by name instead of being skipped silently."""
+    pcb = Path(pcb_path).resolve()
+    out = Path(outdir)
+    for d in ("review", "test", "mechanical"):
+        (out / d).mkdir(parents=True, exist_ok=True)
+    files: dict[str, Path] = {}
+    problems: dict[str, str] = {}
+    n = _copper_count(pcb)
+    copper = gerber_layers(n)
+    plots = [l for l in copper if l.endswith(".Cu")] + ["F.Silkscreen", "B.Silkscreen", "F.Mask", "B.Mask", "F.Paste", "B.Paste", "F.Fab", "B.Fab", "F.Courtyard", "B.Courtyard"]
+    steps = [                                       # (file, kicad-cli subcommand, options)
+        ("review/layers.pdf", ["pcb", "export", "pdf"], ["--mode-multipage", "-l", ",".join(plots + ["Edge.Cuts"]), "--cl", "Edge.Cuts", "--sketch-pads-on-fab-layers", "--check-zones"]),
+        ("review/render_top.png", ["pcb", "render"], ["--side", "top", "--quality", "basic", "--width", "1600", "--height", "1200"]),
+        ("review/render_bottom.png", ["pcb", "render"], ["--side", "bottom", "--quality", "basic", "--width", "1600", "--height", "1200"]),
+        ("test/netlist.d356", ["pcb", "export", "ipcd356"], []),
+        ("test/board.odb", ["pcb", "export", "odb"], []),
+        ("test/board.cad", ["pcb", "export", "gencad"], []),
+        ("mechanical/board.glb", ["pcb", "export", "glb"], ["--force", "--include-tracks", "--include-pads", "--include-zones"]),
+        ("mechanical/board.wrl", ["pcb", "export", "vrml"], []),
+        ("mechanical/outline.dxf", ["pcb", "export", "dxf"], ["-l", "Edge.Cuts"]),
+        ("review/stats.json", ["pcb", "export", "stats"], ["--format", "json"]),
+    ]
+    with tempfile.TemporaryDirectory(prefix="kiextra_") as td:
+        work = Path(td) / pcb.name
+        shutil.copy(pcb, work)
+        for rel, cmd, opts in steps:
+            dest = out / rel
+            try:
+                if cmd[-1] == "dxf":                       # kicad-cli takes a directory here and names the file after the board and layer
+                    tmpd = Path(td) / "dxf"
+                    _cli(*cmd, "-o", str(tmpd), *opts, str(work))
+                    got = sorted(tmpd.glob("*.dxf"))
+                    if got:
+                        shutil.copy(got[0], dest)
+                else:
+                    _cli(*cmd, "-o", str(dest), *opts, str(work))
+            except RuntimeError as e:
+                problems[rel] = str(e)[-200:]
+                continue
+            if dest.exists():
+                files[rel] = dest
+            else:
+                problems[rel] = "kicad-cli reported success but wrote no file"
+        if sch_path and Path(sch_path).exists():
+            sch = Path(sch_path).resolve()
+            for f in [sch] + [sch.parent / nme for nme in ("sym-lib-table", "fp-lib-table", sch.stem + ".kicad_pro")]:
+                if f.exists():
+                    shutil.copy(f, Path(td) / f.name)
+            dest = out / "review" / "schematic.pdf"
+            try:
+                _cli("sch", "export", "pdf", "-o", str(dest), str(Path(td) / sch.name))
+                files["review/schematic.pdf"] = dest
+            except RuntimeError as e:
+                problems["review/schematic.pdf"] = str(e)[-200:]
+    return files, problems
+
+
+def board_stats(path: str | Path) -> dict:
+    """The numbers of `kicad-cli pcb export stats --format json` (strings with units are kept as KiCad prints them)."""
+    return json.loads(Path(path).read_text())

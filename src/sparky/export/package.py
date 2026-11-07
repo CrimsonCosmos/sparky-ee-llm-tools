@@ -84,6 +84,15 @@ def _schematic(res: BuildResult, out: Path, files: dict, project: str) -> dict[s
     files.update(kicad_project.write_lib_tables(c, out))
     sec: dict[str, str] = {}
     try:
+        more, problems = kicad_backend.export_extras(out / f"{project}.kicad_pcb", out, project, sch)
+        files.update(more)
+        if "review/stats.json" in more:
+            sec["Board statistics (KiCad)"] = _stats_text(kicad_backend.board_stats(more["review/stats.json"]))
+        if problems:
+            sec["Exports that did not run"] = "\n".join(f"- `{k}`: {v}" for k, v in problems.items())
+    except RuntimeError as e:
+        sec["Exports that did not run"] = f"kicad-cli review/test/mechanical exports: {e}"
+    try:
         erc = kicad_backend.run_erc(sch)
         (out / "kicad_erc.json").write_text(json.dumps(erc.to_dict(), indent=1))
         files["kicad_erc.json"] = out / "kicad_erc.json"
@@ -95,6 +104,14 @@ def _schematic(res: BuildResult, out: Path, files: dict, project: str) -> dict[s
     except RuntimeError as e:
         sec["KiCad ERC on the generated schematic"] = f"NOT RUN: {e}"
     return sec
+
+
+def _stats_text(d: dict) -> str:
+    b, p = d.get("board", {}), d.get("pads", {})
+    rows = [("Board size", f"{b.get('width')} x {b.get('height')}"), ("Thickness", b.get("board_thickness")), ("Smallest track / clearance", f"{b.get('min_track_width')} / {b.get('min_track_clearance')}"),
+            ("Smallest drill", b.get("min_drill_diameter")), ("Pads (SMD / through-hole)", f"{p.get('smd')} / {p.get('through_hole')}"), ("Vias (through / blind / buried / micro)", " / ".join(str(d.get("vias", {}).get(k, "?")) for k in ("through", "blind", "buried", "micro"))),
+            ("Front / back component density (%)", f"{b.get('front_component_density')} / {b.get('back_component_density')}")]
+    return "| Item | Value |\n|--|--|\n" + "\n".join(f"| {k} | {v} |" for k, v in rows if v not in (None, ""))
 
 
 def _erc_text(erc) -> str:
