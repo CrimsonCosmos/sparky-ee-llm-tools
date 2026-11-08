@@ -34,3 +34,15 @@ def mcu_circuit(lib=None):
     gnd += j[7]
     v33 += j[8]
     return from_skidl(name="mcu_test")
+
+
+@pytest.fixture(scope="session")
+def counter_run(tmp_path_factory):
+    """One real LibreLane run of the 8-bit counter on sky130A, shared by the silicon tests (about 70 s). Skips when the silicon tools / PDK are not configured."""
+    from pathlib import Path
+
+    from silicon import flow, spec, toolchain
+    if not toolchain.available() or toolchain.pdk_root() is None:
+        pytest.skip("silicon tools / PDK root not configured (tools/silicon_setup.sh)")
+    s = spec.SiliconSpec("counter", [Path(__file__).parent / "silicon_fixtures" / "counter.v"], "clk", 20.0, "sky130A", die_area_um=(0, 0, 120, 120))
+    return s, flow.run_flow(s, tmp_path_factory.mktemp("counter"), tag="shared")

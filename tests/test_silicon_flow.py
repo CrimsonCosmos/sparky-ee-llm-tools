@@ -87,17 +87,10 @@ def test_without_tools_a_run_is_not_run_with_the_reason(tmp_path, monkeypatch):
 tools = pytest.mark.skipif(not toolchain.available() or toolchain.pdk_root() is None, reason="silicon tools / PDK root not configured (tools/silicon_setup.sh)")
 
 
-@pytest.fixture(scope="module")
-def run(tmp_path_factory):
-    s = _spec()
-    r = flow.run_flow(s, tmp_path_factory.mktemp("counter"), tag="t1")
-    return s, r
-
-
 @pytest.mark.slow
 @tools
-def test_counter_runs_through_the_flow_and_every_cross_check_agrees(run):
-    s, r = run
+def test_counter_runs_through_the_flow_and_every_cross_check_agrees(counter_run):
+    s, r = counter_run
     assert r.ok, (r.failed_step, r.errors)
     assert r.metric("design__lvs_error__count") == 0 and r.metric("magic__drc_error__count") == 0
     checks = crosscheck.run_checks(s, r)
@@ -117,8 +110,8 @@ def _copy(r, tmp_path):
 
 @pytest.mark.slow
 @tools
-def test_each_cross_check_fails_on_a_deliberately_broken_input(run, tmp_path):
-    s, r = run
+def test_each_cross_check_fails_on_a_deliberately_broken_input(counter_run, tmp_path):
+    s, r = counter_run
     by = lambda checks: {c.name: c for c in checks}
     bad = _copy(r, tmp_path)
     bad.artifacts["sdc"].write_text(bad.artifacts["sdc"].read_text().replace("-period 20.0000", "-period 10.0000"))
