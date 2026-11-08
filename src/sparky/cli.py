@@ -122,6 +122,13 @@ def cmd_doctor(a):
                            ("thermal (pcb-analysis)", thermal.available(), "needs pcb-analysis + its compiled kernels"),
                            ("EMC (pcb-analysis)", emc.available(), "needs pcb-analysis + its compiled kernels")):
         print(f"{name:<24} {'ok' if ok else 'MISSING (' + hint + '; see docs/DEPENDENCIES.md)'}")
+    _doctor_silicon()
+
+
+def _doctor_silicon():
+    from silicon import toolchain as st
+    for k, v in st.report().items():
+        print(f"{'silicon: ' + k:<24} {v or 'MISSING (tools/silicon_setup.sh; docs/SILICON_DEPENDENCIES.md)'}")
 
 
 def main(argv=None):
