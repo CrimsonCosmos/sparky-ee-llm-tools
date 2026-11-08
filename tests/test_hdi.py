@@ -209,3 +209,64 @@ def test_dsn_with_several_through_via_sizes_is_patched_too():
     out = hdi.patch_dsn(dsn, R.via_spans, LAYERS)
     assert out.index('"Via[0-1]_250:100_um"') < out.index('"Via[0-5]_600:300_um"')                       # partial vias first in both lists
     assert '(use_via "Via[0-1]_250:100_um" "Via[4-5]_250:100_um" "Via[0-2]_400:200_um" "Via[1-4]_350:200_um" "Via[0-5]_600:300_um")' in out
+
+
+_PADS = """
+import json, sys, pcbnew
+b = pcbnew.LoadBoard(sys.argv[1])
+pads = {}
+for f in b.GetFootprints():
+    if f.GetReference() == "U1":
+        for p in f.Pads():
+            pads[p.GetNumber()] = [p.GetPosition().x / 1e6, p.GetPosition().y / 1e6, p.GetNetname()]
+vias = [[t.GetPosition().x / 1e6, t.GetPosition().y / 1e6, t.GetNetname(), t.GetViaType()] for t in b.GetTracks() if t.Type() == pcbnew.PCB_VIA_T]
+print(json.dumps({"pads": pads, "vias": vias}))
+"""
+
+
+@pytest.mark.slow
+@needs
+def test_via_in_pad_puts_a_micro_via_in_the_centre_of_each_connected_ball_and_the_board_routes(tmp_path):
+    import json
+    import subprocess
+
+    from sparky import toolchain
+    from sparky.constraints import ViaInPad
+    from sparky.footprints import resolve_footprint
+    from sparky.model import Circuit, PartDef, PinDef
+    from sparky.pcb.flow import BoardSpec, build_board
+    bga = "Package_BGA:BGA-100_6.0x6.0mm_Layout11x11_P0.5mm_Ball0.3mm_Pad0.25mm_NSMD"
+    hdr = "Connector_PinHeader_1.27mm:PinHeader_2x10_P1.27mm_Vertical"
+    c = Circuit("vip_small")
+    pads = [p.number for p in resolve_footprint(bga).pads]
+    hp = [p.number for p in resolve_footprint(hdr).pads]
+    c.add(PartDef(mpn="BGA100", category="ic", footprint=bga, pins=[PinDef(n, n, "bidir") for n in pads]), ref="U1")
+    c.add(PartDef(mpn="HDR", category="connector", footprint=hdr, pins=[PinDef(n, n, "passive") for n in hp]), ref="J1")
+    chosen = [p for i, p in enumerate(pads) if i % 5 == 0][:12]
+    for i, ball in enumerate(chosen):
+        c.connect(f"S{i}", f"U1.{ball}", f"J1.{hp[i]}")
+    c.constrain(ViaInPad("U1"))
+    res = build_board(c, BoardSpec(layers=6, profile="generic-hdi-6l", time_budget_s=500), log=None)
+    assert res.success, res.drc.summary()
+    out = subprocess.run([toolchain.kicad_python(), "-c", _PADS, str(res.pcb_path)], capture_output=True, text=True, check=True).stdout
+    d = json.loads(out)
+    connected = {n: p for n, p in d["pads"].items() if p[2].startswith("S")}
+    assert len(connected) == 12
+    micro = [v for v in d["vias"] if v[2].startswith("S")]
+    for num, (x, y, net) in connected.items():                          # KiCad's own pad positions: a via of the same net sits in the pad's centre
+        assert any(v[2] == net and abs(v[0] - x) < 2e-3 and abs(v[1] - y) < 2e-3 for v in micro), f"no via in pad {num}"
+    found, counts = hdi.check(res.pcb_path.read_text(), res.board.rules, layer_z_mm(res.board.rules, 6), res.board.layers)
+    assert not found and counts.get("micro 1-2", 0) >= 12
+
+
+def test_via_in_pad_is_refused_without_a_fab_that_fills_and_caps_vias():
+    from sparky.constraints import ViaInPad
+    from sparky.model import Circuit, PartDef, PinDef
+    from sparky.pcb.flow import BoardSpec, build_board
+    c = Circuit("x")
+    c.add(PartDef(mpn="A", category="ic", footprint="Package_BGA:BGA-100_6.0x6.0mm_Layout11x11_P0.5mm_Ball0.3mm_Pad0.25mm_NSMD", pins=[PinDef("A1", "A1", "bidir")]), ref="U1")
+    c.add(PartDef(mpn="B", category="connector", footprint="Connector_PinHeader_1.27mm:PinHeader_1x02_P1.27mm_Vertical", pins=[PinDef("1", "1", "passive")]), ref="J1")
+    c.connect("N", "U1.A1", "J1.1")
+    c.constrain(ViaInPad("U1"))
+    with pytest.raises(RuntimeError, match="fills and caps vias|no board could be built"):
+        build_board(c, BoardSpec(layers=6, profile="jlcpcb-6l", time_budget_s=60), log=None)

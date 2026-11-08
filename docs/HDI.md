@@ -26,8 +26,22 @@ drill below the span's limit is rejected by both KiCad DRC and our checker. Stac
   unchanged afterwards (Freerouting adds pin stubs and nudges fixed wires), and the constraints are re-measured on the final copper. Verified on the BGA test board
   (pair + 3-net group + fanout) with JLCPCB-6L rules plus the partial-via table: DRC clean, all constraints met. The constrained nets themselves never use partial vias.
   Caveat measured: the ILLUSTRATIVE HDI profile's finer track/clearance makes KRT miss that length group even with no partial vias, so the staged test uses JLCPCB rules.
-- Via-in-pad under fine-pitch BGAs still needs `fab_tier='advanced'` and matching rule overrides.
+- Fab-specific values in the illustrative profile (via/annular/hole/edge clearances) are placeholders; replace them with your fab's.
 - Whether partial vias help routing: **not demonstrated.** One dense board (STM32 LQFP-100 at 0.5 mm pitch to two 50-pin headers, 46 x 46 mm, 6 layers, one run each):
   JLCPCB-6L rules, through vias only: 5 nets unconnected. Illustrative HDI profile (finer track/clearance) WITH micro/blind vias: 1 unconnected, 0 DRC errors (10 micro + 1 blind used).
   The same HDI profile WITHOUT partial vias (control): also 1 unconnected. So the gain came from the finer rules, not from the partial vias. Single runs of a heuristic router:
   treat as inconclusive; the machinery works, its routing benefit on this board is zero measured.
+
+## Via-in-pad (`constraints.ViaInPad(ref)`)
+A micro via is placed at the centre of every connected top-face SMD pad of `ref` BEFORE routing (the fab must fill and cap vias: `Rules.via_in_pad`, and offer a micro span from
+the top layer); Freerouting escapes from the via's inner-layer pad (the vias are protected in the DSN). Refused with a message when the fab flag or the span is missing; not
+combinable with KiCadRoutingTools constraints yet (its fanout would duplicate the pad vias). Pads smaller than the span's pad are skipped with a warning.
+Verified: every connected ball of a 0.5 mm-pitch BGA has a micro via of its net in the pad centre (KiCad's own pad positions), board routes DRC clean, span checker clean.
+
+**Measured benefit** (STM32-free test: BGA-100 at 0.5 mm pitch, 44 nets to two 2x50 headers, fixed 34 x 34 mm, 6 layers, illustrative HDI profile, ONE run each of a heuristic router):
+through vias only: 39 nets unconnected; partial vias offered but no via-in-pad: 38 unconnected (none used); with via-in-pad: 2 unconnected (+2 edge-clearance errors from the
+tight fixed outline putting header pads on the board edge). Via-in-pad is what lets the router escape the array; blind/buried/micro vias elsewhere did not help.
+
+## Fab review
+`FAB_NOTES.md` in every package gathers stackup, smallest features, via spans, derived lamination order and the drill table (read back from the Excellon files with gerbonara)
+for the fab's own review. No open-source tool encodes a fab's process (searched: only commercial/online DFM checkers and a basic file-presence checker); the review stays the fab's.

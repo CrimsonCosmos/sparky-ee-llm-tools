@@ -65,6 +65,9 @@ def write_package(res: BuildResult, outdir: str | Path, project: str, extra: dic
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(text)
         files[name] = p
+    from . import fab_notes
+    lam = next((ch.get("lamination") for ch in res.routing_checks if ch["kind"] == "via_span"), None)
+    w("FAB_NOTES.md", fab_notes.render(b, out / "gerber", project, lam))
     w("bom.csv", bomx.bom_csv(c))
     w("bom_jlcpcb.csv", bomx.bom_jlcpcb(c))
     from . import jlc_rotation

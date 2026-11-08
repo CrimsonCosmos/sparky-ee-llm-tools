@@ -69,3 +69,17 @@ def test_stats_agree_with_our_own_numbers(pkg):
     d = json.loads(files["review/stats.json"].read_text())
     assert float(d["board"]["width"].split()[0]) == pytest.approx(res.board.width, abs=0.01)
     assert d["pads"]["smd"] + d["pads"]["through_hole"] == sum(len(c.footprint.pads) for c in res.board.circuit.components.values())
+
+
+def test_fab_notes_drill_table_matches_the_vias_in_the_copper(pkg):
+    import re
+    res, out, files = pkg
+    text = (out / "FAB_NOTES.md").read_text()
+    assert "Not a verification" in text and "## Stackup" in text
+    rows = re.findall(r"\| (\S+\.drl) \| ([\d.]+) \| (\d+) \|", text)
+    total = sum(int(n) for _, _, n in rows)
+    # independent count from the routed board: every plated/unplated hole = pad drills + via drills
+    pcb = (out / "m.kicad_pcb").read_text()
+    vias = len(re.findall(r"\n\t\(via", pcb))
+    holes = sum(1 for c in res.board.circuit.components.values() for p in c.footprint.pads if p.drill > 0)
+    assert total == vias + holes
