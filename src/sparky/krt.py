@@ -89,22 +89,48 @@ def check_impedance(pcb_text: str, constraints: list, rules) -> list[dict]:
             if isinstance(node, list) and node and node[0] == "segment":
                 nt, w, ly = sexpr.find(node, "net"), sexpr.find(node, "width"), sexpr.find(node, "layer")
                 net = names.get(str(nt[1]), str(nt[1])) if nt else None
-                if net in c.nets and w and ly and str(ly[1]) in (ordered[0][0], ordered[-1][0]):
+                if net in c.nets and w and ly:
                     widths.setdefault(str(ly[1]), []).append(float(w[1]))
-        zs = []
+        zs, notes = [], []
         for layer, ws in widths.items():
-            k = 0 if layer == ordered[0][0] else -1
-            nxt = 1 if k == 0 else -2
-            cu_next = (rules.copper_oz_outer if n == 2 else rules.copper_oz_inner) * OZ_CU_MM
-            h = abs(ordered[k][1] - ordered[nxt][1]) - (t + cu_next) / 2             # dielectric thickness between the outer copper and the next copper layer
-            zs += [microstrip_z0(w, h, t, rules.dielectric_er) for w in ws]
+            if layer in (ordered[0][0], ordered[-1][0]):
+                k = 0 if layer == ordered[0][0] else -1
+                nxt = 1 if k == 0 else -2
+                cu_next = (rules.copper_oz_outer if n == 2 else rules.copper_oz_inner) * OZ_CU_MM
+                h = abs(ordered[k][1] - ordered[nxt][1]) - (t + cu_next) / 2             # dielectric thickness between the outer copper and the next copper layer
+                zs += [microstrip_z0(w, h, t, rules.dielectric_er) for w in ws]
+                notes.append("IPC-2141 microstrip over the next copper layer")
+            else:
+                from .analysis import diffpair
+                if not diffpair.available():
+                    notes.append(f"{layer}: inner-layer stripline NOT verified (atlc not installed)")
+                    continue
+                hb, ha, tl = _plane_gaps(layer, ordered, rules)
+                try:
+                    zs += [diffpair.stripline(w, hb, ha, tl, rules.dielectric_er) for w in sorted(set(ws))]
+                    notes.append(f"{layer}: atlc 2-D stripline solve between the adjacent layers")
+                except RuntimeError as e:
+                    notes.append(f"{layer}: stripline NOT verified ({e})")
         if not zs:
-            rows.append({"kind": "impedance", "name": "+".join(c.nets), "ok": None, "note": "no outer-layer tracks to check (inner layers are not verified)"})
+            rows.append({"kind": "impedance", "name": "+".join(c.nets), "ok": None, "target_ohm": c.impedance_ohm, "limit_pct": c.tolerance_pct,
+                         "note": "; ".join(notes) or "no tracks to check"})
             continue
         err = max(abs(v / c.impedance_ohm - 1) * 100 for v in zs)
         rows.append({"kind": "impedance", "name": "+".join(c.nets), "ok": err <= c.tolerance_pct, "z_ohm": [round(min(zs), 1), round(max(zs), 1)], "target_ohm": c.impedance_ohm,
-                     "error_pct": round(err, 1), "limit_pct": c.tolerance_pct, "note": "IPC-2141 microstrip over the next copper layer (assumed a reference plane)"})
+                     "error_pct": round(err, 1), "limit_pct": c.tolerance_pct,
+                     "note": "; ".join(dict.fromkeys(notes)) + " (the adjacent copper layers are ASSUMED to be reference planes)"})
     return rows
+
+
+def _plane_gaps(layer: str, ordered: list[tuple[str, float]], rules) -> tuple[float, float, float]:
+    """(dielectric below, dielectric above, copper thickness) of an inner layer: the gaps to the adjacent copper layers, from the stackup the exporter writes."""
+    from .pcb.rules import OZ_CU_MM
+    i = [nm for nm, _ in ordered].index(layer)
+    cu = lambda nm: (rules.copper_oz_outer if nm in (ordered[0][0], ordered[-1][0]) else rules.copper_oz_inner) * OZ_CU_MM
+    z = dict(ordered)
+    up, dn = ordered[i - 1][0], ordered[i + 1][0]
+    tl = cu(layer)
+    return z[dn] - cu(dn) / 2 - (z[layer] + tl / 2), (z[layer] - tl / 2) - (z[up] + cu(up) / 2), tl
 
 
 def _check_pair(root, names, c, rules, ordered, t) -> dict:
@@ -123,11 +149,11 @@ def _check_pair(root, names, c, rules, ordered, t) -> dict:
         if isinstance(node, list) and node and node[0] == "segment":
             nt, w, ly, a, b = (sexpr.find(node, k) for k in ("net", "width", "layer", "start", "end"))
             net = names.get(str(nt[1]), str(nt[1])) if nt else None
-            if net in (c.p, c.n) and w and ly and str(ly[1]) in (ordered[0][0], ordered[-1][0]):
+            if net in (c.p, c.n) and w and ly:
                 seg.setdefault((str(ly[1]), net), []).append((float(w[1]), LineString([(float(a[1]), float(a[2])), (float(b[1]), float(b[2]))])))
     layers = {l for l, _ in seg if (l, c.p) in seg and (l, c.n) in seg}
     if not layers:
-        return {**base, "note": "differential impedance NOT verified: no outer-layer copper on both nets (inner-layer stripline is not solved)"}
+        return {**base, "note": "differential impedance NOT verified: no layer carries copper of both nets"}
     layer = max(layers, key=lambda l: sum(g.length for _, g in seg[(l, c.p)] + seg[(l, c.n)]))
     p_geo, n_geo = unary_union([g for _, g in seg[(layer, c.p)]]), unary_union([g for _, g in seg[(layer, c.n)]])
     widths = sorted(w for w, _ in seg[(layer, c.p)] + seg[(layer, c.n)])
@@ -135,17 +161,21 @@ def _check_pair(root, names, c, rules, ordered, t) -> dict:
     gap = p_geo.distance(n_geo) - w                                           # centre-line distance minus one width = edge-to-edge spacing
     if gap <= 0:
         return {**base, "note": "differential impedance NOT verified: routed pair touches or overlaps"}
-    k = 0 if layer == ordered[0][0] else -1
-    nxt = 1 if k == 0 else -2
-    cu_next = (rules.copper_oz_outer if rules.layers == 2 else rules.copper_oz_inner) * OZ_CU_MM
-    h = abs(ordered[k][1] - ordered[nxt][1]) - (t + cu_next) / 2
     try:
-        z = diffpair.microstrip_pair(w, gap, h, t, rules.dielectric_er).z_diff_ohm
+        if layer in (ordered[0][0], ordered[-1][0]):
+            k = 0 if layer == ordered[0][0] else -1
+            nxt = 1 if k == 0 else -2
+            cu_next = (rules.copper_oz_outer if rules.layers == 2 else rules.copper_oz_inner) * OZ_CU_MM
+            h = abs(ordered[k][1] - ordered[nxt][1]) - (t + cu_next) / 2
+            z, what = diffpair.microstrip_pair(w, gap, h, t, rules.dielectric_er).z_diff_ohm, "microstrip"
+        else:
+            hb, ha, tl = _plane_gaps(layer, ordered, rules)
+            z, what = diffpair.stripline_pair(w, gap, hb, ha, tl, rules.dielectric_er).z_diff_ohm, "stripline (adjacent layers ASSUMED to be reference planes)"
     except RuntimeError as e:
         return {**base, "note": f"differential impedance NOT verified: {e}"}
     err = abs(z / c.impedance_ohm - 1) * 100
     return {**base, "ok": err <= c.impedance_tolerance_pct, "z_ohm": [round(z, 1), round(z, 1)], "error_pct": round(err, 1),
-            "note": f"atlc 2-D field solve (quasi-static, +-3 % grid error, no solder mask) at routed width {w:g} mm, spacing {gap:.3f} mm on {layer}"}
+            "note": f"atlc 2-D field solve, {what} (quasi-static, a few % grid error, no solder mask) at routed width {w:g} mm, spacing {gap:.3f} mm on {layer}"}
 
 
 def _delay_row(pcb_text: str, c, layer_z: dict[str, float], rules) -> dict:
