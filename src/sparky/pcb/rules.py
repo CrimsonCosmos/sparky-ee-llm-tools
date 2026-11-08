@@ -24,6 +24,14 @@ class ViaSpan:
         return f"{self.kind} {self.first + 1}-{self.last + 1}"
 
 
+@dataclass(frozen=True)
+class Backdrill:
+    """What the fab can back-drill (controlled-depth removal of a via's unused barrel stub): all fab inputs."""
+    oversize_mm: float       # back-drill diameter minus the via's drill diameter
+    depth_tol_mm: float      # the drill may stop this far from its target: the residual stub must be at least this (so the used layer is never cut)
+    max_stub_mm: float       # the longest residual stub the fab can leave
+
+
 @dataclass
 class Rules:
     layers: int = 2
@@ -56,6 +64,7 @@ class Rules:
     plane_thermal_gap: float = 0.3
     plane_spoke: float = 0.35
     profile: str = "generic"
+    backdrill: Backdrill | None = None   # the fab's back-drilling capability (None = not offered)
     via_in_pad: bool = False        # the fab fills and caps vias (IPC-4761 type VII), so a via may sit inside a pad; needed by constraints.ViaInPad
     via_spans: tuple = ()           # partial-depth vias the fab offers (ViaSpan); empty = plated through-holes only. Needs a fab that builds them: see docs/HDI.md
     fiducial_footprint: str = "Fiducial:Fiducial_1mm_Mask2mm"   # KiCad footprint of the assembler's optical alignment mark (size per the assembler's machine; fab-profile value)
@@ -75,7 +84,7 @@ FAB_PROFILES = {
     "jlcpcb-2l": dict(layers=2, track=0.2, min_track=0.127, clearance=0.2, via_dia=0.6, via_drill=0.3, min_annular=0.13, edge_clearance=0.4),
     "jlcpcb-4l": dict(layers=4, track=0.15, min_track=0.1, clearance=0.15, via_dia=0.5, via_drill=0.25, min_drill=0.2, min_annular=0.125, edge_clearance=0.3),
     # ILLUSTRATIVE HDI capability for tests and demos (not any fab's published table): replace with the chosen fab's spans and limits through rule_overrides / a real profile
-    "generic-hdi-6l": dict(layers=6, min_dielectric_mm=0.06, hole_clearance=0.15, via_in_pad=True, track=0.1, min_track=0.075, clearance=0.1, via_dia=0.5, via_drill=0.25, min_drill=0.2, min_annular=0.125, edge_clearance=0.2,
+    "generic-hdi-6l": dict(layers=6, backdrill=Backdrill(0.2, 0.1, 0.45), min_dielectric_mm=0.06, hole_clearance=0.15, via_in_pad=True, track=0.1, min_track=0.075, clearance=0.1, via_dia=0.5, via_drill=0.25, min_drill=0.2, min_annular=0.125, edge_clearance=0.2,
                            via_spans=(ViaSpan("micro", 0, 1, 0.25, 0.1, 0.075, 1.0), ViaSpan("micro", 4, 5, 0.25, 0.1, 0.075, 1.0),
                                       ViaSpan("blind", 0, 2, 0.4, 0.2, 0.1, 1.0), ViaSpan("buried", 1, 4, 0.35, 0.2, 0.1, 8.0))),
     "jlcpcb-6l": dict(layers=6, track=0.15, min_track=0.09, clearance=0.15, via_dia=0.5, via_drill=0.25, min_drill=0.2, min_annular=0.125, edge_clearance=0.3),

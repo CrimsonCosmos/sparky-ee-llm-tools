@@ -9,7 +9,7 @@ from pathlib import Path
 
 from .. import krt
 from ..export.kicad import layer_z_mm
-from ..constraints import ControlledImpedance, DiffPair, DramGroups, Fanout, LengthGroup, LossBudget, ViaInPad
+from ..constraints import BackdrillNets, ControlledImpedance, DiffPair, DramGroups, Fanout, LengthGroup, LossBudget, ViaInPad
 from ..model import Circuit
 from . import analysis
 from .board import Board
@@ -160,6 +160,17 @@ def build_board(circuit: Circuit, spec: BoardSpec | None = None, log=print) -> B
                 from . import hdi
                 routed.write_text(hdi.retype_vias(routed.read_text(), rules.via_spans, layers, board.layers))
             routed.write_text(add_pours(routed.read_text(), board))        # outer pours go in after routing (see export.kicad)
+            bd_nets = {n for c in circuit.constraints if isinstance(c, BackdrillNets) for n in c.nets}
+            bd_checks: list = []
+            if bd_nets:
+                from . import backdrill
+                z = layer_z_mm(rules, layers)
+                pads = [(p.x, p.y, set(board.layers) if p.thru else {board.layers[-1] if p.side == "bottom" else board.layers[0]}) for p in board.pads()]
+                jobs, plan_findings = backdrill.plan(routed.read_text(), rules, bd_nets, board.layers, z, pads)
+                routed.write_text(backdrill.apply(routed.read_text(), jobs, None, rules.backdrill.oversize_mm if rules.backdrill else 0.0))
+                found = plan_findings + backdrill.check(routed.read_text(), rules, board.layers, z, bd_nets, pads)
+                bd_checks = [{"kind": "backdrill", "name": "back-drilled vias", "ok": not found, "count": len(jobs), "findings": [f"{f.where}: {f.problem}" for f in found],
+                              "depths_mm": sorted({round(j.depth_mm, 3) for j in jobs})}]
             if spec.stitch_pitch_mm or spec.stitch_hz:
                 from . import stitching
                 from .planes import _ground_net
@@ -179,6 +190,7 @@ def build_board(circuit: Circuit, spec: BoardSpec | None = None, log=print) -> B
             if raw.with_suffix(".kicad_dru").exists():
                 filled.with_suffix(".kicad_dru").write_bytes(raw.with_suffix(".kicad_dru").read_bytes())
             checks = (krt.verify(routed.read_text(), [c for c in special if isinstance(c, (DiffPair, LengthGroup))], layer_z_mm(rules, layers), drc.violations, rules) + krt.check_impedance(routed.read_text(), special, rules)) if special else []
+            checks = checks + bd_checks
             budgets = [c for c in circuit.constraints if isinstance(c, LossBudget)]
             if budgets:
                 from ..analysis import loss

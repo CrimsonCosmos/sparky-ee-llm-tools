@@ -33,3 +33,5 @@ Second pass done: bottom radiation, junction temperature from datasheet theta_JB
 HDI (blind/buried/micro vias): built via Freerouting DSN padstacks + KiCad typing/DRC + independent span checker (docs/HDI.md). Works and is DRC-clean; routing benefit over through-only NOT demonstrated (control run equal). Open: fab-specific span tables, stacked-micro-via rules, via-in-pad under BGAs, a board where through vias genuinely cannot fit (needs via-in-pad), combination with KiCadRoutingTools constraints.
 
 HDI follow-up done: staged KRT+Freerouting verified clean; via-in-pad built and measured (39 -> 2 unconnected on a 0.5 mm BGA); FAB_NOTES.md. Still the fab's: manufacturability review, span table, filling/capping, stacked-via rules.
+
+Byte groups, delay matching, inner-layer stripline impedance, loss budgets, frequency-dependent dielectric and back-drilling added as integrations (see docs/GPU_GAP_ANALYSIS.md update). Silicon-flow integration plan: docs/SILICON_INTEGRATION_PLAN.md.

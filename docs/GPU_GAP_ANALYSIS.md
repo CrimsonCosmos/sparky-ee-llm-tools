@@ -85,3 +85,15 @@ This is the only NVIDIA-GPU deliverable I would call in reach.
 6. Cooler/enclosure thermal via pcb-analysis voxel mesh from a user STEP; optional OpenFOAM adapter.
 7. Jetson-module carrier-board recipe once the module's public design guide is stored as datasheet inputs.
 Not doable here: chip design, vendor NDA data, vendor IBIS-AMI models, VBIOS, NVIDIA partner approval, PCI-SIG compliance.
+
+## Update (same day): items from 2.2 / 2.3 that turned out to be integrations
+Asked "why do we not have these", the honest answer was that they had not been done, and most already exist in tools we use. Now built as adapters/constraints, each with an independent check:
+| Item | How | Check |
+|---|---|---|
+| Byte-group constraints | `DramGroups` runs KiCadRoutingTools' own DRAM classifier (byte lanes = data + strobe + mask; command/address) | the classifier's lane on a fixture equals the expected set |
+| Delay-based matching | `LengthGroup.time_ps` / `DramGroups(time_ps=)` drive KRT's `--time-matching`; our own delay measurement (`analysis/delay.py`: scikit-rf outer layers, TEM stripline, via barrels) grades it | hand TEM value, Hammerstad value within 4 %; on the BGA fixture KRT's matching left 6.6 ps by our measure against a 5 ps limit: reported NOT met |
+| Inner-layer stripline impedance | atlc on a cross-section bitmap with real copper thickness (`diffpair.stripline`, `stripline_pair`); used for `ControlledImpedance` and diff pairs on inner layers | Cohn's exact zero-thickness result within 4 %; thickness/offset/uncoupled-pair physics |
+| Channel-loss budgets | `LossBudget`; scikit-rf microstrip (Debye-Djordjevic dielectric, roughness) and stripline (atlc Z0 + Pozar conductor loss) | dielectric part vs closed forms; **stripline conductor loss is a literature formula, not independently validated** (labelled) |
+| Frequency-dependent materials | `Rules.dielectric_f_ref_hz`, `copper_roughness_rms_m` feed scikit-rf's wideband Debye model | reproduces pi f sqrt(er) tan(d) / c at the reference frequency |
+| Back-drilling | `BackdrillNets` + `Rules.backdrill` (fab capability); KiCad 10 stores and exports back-drills; we plan depth/end layer and re-check | the depth we compute equals the depth KiCad prints in its drill file (within 5 um) |
+Still not covered: vias in the loss budget (input only), PCIe/GDDR channel simulation (pyBERT / gerber2ems not wired), KiCad has no verdict for delay-matched groups.

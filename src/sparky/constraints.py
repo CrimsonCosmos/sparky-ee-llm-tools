@@ -116,6 +116,15 @@ class LossBudget:
 
 
 @dataclass
+class BackdrillNets:
+    """Back-drill the through vias of these (fast) nets where their unused barrel stub is longer than the fab allows (`Rules.backdrill`)."""
+    nets: list[str]
+
+    def remap(self, refmap: dict[str, str], netmap: dict[str, str]) -> None:
+        self.nets = [netmap.get(n, n) for n in self.nets]
+
+
+@dataclass
 class DramGroups:
     """Let KiCadRoutingTools' DRAM classifier find the byte lanes (data + strobe + mask) and the command/address group of the board's DRAM interfaces by net name, and match
     each group. Resolved into explicit `LengthGroup`s before routing (so the checks see real nets); lanes of one interface are matched within the lane, not across lanes.
