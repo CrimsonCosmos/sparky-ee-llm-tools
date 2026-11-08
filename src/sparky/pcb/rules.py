@@ -33,6 +33,8 @@ class Rules:
     mask_thickness_mm: float = 0.01      # stackup inputs: set per fab profile / real stackup, never inline in code
     dielectric_er: float = 4.5
     dielectric_tan_d: float = 0.02
+    dielectric_f_ref_hz: float = 1e9     # frequency at which dielectric_er / dielectric_tan_d are quoted (the laminate datasheet's test frequency); loss analysis extrapolates with a wideband Debye model
+    copper_roughness_rms_m: float = 0.0  # RMS surface roughness of the copper foil (laminate/foil datasheet); 0 = smooth
     track: float = 0.2             # default signal width
     min_track: float = 0.127
     clearance: float = 0.2

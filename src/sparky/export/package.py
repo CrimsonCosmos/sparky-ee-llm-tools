@@ -48,6 +48,10 @@ def write_package(res: BuildResult, outdir: str | Path, project: str, extra: dic
                     + "\n\nDerived manufacturing sequence (for the fab to confirm, not the fab's process): " + "; ".join(f"{i}. {t}" for i, t in enumerate(chk.get("lamination", []), 1)) + ". "
                     "Stacked vias are flagged unless the fab's span table says stackable. NOT verified: via filling, sequential lamination order and the fab's own DFM check: send the stackup and drill files to the fab.")
                 continue
+            if chk["kind"] == "loss_budget":
+                meas = f"{', '.join(map(str, chk['losses_db']))} dB at {chk['f_hz'] / 1e9:g} GHz" if chk.get("losses_db") else "-"
+                rows.append(f"| insertion loss: {chk['name']} | {meas} | {chk['limit_db']} dB | {'NOT VERIFIED' if chk['ok'] is None else 'yes' if chk['ok'] else '**NO**'} | {chk['note']} |")
+                continue
             if chk["kind"] == "delay_group":
                 meas = f"delays {', '.join(map(str, chk['delays_ps']))} ps, spread {chk['spread_ps']} ps" if chk.get("delays_ps") else "-"
                 rows.append(f"| delay group: {chk['name']} | {meas} | {chk['limit_ps']} ps | {'NOT VERIFIED' if chk['ok'] is None else 'yes' if chk['ok'] else '**NO**'} | {chk['note']} |")

@@ -9,7 +9,7 @@ from pathlib import Path
 
 from .. import krt
 from ..export.kicad import layer_z_mm
-from ..constraints import ControlledImpedance, DiffPair, DramGroups, Fanout, LengthGroup, ViaInPad
+from ..constraints import ControlledImpedance, DiffPair, DramGroups, Fanout, LengthGroup, LossBudget, ViaInPad
 from ..model import Circuit
 from . import analysis
 from .board import Board
@@ -179,6 +179,10 @@ def build_board(circuit: Circuit, spec: BoardSpec | None = None, log=print) -> B
             if raw.with_suffix(".kicad_dru").exists():
                 filled.with_suffix(".kicad_dru").write_bytes(raw.with_suffix(".kicad_dru").read_bytes())
             checks = (krt.verify(routed.read_text(), [c for c in special if isinstance(c, (DiffPair, LengthGroup))], layer_z_mm(rules, layers), drc.violations, rules) + krt.check_impedance(routed.read_text(), special, rules)) if special else []
+            budgets = [c for c in circuit.constraints if isinstance(c, LossBudget)]
+            if budgets:
+                from ..analysis import loss
+                checks = checks + loss.check(routed.read_text(), budgets, rules, layer_z_mm(rules, layers))
             if rules.via_spans:
                 from . import hdi
                 found, counts = hdi.check(routed.read_text(), rules, layer_z_mm(rules, layers), board.layers)

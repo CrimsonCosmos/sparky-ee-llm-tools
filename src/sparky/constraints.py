@@ -103,6 +103,19 @@ class DiffPair(_NetRemap):
 
 
 @dataclass
+class LossBudget:
+    """Insertion loss of each net's routed copper (conductor + dielectric, from the stackup) at `f_hz` must stay under `max_db`. Vias are not modelled: give
+    `via_loss_db_each` from a measurement or a field solve (0 = ignored, and the report says so)."""
+    nets: list[str]
+    max_db: float
+    f_hz: float
+    via_loss_db_each: float = 0.0
+
+    def remap(self, refmap: dict[str, str], netmap: dict[str, str]) -> None:
+        self.nets = [netmap.get(n, n) for n in self.nets]
+
+
+@dataclass
 class DramGroups:
     """Let KiCadRoutingTools' DRAM classifier find the byte lanes (data + strobe + mask) and the command/address group of the board's DRAM interfaces by net name, and match
     each group. Resolved into explicit `LengthGroup`s before routing (so the checks see real nets); lanes of one interface are matched within the lane, not across lanes.
