@@ -35,3 +35,5 @@ HDI (blind/buried/micro vias): built via Freerouting DSN padstacks + KiCad typin
 HDI follow-up done: staged KRT+Freerouting verified clean; via-in-pad built and measured (39 -> 2 unconnected on a 0.5 mm BGA); FAB_NOTES.md. Still the fab's: manufacturability review, span table, filling/capping, stacked-via rules.
 
 Byte groups, delay matching, inner-layer stripline impedance, loss budgets, frequency-dependent dielectric and back-drilling added as integrations (see docs/GPU_GAP_ANALYSIS.md update). Silicon-flow integration plan: docs/SILICON_INTEGRATION_PLAN.md.
+
+Silicon flow status: Phases 0-5 done (toolchain without Docker, LibreLane runner, cross-checks, sign-off re-runs, Verilator lint + RTL-vs-gate-level equivalence, power/IR/skew analyses, package + REPORT.md). Verified on an 8-bit counter on sky130A only (gate-level sim macros for gf180/ihp not yet verified). Equivalence is random-vector, not formal; a single-gate mutation went undetected by 300 cycles. Open: Phase 6 board glue; Phase 7 scale ladder (Borg needs Chisel/mill to generate Verilog - not run, see below), cocotb harness, die thermal analysis.
