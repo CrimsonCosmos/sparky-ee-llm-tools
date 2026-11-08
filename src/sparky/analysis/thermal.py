@@ -93,7 +93,7 @@ def run_thermal(pcb: str | Path, power_w: dict[str, float], positions_csv: str |
     srcs = tuple(HeatSource(face_nodes(*pos[k], source_half_mm[k]), power_w=w, name=k) for k, w in power_w.items() if w > 0)
     amb = ambient_c + 273.15
     prob = ThermalConductionProblem(mesh, convection=(ConvectionBoundary("top", h_w_m2k, amb), ConvectionBoundary("bottom", h_w_m2k, amb)),
-                                    radiation=((RadiationBoundary("top", emissivity, amb),) if emissivity > 0 else ()), heat_sources=srcs)
+                                    radiation=(tuple(RadiationBoundary(face, emissivity, amb) for face in ("top", "bottom")) if emissivity > 0 else ()), heat_sources=srcs)
     sol = solve_thermal_conduction(prob)
     lap("solve")
     top = sol.temperature_k[-1]                                       # (y, x) extent only
@@ -102,3 +102,10 @@ def run_thermal(pcb: str | Path, power_w: dict[str, float], positions_csv: str |
         vals = [sol.temperature_k[z, y, x] for z, y, x in s.nodes if 0 <= y < top.shape[0] and 0 <= x < top.shape[1]]
         rises[s.name] = float(np.mean(vals)) - amb
     return ThermalResult(ambient_c, float(sol.max_temperature_k - amb), float(sol.total_heat_input_w), float(sol.heat_balance_error_w), rises)
+
+
+def junction_temperatures(power_w: dict[str, float], board_rise_k: dict[str, float], theta_k_per_w: dict[str, float], ambient_c: float) -> dict[str, float | None]:
+    """Junction temperature per part: ambient + the board's rise under the part + P * theta_JB (junction-to-board, from the part's datasheet). None where no theta is
+    known: a junction temperature is never guessed. An ESTIMATE: datasheet thetas are measured on a standard JEDEC board, not ours, and the heat that leaves
+    through the case is not separated out."""
+    return {ref: (ambient_c + board_rise_k.get(ref, 0.0) + w * theta_k_per_w[ref]) if ref in theta_k_per_w else None for ref, w in power_w.items()}

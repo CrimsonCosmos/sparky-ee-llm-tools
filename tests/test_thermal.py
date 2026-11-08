@@ -48,3 +48,4 @@ def test_rise_is_linear_in_power_without_radiation(board):
 
 def test_radiation_lowers_the_peak(board):
     assert run(board, 0.5, 0.9).peak_rise_k < run(board, 0.5, 0.0).peak_rise_k
+

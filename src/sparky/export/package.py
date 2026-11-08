@@ -56,7 +56,15 @@ def write_package(res: BuildResult, outdir: str | Path, project: str, extra: dic
         files[name] = p
     w("bom.csv", bomx.bom_csv(c))
     w("bom_jlcpcb.csv", bomx.bom_jlcpcb(c))
-    w("cpl_jlcpcb.csv", bomx.cpl_csv(b))
+    from . import jlc_rotation
+    try:
+        jrows = jlc_rotation.parse(jlc_rotation.fetch().read_text())
+        w("cpl_jlcpcb.csv", bomx.cpl_csv(b, jrows))
+        extra["JLCPCB placement corrections"] = (f"Applied the {len(jrows)}-row orientation table of {jlc_rotation.SOURCE_REPO} @ {jlc_rotation.SOURCE_COMMIT[:10]} (Apache-2.0) "
+                                                 "and its bottom-face rule to `cpl_jlcpcb.csv`. NOT verified against JLCPCB's viewer: check polarised parts in their preview.")
+    except (OSError, ValueError) as e:
+        w("cpl_jlcpcb.csv", bomx.cpl_csv(b))
+        extra["JLCPCB placement corrections"] = f"NOT APPLIED ({e}): `cpl_jlcpcb.csv` follows KiCad's own position convention; JLCPCB's library may orient parts differently. Verify every polarised part."
     w(f"{project}.net", kicad.to_kicad_netlist(c))
     w("REPORT.md", render_report(res, project, extra))
     gfiles = [v for k, v in kfiles.items() if k.startswith("gerber:")]
@@ -148,11 +156,16 @@ def _thermal(res: BuildResult, out: Path, files: dict, pol: Policy) -> str:
     import json
     (out / "thermal.json").write_text(json.dumps(r.__dict__, indent=1))
     files["thermal.json"] = out / "thermal.json"
-    rows = "\n".join(f"- {ref}: {power[ref] * 1e3:.1f} mW -> +{r.part_rise_k.get(ref, 0):.1f} K at its footprint" for ref in power)
+    from .. import datasheet
+    theta = {ref: v for ref in power for v in [datasheet.load(b.circuit.components[ref].part.mpn).get("values", {}).get("theta_jb")] if v is not None}
+    tj = thermalx.junction_temperatures(power, r.part_rise_k, theta, r.ambient_c)
+    rows = "\n".join(f"- {ref}: {power[ref] * 1e3:.1f} mW -> +{r.part_rise_k.get(ref, 0):.1f} K at its footprint; " +
+                     (f"junction ~{tj[ref]:.1f} C (estimate: ambient + board rise + P x theta_JB {theta[ref]:g} K/W)" if tj[ref] is not None else
+                      "junction temperature NOT computed (store `theta_jb` from the datasheet with `sparky save-spec`)") for ref in power)
     return (f"Ambient {r.ambient_c:g} C, natural convection h = {pol.convection_h_w_m2k:g} W/m2K on both faces, emissivity {pol.emissivity:g}; heat balance error "
             f"{r.balance_error_w:.1e} W. **Peak rise {r.peak_rise_k:.1f} K** above ambient (total {r.heat_in_w * 1e3:.1f} mW).\n\n{rows}\n\n"
             "Dissipation inputs are the recipes' own estimates (datasheet maximum supply current x voltage; regulator conduction loss only), not measurements; "
-            "package thermal resistance and an enclosure are not modelled." + note)
+            "an enclosure is not modelled; both faces convect and radiate to ambient." + note)
 
 
 def _irdrop(res: BuildResult, out: Path, files: dict, pol: Policy) -> str:

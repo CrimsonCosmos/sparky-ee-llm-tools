@@ -65,10 +65,11 @@ def bom_jlcpcb(circuit: Circuit) -> str:
     return out.getvalue()
 
 
-def cpl_csv(board: Board) -> str:
-    """Pick-and-place (JLCPCB column names). Origin = board bottom-left, y up, mm.
-    Same convention as `kicad-cli pcb export pos` (checked against it in tests): the footprint's file rotation, counter-clockwise on a y-up
-    sheet, unchanged for the bottom face. NOTE: assemblers apply per-part rotation offsets (and their own bottom-face rule); verify polarised parts."""
+def cpl_csv(board: Board, jlc_rows: list | None = None) -> str:
+    """Pick-and-place for JLCPCB (column names theirs). Origin = board bottom-left, y up, mm.
+    Without `jlc_rows` the values follow KiCad's own position file (`kicad-cli pcb export pos`, checked in tests). With the rows of
+    `jlc_rotation` (Fabrication-Toolkit's table) JLCPCB's library orientation and bottom-face rule are applied. Either way verify polarised parts in the fab's preview."""
+    from .jlc_rotation import correct, lookup
     H = board.height
     out = io.StringIO()
     w = csv.writer(out)
@@ -77,7 +78,11 @@ def cpl_csv(board: Board) -> str:
         if comp.dnp or comp.part.category in UNASSEMBLED:
             continue
         pl = board.place[ref]
-        w.writerow([ref, comp.value, comp.part.package, f"{pl.x:.3f}mm", f"{H - pl.y:.3f}mm", f"{pl.rot % 360:g}", pl.side.capitalize()])
+        x, y, rot = pl.x, H - pl.y, pl.rot % 360
+        if jlc_rows is not None:
+            fp = comp.footprint.lib_id or comp.footprint.name
+            x, y, rot = correct(x, y, pl.rot, pl.side == "bottom", lookup(jlc_rows, fp))
+        w.writerow([ref, comp.value, comp.part.package, f"{x:.3f}mm", f"{y:.3f}mm", f"{rot:g}", pl.side.capitalize()])
     return out.getvalue()
 
 
