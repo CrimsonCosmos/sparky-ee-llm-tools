@@ -45,7 +45,8 @@ def write_package(res: BuildResult, outdir: str | Path, project: str, extra: dic
                     f"Vias per span: {n}. Checked against the fab's span table by re-reading the routed copper: "
                     + ("**all within the table** (layers, type, pad and drill, aspect ratio)." if chk["ok"] else "**PROBLEMS**: " + "; ".join(chk["findings"][:8]))
                     + " KiCad DRC also applied per-type via limits. One Excellon drill file per span is in `gerber/` (laser vs mechanical drilling is the fab's process). "
-                    "NOT verified: stacked/staggered micro-via rules, via filling, sequential lamination order and the fab's own DFM check: send the stackup and drill files to the fab.")
+                    + "\n\nDerived manufacturing sequence (for the fab to confirm, not the fab's process): " + "; ".join(f"{i}. {t}" for i, t in enumerate(chk.get("lamination", []), 1)) + ". "
+                    "Stacked vias are flagged unless the fab's span table says stackable. NOT verified: via filling, sequential lamination order and the fab's own DFM check: send the stackup and drill files to the fab.")
                 continue
             if chk["kind"] == "impedance":
                 meas = f"{chk['z_ohm'][0]}-{chk['z_ohm'][1]} ohm vs {chk['target_ohm']:g}" if chk.get("z_ohm") else "-"

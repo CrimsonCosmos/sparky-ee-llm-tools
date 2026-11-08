@@ -18,6 +18,7 @@ class ViaSpan:
     drill: float         # finished hole, mm
     annular: float       # minimum annular ring, mm
     max_aspect: float    # maximum (depth of the span) : drill
+    stackable: bool = False   # the fab allows this via directly on top of another partial via (filled and capped); False = staggered only
 
     def label(self, n_layers: int) -> str:
         return f"{self.kind} {self.first + 1}-{self.last + 1}"

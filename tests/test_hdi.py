@@ -148,3 +148,44 @@ def test_without_spans_the_stackup_is_unchanged_and_sums_to_the_thickness():
 def test_a_board_too_thick_for_its_via_aspect_ratios_gets_thinner_not_wrong():
     assert R.thickness_mm < 1.6                                                   # the thin micro/blind gaps plus the buried span's cap bound the board (derived, ~1.4 mm)
     assert max(dielectric_gaps(R)[2:4]) <= (R.via_spans[3].drill * R.via_spans[3].max_aspect) / 3
+
+
+def test_stacked_partial_vias_are_flagged_unless_the_fab_allows_them():
+    z = layer_z_mm(R, 6)
+    stack = "(kicad_pcb\n" + _via("micro", "F.Cu", "In1.Cu", at="5 5") + _via("buried", "In1.Cu", "In4.Cu", 0.35, 0.2, at="5 5") + ")\n"
+    assert any("stacked" in f.problem for f in hdi.check(stack, R, z, LAYERS)[0])
+    apart = "(kicad_pcb\n" + _via("micro", "F.Cu", "In1.Cu", at="5 5") + _via("buried", "In1.Cu", "In4.Cu", 0.35, 0.2, at="5.6 5") + ")\n"
+    assert not any("stacked" in f.problem for f in hdi.check(apart, R, z, LAYERS)[0])
+    from dataclasses import replace
+    ok = tuple(replace(sp, stackable=True) for sp in R.via_spans)
+    r2 = rules_for(6, "generic-hdi-6l", via_spans=ok)
+    assert not any("stacked" in f.problem for f in hdi.check(stack, r2, z, LAYERS)[0])
+
+
+def test_lamination_sequence_follows_the_span_table():
+    steps = hdi.lamination_sequence(R, LAYERS)
+    assert steps[0].startswith("laminate layers In1.Cu..In4.Cu") and "buried span 2-5" in steps[0]      # buried span first
+    assert steps[1].startswith("press the remaining layers") and steps[-1] == "drill and plate the through holes"
+    assert sum("(laser)" in t for t in steps) == 2                                                     # two micro spans
+    assert hdi.lamination_sequence(rules_for(6), LAYERS) == ["press the remaining layers on (final lamination)", "drill and plate the through holes"]
+
+
+@pytest.mark.slow
+@needs
+@pytest.mark.skipif(not __import__("sparky.krt", fromlist=["x"]).available(), reason="needs KiCadRoutingTools (SPARKY_KRT)")
+def test_hdi_board_with_a_pair_and_a_length_group_stages_krt_then_freerouting():
+    """KiCadRoutingTools routes the constrained nets with through vias; Freerouting finishes the rest with the partial-depth padstacks. The constraints are
+    re-measured from the FINAL copper, so a router that disturbed them would fail here."""
+    from sparky.constraints import DiffPair, Fanout, LengthGroup
+    from sparky.pcb.flow import BoardSpec, build_board
+    from test_krt import make_circuit
+    c = make_circuit()
+    c.constrain(Fanout("U1"))
+    c.constrain(DiffPair("DATA_P", "DATA_N", width_mm=0.2, gap_mm=0.2, skew_mm=0.1))
+    c.constrain(LengthGroup(["S1", "S2", "S3"], tolerance_mm=1.0))
+    res = build_board(c, BoardSpec(layers=6, profile="generic-hdi-6l", time_budget_s=400), log=print)
+    by = {r["name"]: r for r in res.routing_checks}
+    assert not res.drc.unconnected and not res.drc.errors, res.drc.summary()
+    pair = by["DATA_P/DATA_N"]
+    assert pair["lengths_mm"][0] > 5 and pair["ok"] and pair["skew_mm"] <= 0.15              # the pair survived Freerouting's pass
+    assert by["partial-depth vias"]["ok"]

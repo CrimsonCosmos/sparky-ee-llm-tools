@@ -94,14 +94,15 @@ def build_board(circuit: Circuit, spec: BoardSpec | None = None, log=print) -> B
             raw, routed = work / f"{tag}.kicad_pcb", work / f"{tag}_routed.kicad_pcb"
             raw.write_text(to_kicad_pcb(board, circuit.name))
             special = [c for c in circuit.constraints if isinstance(c, (DiffPair, LengthGroup, Fanout, ControlledImpedance))]
-            if special and rules.via_spans:
-                say("   routing constraints (diff pair / length / fanout) need KiCadRoutingTools, which lays through vias only: not combinable with partial-depth vias")
-                continue
-            if rules.via_spans:                           # per-type via limits for KiCad's own DRC (the board-setup minimums are the through via's)
+            staged = bool(special and rules.via_spans)       # KiCadRoutingTools lays through vias only: it routes the constrained nets, Freerouting (with the partial-depth padstacks) the rest
+            dru = []
+            if special:                                      # KiCad grades length/skew itself from this rules file (router and DRC both read it)
+                dru.append(krt.dru_text([c for c in special if isinstance(c, (DiffPair, LengthGroup))]))
+            if rules.via_spans:                              # per-type via limits for KiCad's own DRC (the board-setup minimums are the loosest type's)
                 from . import hdi
-                raw.with_suffix(".kicad_dru").write_text(hdi.dru_text(rules.via_spans, rules))
-            if special:                                    # KiCad grades length/skew itself from this rules file (router and DRC both read it)
-                raw.with_suffix(".kicad_dru").write_text(krt.dru_text([c for c in special if isinstance(c, (DiffPair, LengthGroup))]))
+                dru.append(("" if dru else "(version 1)\n") + hdi.dru_text(rules.via_spans, rules))
+            if dru:
+                raw.with_suffix(".kicad_dru").write_text("".join(dru))
             kicad_backend.write_kicad_pro(raw.with_suffix(".kicad_pro"), rules, net_classes=net_classes_for(circuit, rules))
             say(f"{layers}L util={util}: board {board.width}x{board.height} mm; routing with {'KiCadRoutingTools (' + str(len(special)) + ' routing constraints)' if special else 'Freerouting'}")
             try:
@@ -110,8 +111,13 @@ def build_board(circuit: Circuit, spec: BoardSpec | None = None, log=print) -> B
                         raise routing.RoutingError("this board has differential-pair / length-match / fanout constraints, which need KiCadRoutingTools (SPARKY_KRT); not installed")
                     t_r = time.time()
                     try:
-                        kr = krt.route(raw, routed, rules=rules, constraints=special, all_nets=[n for n, p in circuit.nets.items() if len(p) > 1],
+                        constrained = sorted({n for c in special for n in ((c.p, c.n) if isinstance(c, DiffPair) else c.nets if isinstance(c, (LengthGroup, ControlledImpedance)) else ())})
+                        krt_out = work / f"{tag}_krt.kicad_pcb" if staged else routed
+                        kr = krt.route(raw, krt_out, rules=rules, constraints=special, all_nets=constrained if staged else [n for n, p in circuit.nets.items() if len(p) > 1],
                                        net_classes=net_classes_for(circuit, rules), timeout=int(max(120, spec.time_budget_s * 0.6)))
+                        if staged:
+                            say("   constrained nets routed by KiCadRoutingTools (through vias); the rest by Freerouting with partial-depth vias")
+                            routing.route_pcb(krt_out, routed, passes=spec.passes, timeout=int(max(120, spec.time_budget_s * 0.6)), via_spans=rules.via_spans, layers=board.layers)
                     except (RuntimeError, ValueError) as e:
                         raise routing.RoutingError(str(e)) from e
                     rr = type("R", (), {"seconds": time.time() - t_r})()
@@ -147,7 +153,7 @@ def build_board(circuit: Circuit, spec: BoardSpec | None = None, log=print) -> B
             if rules.via_spans:
                 from . import hdi
                 found, counts = hdi.check(routed.read_text(), rules, layer_z_mm(rules, layers), board.layers)
-                checks = checks + [{"kind": "via_span", "name": "partial-depth vias", "ok": not found, "counts": counts, "findings": [f"{f.where}: {f.problem}" for f in found]}]
+                checks = checks + [{"kind": "via_span", "name": "partial-depth vias", "ok": not found, "counts": counts, "lamination": hdi.lamination_sequence(rules, board.layers), "findings": [f"{f.where}: {f.problem}" for f in found]}]
             miss = [c["name"] for c in checks if c["ok"] is False]
             if miss:
                 say(f"   routing constraints NOT met (re-measured): {', '.join(miss)}")

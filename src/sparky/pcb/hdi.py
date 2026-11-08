@@ -101,4 +101,38 @@ def check(pcb_text: str, rules: Rules, layer_z: dict[str, float], names: list[st
         depth = abs(layer_z[pair[1]] - layer_z[pair[0]])
         if depth / float(drill[1]) > sp.max_aspect + 1e-6:
             findings.append(ViaFinding(where, f"aspect ratio {depth / float(drill[1]):.2f} exceeds {sp.max_aspect:g}"))
+    findings += _stacked(pcb_text, table)
     return findings, counts
+
+
+def _stacked(pcb_text: str, table: dict) -> list[ViaFinding]:
+    """Two partial vias at the same place whose spans share a layer are stacked: allowed only where the fab says both spans are stackable."""
+    seen: dict[tuple[float, float], list[tuple[str, str]]] = {}
+    for v in sexpr.find_all(sexpr.parse(pcb_text), "via"):
+        ly, at = sexpr.find(v, "layers"), sexpr.find(v, "at")
+        pair = (str(ly[1]), str(ly[2]))
+        if pair in table:
+            seen.setdefault((round(float(at[1]), 2), round(float(at[2]), 2)), []).append(pair)
+    out = []
+    for (x, y), pairs in seen.items():
+        for i in range(len(pairs)):
+            for j in range(i + 1, len(pairs)):
+                a, b = pairs[i], pairs[j]
+                if a != b and not (table[a].stackable and table[b].stackable) and ({a[0], a[1]} & {b[0], b[1]}):
+                    out.append(ViaFinding(f"vias at ({x}, {y})", f"stacked {a[0]}-{a[1]} on {b[0]}-{b[1]} but the fab does not allow stacked vias"))
+    return out
+
+
+def lamination_sequence(rules: Rules, names: list[str]) -> list[str]:
+    """The pressing/drilling order the span table implies (a DERIVED plan for the fab to confirm, not the fab's process): inner (buried) spans must be formed
+    before the layers above and below are pressed on; outer blind/micro spans are drilled after the final press; through holes last."""
+    steps = []
+    buried = sorted((sp for sp in rules.via_spans if sp.kind == "buried"), key=lambda sp: sp.last - sp.first)
+    for sp in buried:
+        steps.append(f"laminate layers {names[sp.first]}..{names[sp.last]} as a sub-stack, drill and plate the buried span {sp.first + 1}-{sp.last + 1}")
+    steps.append("press the remaining layers on (final lamination)")
+    for sp in rules.via_spans:
+        if sp.kind in ("blind", "micro"):
+            steps.append(f"drill {'(laser) ' if sp.kind == 'micro' else ''}and plate the {sp.kind} span {sp.first + 1}-{sp.last + 1}")
+    steps.append("drill and plate the through holes")
+    return steps
