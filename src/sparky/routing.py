@@ -96,7 +96,38 @@ def _last_json(text: str) -> dict:
         return {}
 
 
-def route_pcb(pcb: str | Path, out: str | Path, *, passes: int = 20, timeout: int = 900, via_spans: tuple = (), layers: list[str] | None = None) -> RouteResult:
+def protect_nets(dsn: str, nets: set[str]) -> str:
+    """Mark the existing wires and vias of `nets` as protected (fixed) in a Specctra DSN. KiCad exports existing copper as `(type route)`, which Freerouting is free to rip up and
+    reroute: copper another router placed under constraints (length-matched, impedance-controlled) must stay as it is."""
+    i = dsn.find("(wiring")
+    if i < 0 or not nets:
+        return dsn
+    out, k, depth, start = [dsn[:i]], i, 0, None
+    head = dsn[i:]
+    pieces, pos = [], 0
+    # walk the wiring section's top-level items (wire / via) by parenthesis depth
+    d = 0
+    for n, ch in enumerate(head):
+        if ch == "(":
+            d += 1
+            if d == 2:
+                start = n
+        elif ch == ")":
+            if d == 2 and start is not None:
+                item = head[start:n + 1]
+                m = re.search(r"\(net (\"[^\"]*\"|[^\s()]+)\)", item)
+                name = m.group(1).strip('"') if m else None
+                if name in nets and item.startswith(("(wire", "(via")):
+                    item = item.replace("(type route)", "(type protect)")
+                pieces.append(head[pos:start])
+                pieces.append(item)
+                pos = n + 1
+            d -= 1
+    pieces.append(head[pos:])
+    return dsn[:i] + "".join(pieces)
+
+
+def route_pcb(pcb: str | Path, out: str | Path, *, passes: int = 20, timeout: int = 900, via_spans: tuple = (), layers: list[str] | None = None, protect: set[str] | None = None) -> RouteResult:
     """Route every unrouted connection of `pcb` and write the routed board to `out` (existing tracks are kept by KiCad's SES import)."""
     import time
     jv = java()
@@ -107,6 +138,8 @@ def route_pcb(pcb: str | Path, out: str | Path, *, passes: int = 20, timeout: in
     with tempfile.TemporaryDirectory(prefix="sparky_route_") as td:
         dsn, ses = Path(td) / "board.dsn", Path(td) / "board.ses"
         _py(_DSN, str(Path(pcb).resolve()), str(dsn))
+        if protect:
+            dsn.write_text(protect_nets(dsn.read_text(), protect))
         if via_spans:                                                      # partial-depth vias: offer the fab's padstacks to the autorouter (pcb/hdi.py)
             from .pcb import hdi
             dsn.write_text(hdi.patch_dsn(dsn.read_text(), via_spans, layers or []))

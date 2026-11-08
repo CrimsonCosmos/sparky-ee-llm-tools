@@ -189,3 +189,12 @@ def test_hdi_board_with_a_pair_and_a_length_group_stages_krt_then_freerouting():
     pair = by["DATA_P/DATA_N"]
     assert pair["lengths_mm"][0] > 5 and pair["ok"] and pair["skew_mm"] <= 0.15              # the pair survived Freerouting's pass
     assert by["partial-depth vias"]["ok"]
+
+
+def test_existing_copper_of_chosen_nets_is_protected_in_the_dsn():
+    from sparky.routing import protect_nets
+    dsn = ('(pcb x (wiring\n    (wire (path F.Cu 300  1 2  3 4)(net S1)(type route))\n    (wire (path F.Cu 300  1 2\n  3 4)(net GND)(type route))\n'
+           '    (via "Via[0-5]_500:250_um" 5 6 (net S1)(type route))\n  )\n)\n')
+    out = protect_nets(dsn, {"S1"})
+    assert out.count("(type protect)") == 2 and out.count("(type route)") == 1                # S1's wire and via fixed, GND's wire left rippable
+    assert "(net GND)(type route)" in out and protect_nets(dsn, set()) == dsn
