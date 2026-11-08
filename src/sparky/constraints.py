@@ -98,6 +98,7 @@ class DiffPair(_NetRemap):
     gap_mm: float
     skew_mm: float
     impedance_ohm: float | None = None      # differential target; when set the router solves the width from the stackup and width_mm is only the floor
+    impedance_tolerance_pct: float = 10.0   # +- band the routed pair must stay in (a fab's typical quoted control for outer-layer pairs; set the fab's own)
     _net_fields = ("p", "n")
 
 

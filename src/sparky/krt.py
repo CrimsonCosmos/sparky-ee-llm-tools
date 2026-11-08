@@ -81,7 +81,7 @@ def check_impedance(pcb_text: str, constraints: list, rules) -> list[dict]:
     rows = []
     for c in constraints:
         if isinstance(c, DiffPair) and c.impedance_ohm:
-            rows.append({"kind": "impedance", "name": f"{c.p}/{c.n}", "ok": None, "note": "differential impedance NOT verified (no independent formula); width solved by the router from the stackup"})
+            rows.append(_check_pair(root, names, c, rules, ordered, t))
         if not isinstance(c, ControlledImpedance):
             continue
         widths: dict[str, list[float]] = {}
@@ -105,6 +105,44 @@ def check_impedance(pcb_text: str, constraints: list, rules) -> list[dict]:
         rows.append({"kind": "impedance", "name": "+".join(c.nets), "ok": err <= c.tolerance_pct, "z_ohm": [round(min(zs), 1), round(max(zs), 1)], "target_ohm": c.impedance_ohm,
                      "error_pct": round(err, 1), "limit_pct": c.tolerance_pct, "note": "IPC-2141 microstrip over the next copper layer (assumed a reference plane)"})
     return rows
+
+
+def _check_pair(root, names, c, rules, ordered, t) -> dict:
+    """Differential impedance of a routed outer-layer pair by a 2-D field solve (atlc, see analysis/diffpair.py) of the width and spacing actually in the copper.
+    NOT VERIFIED when atlc is missing or the pair has no outer-layer copper (inner layers are stripline, which this does not solve)."""
+    from shapely.geometry import LineString
+    from shapely.ops import unary_union
+    from .analysis import diffpair
+    from .pcb.rules import OZ_CU_MM
+    name = f"{c.p}/{c.n}"
+    base = {"kind": "impedance", "name": name, "ok": None, "target_ohm": c.impedance_ohm, "limit_pct": c.impedance_tolerance_pct}
+    if not diffpair.available():
+        return {**base, "note": "differential impedance NOT verified: atlc (2-D field solver) not installed"}
+    seg: dict[tuple[str, str], list] = {}
+    for node in root:
+        if isinstance(node, list) and node and node[0] == "segment":
+            nt, w, ly, a, b = (sexpr.find(node, k) for k in ("net", "width", "layer", "start", "end"))
+            net = names.get(str(nt[1]), str(nt[1])) if nt else None
+            if net in (c.p, c.n) and w and ly and str(ly[1]) in (ordered[0][0], ordered[-1][0]):
+                seg.setdefault((str(ly[1]), net), []).append((float(w[1]), LineString([(float(a[1]), float(a[2])), (float(b[1]), float(b[2]))])))
+    layers = {l for l, _ in seg if (l, c.p) in seg and (l, c.n) in seg}
+    if not layers:
+        return {**base, "note": "differential impedance NOT verified: no outer-layer copper on both nets (inner-layer stripline is not solved)"}
+    layer = max(layers, key=lambda l: sum(g.length for _, g in seg[(l, c.p)] + seg[(l, c.n)]))
+    p_geo, n_geo = unary_union([g for _, g in seg[(layer, c.p)]]), unary_union([g for _, g in seg[(layer, c.n)]])
+    widths = sorted(w for w, _ in seg[(layer, c.p)] + seg[(layer, c.n)])
+    w = widths[len(widths) // 2]                                              # the width most of the pair is routed at
+    gap = p_geo.distance(n_geo) - w                                           # centre-line distance minus one width = edge-to-edge spacing
+    if gap <= 0:
+        return {**base, "note": "differential impedance NOT verified: routed pair touches or overlaps"}
+    k = 0 if layer == ordered[0][0] else -1
+    nxt = 1 if k == 0 else -2
+    cu_next = (rules.copper_oz_outer if rules.layers == 2 else rules.copper_oz_inner) * OZ_CU_MM
+    h = abs(ordered[k][1] - ordered[nxt][1]) - (t + cu_next) / 2
+    z = diffpair.microstrip_pair(w, gap, h, t, rules.dielectric_er).z_diff_ohm
+    err = abs(z / c.impedance_ohm - 1) * 100
+    return {**base, "ok": err <= c.impedance_tolerance_pct, "z_ohm": [round(z, 1), round(z, 1)], "error_pct": round(err, 1),
+            "note": f"atlc 2-D field solve (quasi-static, +-3 % grid error, no solder mask) at routed width {w:g} mm, spacing {gap:.3f} mm on {layer}"}
 
 
 def _hit(viol: list[dict], i: int) -> bool:
