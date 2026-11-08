@@ -9,7 +9,7 @@ from pathlib import Path
 
 from .. import krt
 from ..export.kicad import layer_z_mm
-from ..constraints import ControlledImpedance, DiffPair, Fanout, LengthGroup, ViaInPad
+from ..constraints import ControlledImpedance, DiffPair, DramGroups, Fanout, LengthGroup, ViaInPad
 from ..model import Circuit
 from . import analysis
 from .board import Board
@@ -94,7 +94,12 @@ def build_board(circuit: Circuit, spec: BoardSpec | None = None, log=print) -> B
             tag = f"{layers}L_u{util}"
             raw, routed = work / f"{tag}.kicad_pcb", work / f"{tag}_routed.kicad_pcb"
             raw.write_text(to_kicad_pcb(board, circuit.name))
-            special = [c for c in circuit.constraints if isinstance(c, (DiffPair, LengthGroup, Fanout, ControlledImpedance))]
+            special = []
+            for c in circuit.constraints:
+                if isinstance(c, DramGroups):                  # KiCadRoutingTools' classifier finds the byte lanes and command/address nets; each becomes an explicit group
+                    special += [LengthGroup(g, c.tolerance_mm, c.time_ps) for g in krt.dram_groups([n for n, p in circuit.nets.items() if len(p) > 1])]
+                elif isinstance(c, (DiffPair, LengthGroup, Fanout, ControlledImpedance)):
+                    special.append(c)
             vip_nets: set[str] = set()
             vip = [c for c in circuit.constraints if isinstance(c, ViaInPad)]
             if vip:
@@ -173,7 +178,7 @@ def build_board(circuit: Circuit, spec: BoardSpec | None = None, log=print) -> B
             filled.with_suffix(".kicad_pro").write_bytes(raw.with_suffix(".kicad_pro").read_bytes())
             if raw.with_suffix(".kicad_dru").exists():
                 filled.with_suffix(".kicad_dru").write_bytes(raw.with_suffix(".kicad_dru").read_bytes())
-            checks = (krt.verify(routed.read_text(), [c for c in special if isinstance(c, (DiffPair, LengthGroup))], layer_z_mm(rules, layers), drc.violations) + krt.check_impedance(routed.read_text(), special, rules)) if special else []
+            checks = (krt.verify(routed.read_text(), [c for c in special if isinstance(c, (DiffPair, LengthGroup))], layer_z_mm(rules, layers), drc.violations, rules) + krt.check_impedance(routed.read_text(), special, rules)) if special else []
             if rules.via_spans:
                 from . import hdi
                 found, counts = hdi.check(routed.read_text(), rules, layer_z_mm(rules, layers), board.layers)

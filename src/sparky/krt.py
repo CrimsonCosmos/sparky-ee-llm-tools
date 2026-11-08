@@ -148,6 +148,19 @@ def _check_pair(root, names, c, rules, ordered, t) -> dict:
             "note": f"atlc 2-D field solve (quasi-static, +-3 % grid error, no solder mask) at routed width {w:g} mm, spacing {gap:.3f} mm on {layer}"}
 
 
+def _delay_row(pcb_text: str, c, layer_z: dict[str, float], rules) -> dict:
+    """Delay-matched group graded by our own propagation-delay measurement (analysis/delay.py): KiCad has no verdict for it, so this is a cross-check, not an authority."""
+    from .analysis import delay, lines
+    base = {"kind": "delay_group", "name": "+".join(c.nets), "limit_ps": c.time_ps}
+    if rules is None or not lines.available():
+        return {**base, "ok": None, "note": "delay NOT verified: needs scikit-rf and the rules' stackup"}
+    d = delay.net_delays_ps(pcb_text, rules, layer_z)
+    ds = [d.get(n, 0.0) for n in c.nets]
+    spread = max(ds) - min(ds) if ds else 0.0
+    return {**base, "delays_ps": [round(x, 2) for x in ds], "spread_ps": round(spread, 2), "ok": min(ds, default=0) > 0 and spread <= c.time_ps,
+            "note": "own measurement (scikit-rf outer-layer er_eff, TEM stripline inner layers, via barrels); no KiCad verdict exists for delay"}
+
+
 def _hit(viol: list[dict], i: int) -> bool:
     return any(f"rule 'sparky_{i}'" in v.get("description", "") for v in viol)
 
@@ -244,6 +257,9 @@ def route(raw: Path, out: Path, *, rules, constraints: list, all_nets: list[str]
         args += ["--length-match-group", *g.nets]
     if groups:
         args += ["--length-match-tolerance", f"{min(g.tolerance_mm for g in groups):g}"]
+        timed = [g.time_ps for g in groups if g.time_ps]
+        if timed:                                         # match propagation delay (inner layers are slower than outer ones) instead of length
+            args += ["--time-matching", "--time-match-tolerance", f"{min(timed):g}"]
     step("route", args)
     shutil.copy(cur, out)
     shutil.copy(cur.with_suffix(".kicad_pro"), out.with_suffix(".kicad_pro"))
@@ -300,6 +316,21 @@ def restore_nets(krt_text: str, routed_text: str, nets: set[str]) -> str:
     return base[:i] + "\n".join(back) + "\n" + base[i:]
 
 
+def dram_groups(net_names: list[str], context: list[str] | None = None) -> list[list[str]]:
+    """The DRAM byte-lane and command/address groups KiCadRoutingTools' own classifier finds among `net_names` (run in its checkout as a separate process)."""
+    root = krt_dir()
+    if not root:
+        raise RuntimeError("KiCadRoutingTools not found: set SPARKY_KRT")
+    code = ("import sys, json, io, contextlib\nsys.path.insert(0, sys.argv[1] + '/py_router')\nimport length_matching as lm\n"
+            "names = json.loads(sys.argv[2])\nbuf = io.StringIO()\nwith contextlib.redirect_stdout(buf):\n    g = lm.auto_group_ddr4_nets(names, json.loads(sys.argv[3]))\n"
+            "print('SPARKY_GROUPS:' + json.dumps(g))\n")
+    r = subprocess.run([sys.executable, "-c", code, str(root), json.dumps(net_names), json.dumps(context or net_names)], capture_output=True, text=True, timeout=120)
+    for line in r.stdout.splitlines():
+        if line.startswith("SPARKY_GROUPS:"):
+            return json.loads(line[len("SPARKY_GROUPS:"):])
+    raise RuntimeError(f"KRT DRAM classifier failed: {(r.stderr or r.stdout).strip()[-300:]}")
+
+
 def pair_base(p: str, n: str) -> str:
     """KiCad's inDiffPair() takes the pair's base name (the net name without its polarity suffix)."""
     for pat, repl in _PAIR:
@@ -315,13 +346,13 @@ def dru_text(constraints: list) -> str:
     for i, c in enumerate(constraints):
         if isinstance(c, DiffPair):
             out.append(f'(rule "sparky_{i}"\n  (condition "A.inDiffPair(\'{pair_base(c.p, c.n)}\')")\n  (constraint skew (max {c.skew_mm:g}mm)))')
-        elif isinstance(c, LengthGroup):
+        elif isinstance(c, LengthGroup) and c.time_ps is None:        # KiCad's skew rule is graded in mm: a delay-matched group has no KiCad verdict
             cond = " || ".join(f"A.NetName == '{n}'" for n in c.nets)
             out.append(f'(rule "sparky_{i}"\n  (condition "{cond}")\n  (constraint skew (max {c.tolerance_mm:g}mm)))')
     return "\n".join(out) + "\n"
 
 
-def verify(pcb_text: str, constraints: list, layer_z: dict[str, float], drc_violations: list[dict] | None = None) -> list[dict]:
+def verify(pcb_text: str, constraints: list, layer_z: dict[str, float], drc_violations: list[dict] | None = None, rules=None) -> list[dict]:
     """Per constraint: KiCad's DRC verdict (authoritative: the rule `sparky_<i>` from dru_text was or was not violated) plus our own measurement of the routed copper
     (centre-line tracks + via barrels, a cross-check that differs from KiCad by a few hundredths of a mm)."""
     viol = drc_violations or []
@@ -332,6 +363,8 @@ def verify(pcb_text: str, constraints: list, layer_z: dict[str, float], drc_viol
             lp, ln = L.get(c.p, 0.0), L.get(c.n, 0.0)
             rows.append({"kind": "diff_pair", "name": f"{c.p}/{c.n}", "lengths_mm": [round(lp, 3), round(ln, 3)], "skew_mm": round(abs(lp - ln), 3),
                          "limit_mm": c.skew_mm, "ok": lp > 0 and ln > 0 and not _hit(viol, i), "kicad": _actual(viol, i)})
+        elif isinstance(c, LengthGroup) and c.time_ps is not None:
+            rows.append(_delay_row(pcb_text, c, layer_z, rules))
         elif isinstance(c, LengthGroup):
             ls = [L.get(n, 0.0) for n in c.nets]
             spread = max(ls) - min(ls) if ls else 0.0
