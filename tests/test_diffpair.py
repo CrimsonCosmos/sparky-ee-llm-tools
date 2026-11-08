@@ -14,7 +14,7 @@ W, H, T, ER = 0.3, 0.2, 0.035, 4.5
 
 def test_uncoupled_pair_is_twice_the_single_ended_impedance_of_an_independent_model():
     z_single = lines.microstrip(W, H, T, ER)[0]
-    far = diffpair.microstrip_pair(W, 6.0, H, T, ER)                       # spacing 30 x the dielectric height: coupling negligible
+    far = diffpair.microstrip_pair(W, 2.0, H, T, ER)                       # spacing 10 x the dielectric height: coupling small
     assert far.z_diff_ohm == pytest.approx(2 * z_single, rel=0.04)
     assert far.z_odd_ohm == pytest.approx(far.z_even_ohm, rel=0.03)
 
@@ -40,7 +40,10 @@ def _rules() -> Rules:
 
 def test_routed_pair_is_graded_against_the_target():
     r = _rules()
-    measured = diffpair.microstrip_pair(W, 0.2, H, T, ER).z_diff_ohm                      # what the geometry gives
+    from sparky.export.kicad import layer_z_mm
+    z = layer_z_mm(r, 2)
+    h = abs(z['B.Cu'] - z['F.Cu']) - T                                                    # dielectric between the copper layers of the stackup the exporter writes
+    measured = diffpair.microstrip_pair(W, 0.2, h, T, ER).z_diff_ohm                      # what the geometry gives
     ok = krt.check_impedance(_routed(0.2), [DiffPair("D_P", "D_N", W, 0.2, 0.1, impedance_ohm=measured)], r)[0]
     assert ok["ok"] is True and "atlc" in ok["note"] and ok["z_ohm"][0] == pytest.approx(measured, rel=0.03)
     bad = krt.check_impedance(_routed(0.2), [DiffPair("D_P", "D_N", W, 0.2, 0.1, impedance_ohm=measured * 1.3)], r)[0]

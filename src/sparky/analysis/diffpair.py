@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import re
 import shutil
+from functools import lru_cache
 import subprocess
 import tempfile
 from dataclasses import dataclass
@@ -18,19 +19,33 @@ class Pair:
     z_even_ohm: float
     er_odd: float
     er_even: float
+    bitmap_size: int = 0            # atlc grid actually used (the solver's run time is erratic in it, so neighbours are tried on a timeout)
 
 
 def available() -> bool:
     return all(shutil.which(x) for x in ("atlc", "create_bmp_for_microstrip_coupler"))
 
 
+@lru_cache(maxsize=256)
 def microstrip_pair(w_mm: float, s_mm: float, h_mm: float, t_mm: float, er: float, bitmap_size: int = 5, side_gap_mm: float | None = None,
-                    timeout: int = 900) -> Pair:
+                    timeout: int = 25) -> Pair:
     """Zdiff of two outer-layer strips of width `w`, edge spacing `s`, over a ground plane `h` below, copper thickness `t`, dielectric `er`.
     `bitmap_size` (1-15) is atlc's grid resolution: finer is slower (minutes at 8) and closer to the continuum answer."""
     if not available():
         raise RuntimeError("atlc not installed (apt install atlc)")
     g = side_gap_mm if side_gap_mm is not None else max(10 * h_mm, 2 * w_mm + s_mm)        # side walls far enough not to load the pair
+    last = ""
+    for size in dict.fromkeys([bitmap_size, bitmap_size + 1, bitmap_size - 1, bitmap_size - 2]):     # atlc's convergence time jumps between neighbouring grids
+        if not 1 <= size <= 15:
+            continue
+        try:
+            return _solve(w_mm, s_mm, h_mm, t_mm, er, g, size, timeout)
+        except subprocess.TimeoutExpired:
+            last = f"timed out at grid {size}"
+    raise RuntimeError(f"atlc did not converge in {timeout} s on any grid near {bitmap_size} ({last})")
+
+
+def _solve(w_mm, s_mm, h_mm, t_mm, er, g, bitmap_size, timeout) -> Pair:
     with tempfile.TemporaryDirectory(prefix="atlc_") as td:
         bmp = Path(td) / "pair.bmp"
         r = subprocess.run(["create_bmp_for_microstrip_coupler", "-b", str(bitmap_size), f"{w_mm:g}", f"{s_mm:g}", f"{g:g}", f"{h_mm:g}", f"{t_mm:g}", "1", f"{er:g}", str(bmp)],
@@ -50,4 +65,4 @@ def microstrip_pair(w_mm: float, s_mm: float, h_mm: float, t_mm: float, er: floa
         if not out:
             raise RuntimeError(f"atlc gave no impedance: {text.strip()[-300:]}")
         e_odd, e_even, z_odd, z_even, z_diff = map(float, out.groups())
-        return Pair(z_diff, z_odd, z_even, e_odd, e_even)
+        return Pair(z_diff, z_odd, z_even, e_odd, e_even, bitmap_size)

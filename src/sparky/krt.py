@@ -139,7 +139,10 @@ def _check_pair(root, names, c, rules, ordered, t) -> dict:
     nxt = 1 if k == 0 else -2
     cu_next = (rules.copper_oz_outer if rules.layers == 2 else rules.copper_oz_inner) * OZ_CU_MM
     h = abs(ordered[k][1] - ordered[nxt][1]) - (t + cu_next) / 2
-    z = diffpair.microstrip_pair(w, gap, h, t, rules.dielectric_er).z_diff_ohm
+    try:
+        z = diffpair.microstrip_pair(w, gap, h, t, rules.dielectric_er).z_diff_ohm
+    except RuntimeError as e:
+        return {**base, "note": f"differential impedance NOT verified: {e}"}
     err = abs(z / c.impedance_ohm - 1) * 100
     return {**base, "ok": err <= c.impedance_tolerance_pct, "z_ohm": [round(z, 1), round(z, 1)], "error_pct": round(err, 1),
             "note": f"atlc 2-D field solve (quasi-static, +-3 % grid error, no solder mask) at routed width {w:g} mm, spacing {gap:.3f} mm on {layer}"}
