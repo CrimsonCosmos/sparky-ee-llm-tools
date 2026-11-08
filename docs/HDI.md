@@ -21,11 +21,11 @@ drill below the span's limit is rejected by both KiCad DRC and our checker. Stac
 
 ## NOT verified / not done
 - Whether a fab will build it: its DFM check, sequential-lamination order, laser vs mechanical drilling, via filling/capping, stacked-micro-via rules.
-- Combination with KiCadRoutingTools constraints (diff pairs, length groups, fanout): STAGED, no fork. KRT routes the constrained nets (through vias only), their copper is
-  protected in the DSN and written back unchanged after Freerouting (which adds pin stubs and nudges fixed wires), Freerouting routes everything else with partial vias, and the
-  constraints are re-measured on the final copper. The pair constraint holds on the test board. KNOWN LIMITATION: given only the constrained nets, KRT matched a 3-net length
-  group worse than given the whole board (spread 1.08 mm vs 0.42 mm; limit 1.0 mm), so that group can come out not met; the report says so and the board is not claimed clean.
-  The constrained nets themselves never use partial vias.
+- Combination with KiCadRoutingTools constraints (diff pairs, length groups, fanout): STAGED, no fork. KRT routes the whole board (it matches lengths best that way), only
+  the constrained and fanout nets' copper is kept, Freerouting routes everything else with partial vias, the constrained copper is protected in the DSN and written back
+  unchanged afterwards (Freerouting adds pin stubs and nudges fixed wires), and the constraints are re-measured on the final copper. Verified on the BGA test board
+  (pair + 3-net group + fanout) with JLCPCB-6L rules plus the partial-via table: DRC clean, all constraints met. The constrained nets themselves never use partial vias.
+  Caveat measured: the ILLUSTRATIVE HDI profile's finer track/clearance makes KRT miss that length group even with no partial vias, so the staged test uses JLCPCB rules.
 - Via-in-pad under fine-pitch BGAs still needs `fab_tier='advanced'` and matching rule overrides.
 - Whether partial vias help routing: **not demonstrated.** One dense board (STM32 LQFP-100 at 0.5 mm pitch to two 50-pin headers, 46 x 46 mm, 6 layers, one run each):
   JLCPCB-6L rules, through vias only: 5 nets unconnected. Illustrative HDI profile (finer track/clearance) WITH micro/blind vias: 1 unconnected, 0 DRC errors (10 micro + 1 blind used).

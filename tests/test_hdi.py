@@ -190,10 +190,8 @@ def test_hdi_board_with_a_pair_and_a_length_group_stages_krt_then_freerouting():
     assert not res.drc.unconnected, res.drc.summary()
     pair = by["DATA_P/DATA_N"]
     assert pair["lengths_mm"][0] > 5 and pair["ok"] and pair["skew_mm"] <= 0.15              # the pair survived Freerouting's pass, KiCad's skew rule satisfied
-    # KNOWN LIMITATION (docs/HDI.md): handed only the constrained nets, KiCadRoutingTools matched this 3-net group worse than with the whole board (spread ~1.08 mm vs 0.42 mm
-    # against a 1.0 mm limit). The staged flow must then SAY so: any DRC error is that group's skew rule and the routing check marks it not met.
-    assert all(v["type"] == "skew_out_of_range" for v in res.drc.errors), res.drc.summary()
-    assert by["S1+S2+S3"]["ok"] == (not res.drc.errors)
+    assert not res.drc.errors, res.drc.summary()
+    assert by["S1+S2+S3"]["ok"]                                                              # the group too: KRT routed the whole board, its constrained copper was kept
     assert by["partial-depth vias"]["ok"]
 
 
