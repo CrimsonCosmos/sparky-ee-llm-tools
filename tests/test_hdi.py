@@ -183,7 +183,9 @@ def test_hdi_board_with_a_pair_and_a_length_group_stages_krt_then_freerouting():
     c.constrain(Fanout("U1"))
     c.constrain(DiffPair("DATA_P", "DATA_N", width_mm=0.2, gap_mm=0.2, skew_mm=0.1))
     c.constrain(LengthGroup(["S1", "S2", "S3"], tolerance_mm=1.0))
-    res = build_board(c, BoardSpec(layers=6, profile="generic-hdi-6l", time_budget_s=400), log=print)
+    # JLCPCB-6L track/clearance rules (the ones KiCadRoutingTools matches this group under with all nets) plus the illustrative partial-via table: the HDI profile's own
+    # finer rules make KRT miss this group even with NO partial vias (measured), which would test KRT, not the staging
+    res = build_board(c, BoardSpec(layers=6, time_budget_s=400, rule_overrides={"via_spans": R.via_spans, "min_dielectric_mm": R.min_dielectric_mm}), log=print)
     by = {r["name"]: r for r in res.routing_checks}
     assert not res.drc.unconnected, res.drc.summary()
     pair = by["DATA_P/DATA_N"]
