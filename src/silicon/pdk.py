@@ -10,10 +10,11 @@ class PdkProfile:
     name: str                 # LibreLane's PDK name
     family: str               # ciel family used to download it
     note: str
+    sim_defines: tuple = ()   # macros the cell Verilog models need for plain functional simulation (from the PDK library's own documentation)
 
 
 OPEN_PDKS = {
-    "sky130A": PdkProfile("sky130A", "sky130", "SkyWater 130 nm, open"),
+    "sky130A": PdkProfile("sky130A", "sky130", "SkyWater 130 nm, open", ("-DFUNCTIONAL", "-DUNIT_DELAY=#0")),
     "gf180mcuD": PdkProfile("gf180mcuD", "gf180mcu", "GlobalFoundries 180 nm MCU, open (variant D)"),
     "ihp-sg13g2": PdkProfile("ihp-sg13g2", "ihp-sg13g2", "IHP 130 nm SiGe BiCMOS, open"),
 }

@@ -17,6 +17,8 @@ class SiliconSpec:
     pdk: str
     die_area_um: tuple[float, float, float, float] | None = None   # x0 y0 x1 y1; None = size from `core_utilization_pct` (or LibreLane's default)
     core_utilization_pct: float | None = None
+    reset_port: str | None = None                 # the design's reset input, for simulation stimulus
+    reset_active_low: bool = True
     extra: dict = field(default_factory=dict)     # further LibreLane variables the designer sets knowingly (names as in LibreLane's reference)
 
     def validate(self) -> None:
