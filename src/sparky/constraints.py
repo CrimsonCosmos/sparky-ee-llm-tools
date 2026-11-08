@@ -103,10 +103,23 @@ class DiffPair(_NetRemap):
 
 
 @dataclass
+class DramGroups:
+    """Let KiCadRoutingTools' DRAM classifier find the byte lanes (data + strobe + mask) and the command/address group of the board's DRAM interfaces by net name, and match
+    each group. Resolved into explicit `LengthGroup`s before routing (so the checks see real nets); lanes of one interface are matched within the lane, not across lanes.
+    `time_ps` (None = match physical length within `tolerance_mm`) matches propagation delay instead: inner layers are slower than outer ones."""
+    tolerance_mm: float = 0.1
+    time_ps: float | None = None
+
+    def remap(self, refmap: dict[str, str], netmap: dict[str, str]) -> None:
+        pass
+
+
+@dataclass
 class LengthGroup(_NetRemap):
-    """Nets whose routed lengths must agree within tolerance_mm (e.g. a parallel bus)."""
+    """Nets whose routed lengths must agree within tolerance_mm (e.g. a parallel bus). With `time_ps` they are matched in propagation delay (ps) instead of length."""
     nets: list[str]
     tolerance_mm: float
+    time_ps: float | None = None
     _net_fields = ("nets",)
 
 
