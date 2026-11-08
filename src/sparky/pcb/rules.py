@@ -71,7 +71,7 @@ FAB_PROFILES = {
     "jlcpcb-2l": dict(layers=2, track=0.2, min_track=0.127, clearance=0.2, via_dia=0.6, via_drill=0.3, min_annular=0.13, edge_clearance=0.4),
     "jlcpcb-4l": dict(layers=4, track=0.15, min_track=0.1, clearance=0.15, via_dia=0.5, via_drill=0.25, min_drill=0.2, min_annular=0.125, edge_clearance=0.3),
     # ILLUSTRATIVE HDI capability for tests and demos (not any fab's published table): replace with the chosen fab's spans and limits through rule_overrides / a real profile
-    "generic-hdi-6l": dict(layers=6, min_dielectric_mm=0.06, track=0.1, min_track=0.075, clearance=0.1, via_dia=0.5, via_drill=0.25, min_drill=0.2, min_annular=0.125, edge_clearance=0.3,
+    "generic-hdi-6l": dict(layers=6, min_dielectric_mm=0.06, hole_clearance=0.2, track=0.1, min_track=0.075, clearance=0.1, via_dia=0.5, via_drill=0.25, min_drill=0.2, min_annular=0.125, edge_clearance=0.3,
                            via_spans=(ViaSpan("micro", 0, 1, 0.3, 0.1, 0.1, 1.0), ViaSpan("micro", 4, 5, 0.3, 0.1, 0.1, 1.0),
                                       ViaSpan("blind", 0, 2, 0.4, 0.2, 0.1, 1.0), ViaSpan("buried", 1, 4, 0.35, 0.2, 0.1, 8.0))),
     "jlcpcb-6l": dict(layers=6, track=0.15, min_track=0.09, clearance=0.15, via_dia=0.5, via_drill=0.25, min_drill=0.2, min_annular=0.125, edge_clearance=0.3),
