@@ -76,3 +76,12 @@ A tool that is missing never produces a passing result: its report section reads
 
 Not built, on purpose: teardrops (KiCad implements them in its GUI/pcbnew core with no scripting or CLI entry point; use KiCad's own Edit > Add Teardrops on the delivered board), a PCB calculator (scikit-rf), a simulator (ngspice), panelisation (KiKit).
 Ground-stitching vias (`pcb/stitching.py`) are our own small step because KiCad has no CLI for them; KiCad DRC judges the result.
+
+## Second pass (open items from NEXT.md)
+| Need | Tool | Status |
+|---|---|---|
+| Differential impedance of routed outer-layer pairs | atlc (`apt install atlc`, GPL, external process) via `analysis/diffpair.py` | verified: uncoupled limit equals 2x scikit-rf single-ended within 5 %, spacing monotonic, routed pair graded; grid error ~+-3 %, quasi-static, no solder mask. lineforge's field solver was tried and did not finish in 15 min here: not adopted |
+| JLCPCB placement orientation / bottom-face rule | bennymeg/Fabrication-Toolkit `transformations.csv` (Apache-2.0) fetched at a pinned commit | rule read from its source, not run; NOT checked against JLCPCB's viewer |
+| Bottom-face radiation | pcb-analysis `RadiationBoundary("bottom")` | on; thermal slow tests pass |
+| Junction temperature | datasheet `theta_jb` stored with `save-spec` | estimate; never guessed when absent |
+Not feasible without greenfield code: blind/buried vias (no autorouter we found supports them), cable/enclosure EMC (needs a 3-D field solver and the enclosure geometry), spectrum from a SPICE waveform (still limited by the sourced edge time). Enclosure thermals: pcb-analysis can voxelise an enclosure STEP, but we have no enclosure input yet.

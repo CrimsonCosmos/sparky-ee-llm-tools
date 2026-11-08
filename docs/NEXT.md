@@ -27,3 +27,5 @@ Owner's rules: no sub-agents; Python only; console app on Win/macOS/Linux; adopt
 ## KiCad-parity pass (this session)
 Added as adapters (see docs/DEPENDENCIES.md): ERC + parity, review/test/mechanical exports, generic SPICE, scikit-rf lines, iBOM, KiKit (not runnable here). Own code: fiducial/test-point/corner-radius/silk-title/stitching options in `BoardSpec`. Found and fixed on the way: KiCad >= 9 files name nets on items, so outer pours were silently never added (now added and tested); catalogue download failed on compressed transfers; CPL rotation did not match `kicad-cli pos`.
 Open: teardrops (no API), hierarchical/multi-sheet schematics and drawn wires/power symbols (the generated schematic uses global labels on every pin: correct but not pretty), KiKit verification, a `sparky simulate` CLI.
+
+Second pass done: bottom radiation, junction temperature from datasheet theta_JB, JLCPCB placement corrections, differential impedance via atlc. Still open: blind/buried vias, cable/enclosure EMC, enclosure thermals (needs a user STEP), via-in-pad between faces, paste/glue limits for the second reflow (fab process data).
