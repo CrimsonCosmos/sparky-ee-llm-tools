@@ -39,6 +39,14 @@ def write_kicad_pro(path: str | Path, rules, name: str | None = None, net_classe
     path = Path(path)
     g = lambda k: getattr(rules, k)            # every engineering value comes from the Rules object: no fallbacks here
     clr, trk, via, drl = g("clearance"), g("track"), g("via_dia"), g("via_drill")
+    spans = tuple(getattr(rules, "via_spans", ()) or ())
+    # board-setup minimums are KiCad's base for every via type: with partial-depth vias they are the loosest of all types, and `.kicad_dru` (pcb/hdi.py) restores
+    # the through via's own limits for through vias and gives each partial type the fab's limits
+    min_dia = min([g("min_drill") + 2 * g("min_annular")] + [sp.dia for sp in spans])
+    min_hole = min([g("min_drill")] + [sp.drill for sp in spans])
+    min_ann = min([g("min_annular")] + [sp.annular for sp in spans])
+    micro = [sp for sp in spans if sp.kind == "micro"]
+    mdia, mdrill = (min(sp.dia for sp in micro), min(sp.drill for sp in micro)) if micro else (g("microvia_dia"), g("microvia_drill"))
     pro = {
         "board": {"design_settings": {
             # KiCad's own cosmetic defaults (graphics/text sizes): not engineering values
@@ -47,10 +55,10 @@ def write_kicad_pro(path: str | Path, rules, name: str | None = None, net_classe
                          "silk_line_width": 0.12, "silk_text_size_h": 0.8, "silk_text_size_v": 0.8,
                          "silk_text_thickness": 0.12},
             "rules": {"min_clearance": clr, "min_track_width": g("min_track"),
-                      "min_via_diameter": g("min_drill") + 2 * g("min_annular"),
-                      "min_through_hole_diameter": g("min_drill"), "min_via_annular_width": g("min_annular"),
+                      "min_via_diameter": min_dia,
+                      "min_through_hole_diameter": min_hole, "min_via_annular_width": min_ann,
                       "min_hole_to_hole": g("hole_to_hole"), "min_copper_edge_clearance": g("edge_clearance"),
-                      "min_hole_clearance": g("hole_clearance"), "min_microvia_diameter": g("microvia_dia"), "min_microvia_drill": g("microvia_drill"),
+                      "min_hole_clearance": g("hole_clearance"), "min_microvia_diameter": mdia, "min_microvia_drill": mdrill,
                       "min_silk_clearance": 0.0, "min_text_height": 0.8, "min_text_thickness": 0.08,
                       "min_resolved_spokes": 2, "min_connection_width": 0.0, "solder_mask_to_copper_clearance": 0.0},
             # footprints come from the project's own generator, not a KiCad library table

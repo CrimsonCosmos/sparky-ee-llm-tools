@@ -7,6 +7,22 @@ OZ_CU_MM = 0.035   # unit conversion: 1 oz/ft^2 copper = 35 um
 from dataclasses import dataclass, field
 
 
+@dataclass(frozen=True)
+class ViaSpan:
+    """A partial-depth plated via a fab can build: it connects copper layers `first`..`last` (0 = top, n-1 = bottom; both included) and nothing else.
+    Everything here is the fab's capability table, never ours: `kind` micro = laser drilled one dielectric deep, blind = from an outer layer, buried = inner only."""
+    kind: str            # 'micro' | 'blind' | 'buried'
+    first: int
+    last: int
+    dia: float           # pad diameter, mm
+    drill: float         # finished hole, mm
+    annular: float       # minimum annular ring, mm
+    max_aspect: float    # maximum (depth of the span) : drill
+
+    def label(self, n_layers: int) -> str:
+        return f"{self.kind} {self.first + 1}-{self.last + 1}"
+
+
 @dataclass
 class Rules:
     layers: int = 2
@@ -37,6 +53,7 @@ class Rules:
     plane_thermal_gap: float = 0.3
     plane_spoke: float = 0.35
     profile: str = "generic"
+    via_spans: tuple = ()           # partial-depth vias the fab offers (ViaSpan); empty = plated through-holes only. Needs a fab that builds them: see docs/HDI.md
     fiducial_footprint: str = "Fiducial:Fiducial_1mm_Mask2mm"   # KiCad footprint of the assembler's optical alignment mark (size per the assembler's machine; fab-profile value)
     corner_inset_mm: float = 4.0     # centre of a corner-fixed part (mounting hole, fiducial) from the two nearest board edges
     assembly_sides: int = 2       # faces the assembler can populate (1 = top only); a `Side` request for the bottom is refused when 1
@@ -53,6 +70,10 @@ FAB_PROFILES = {
     "generic": dict(),
     "jlcpcb-2l": dict(layers=2, track=0.2, min_track=0.127, clearance=0.2, via_dia=0.6, via_drill=0.3, min_annular=0.13, edge_clearance=0.4),
     "jlcpcb-4l": dict(layers=4, track=0.15, min_track=0.1, clearance=0.15, via_dia=0.5, via_drill=0.25, min_drill=0.2, min_annular=0.125, edge_clearance=0.3),
+    # ILLUSTRATIVE HDI capability for tests and demos (not any fab's published table): replace with the chosen fab's spans and limits through rule_overrides / a real profile
+    "generic-hdi-6l": dict(layers=6, min_dielectric_mm=0.06, track=0.1, min_track=0.075, clearance=0.1, via_dia=0.5, via_drill=0.25, min_drill=0.2, min_annular=0.125, edge_clearance=0.3,
+                           via_spans=(ViaSpan("micro", 0, 1, 0.3, 0.1, 0.1, 1.0), ViaSpan("micro", 4, 5, 0.3, 0.1, 0.1, 1.0),
+                                      ViaSpan("blind", 0, 2, 0.4, 0.2, 0.1, 1.0), ViaSpan("buried", 1, 4, 0.35, 0.2, 0.1, 8.0))),
     "jlcpcb-6l": dict(layers=6, track=0.15, min_track=0.09, clearance=0.15, via_dia=0.5, via_drill=0.25, min_drill=0.2, min_annular=0.125, edge_clearance=0.3),
 }
 
@@ -68,13 +89,64 @@ def rules_for(layers: int = 2, profile: str | None = None, **over) -> Rules:
     return r
 
 
+def _cu(r: Rules) -> list[float]:
+    n = r.layers
+    return [(r.copper_oz_outer if k in (0, n - 1) else r.copper_oz_inner) * OZ_CU_MM for k in range(n)]
+
+
+def _span_caps(r: Rules) -> list[float | None]:
+    """Largest dielectric (mm) each gap between adjacent copper layers may have so every partial-depth via stays within its fab aspect ratio
+    (depth centre-to-centre <= drill x max_aspect). None = unconstrained."""
+    cu = _cu(r)
+    caps: list[float | None] = [None] * (r.layers - 1)
+    for sp in r.via_spans:
+        inner = sum(cu[sp.first + 1:sp.last]) + (cu[sp.first] + cu[sp.last]) / 2
+        per_gap = (sp.drill * sp.max_aspect - inner) / (sp.last - sp.first)
+        if per_gap <= 0:
+            raise ValueError(f"via span {sp.label(r.layers)}: drill x aspect ratio is smaller than the copper it crosses")
+        if per_gap < r.min_dielectric_mm:
+            raise ValueError(f"via span {sp.label(r.layers)} needs dielectric gaps of {per_gap:.3f} mm, thinner than the fab stocks ({r.min_dielectric_mm} mm)")
+        for g in range(sp.first, sp.last):
+            caps[g] = per_gap if caps[g] is None else min(caps[g], per_gap)
+    return caps
+
+
+def dielectric_gaps(r: Rules) -> list[float]:
+    """Dielectric thickness between each pair of adjacent copper layers (n - 1 values, top to bottom), summing to the board thickness. A gap a partial-depth via crosses
+    may not exceed the cap its aspect ratio sets; the rest of the thickness is spread equally over the gaps with room (water-filling)."""
+    cu = _cu(r)
+    caps = _span_caps(r)
+    total = r.thickness_mm - sum(cu) - 2 * r.mask_thickness_mm
+    gaps: list[float | None] = [None] * len(caps)
+    while True:
+        free = [i for i, g in enumerate(gaps) if g is None]
+        if not free:
+            break
+        share = (total - sum(g for g in gaps if g is not None)) / len(free)
+        bound = [i for i in free if caps[i] is not None and caps[i] < share]
+        if not bound:
+            for i in free:
+                gaps[i] = max(share, 0.0)
+            break
+        for i in bound:
+            gaps[i] = caps[i]
+    return [float(g) for g in gaps]
+
+
 def _fit_stackup(r: Rules) -> None:
     """High layer counts need a thicker board (copper + the thinnest dielectrics + mask) and then a larger drill (thickness / max aspect ratio); both follow from the
     fab-profile limits. Explicit overrides larger than the derived minimum are kept."""
     n = r.layers
     cu = (2 * r.copper_oz_outer + (n - 2) * r.copper_oz_inner) * OZ_CU_MM
+    caps = _span_caps(r)
     need = cu + 2 * r.mask_thickness_mm + (n - 1) * r.min_dielectric_mm
     r.thickness_mm = max(r.thickness_mm, math.ceil(need / WIDTH_RESOLUTION_MM) * WIDTH_RESOLUTION_MM)
+    if all(c is not None for c in caps):                      # every gap is capped by some via's aspect ratio: the board cannot be thicker than the caps allow
+        reach = cu + 2 * r.mask_thickness_mm + sum(caps)
+        if r.thickness_mm > reach:
+            r.thickness_mm = math.floor(reach / WIDTH_RESOLUTION_MM) * WIDTH_RESOLUTION_MM
+        if r.thickness_mm < need - 1e-9:
+            raise ValueError(f"the via spans' aspect ratios allow a board of at most {reach:.3f} mm but the layers need at least {need:.3f} mm")
     drill = math.ceil(r.thickness_mm / r.max_aspect_ratio / WIDTH_RESOLUTION_MM) * WIDTH_RESOLUTION_MM
     if drill > r.min_drill:
         r.min_drill = drill

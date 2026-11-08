@@ -94,6 +94,12 @@ def build_board(circuit: Circuit, spec: BoardSpec | None = None, log=print) -> B
             raw, routed = work / f"{tag}.kicad_pcb", work / f"{tag}_routed.kicad_pcb"
             raw.write_text(to_kicad_pcb(board, circuit.name))
             special = [c for c in circuit.constraints if isinstance(c, (DiffPair, LengthGroup, Fanout, ControlledImpedance))]
+            if special and rules.via_spans:
+                say("   routing constraints (diff pair / length / fanout) need KiCadRoutingTools, which lays through vias only: not combinable with partial-depth vias")
+                continue
+            if rules.via_spans:                           # per-type via limits for KiCad's own DRC (the board-setup minimums are the through via's)
+                from . import hdi
+                raw.with_suffix(".kicad_dru").write_text(hdi.dru_text(rules.via_spans, rules))
             if special:                                    # KiCad grades length/skew itself from this rules file (router and DRC both read it)
                 raw.with_suffix(".kicad_dru").write_text(krt.dru_text([c for c in special if isinstance(c, (DiffPair, LengthGroup))]))
             kicad_backend.write_kicad_pro(raw.with_suffix(".kicad_pro"), rules, net_classes=net_classes_for(circuit, rules))
@@ -111,10 +117,13 @@ def build_board(circuit: Circuit, spec: BoardSpec | None = None, log=print) -> B
                     rr = type("R", (), {"seconds": time.time() - t_r})()
                     msgs.append("krt: " + ", ".join(f"{s['step']} {s['seconds']}s" for s in kr.steps))
                 else:
-                    rr = routing.route_pcb(raw, routed, passes=spec.passes, timeout=int(max(120, spec.time_budget_s * 0.6)))
+                    rr = routing.route_pcb(raw, routed, passes=spec.passes, timeout=int(max(120, spec.time_budget_s * 0.6)), via_spans=rules.via_spans, layers=board.layers)
             except routing.RoutingError as e:
                 say(f"   routing failed: {e}")
                 continue
+            if rules.via_spans:                                              # KiCad's SES import labels every partial via 'buried': restore the fab's types
+                from . import hdi
+                routed.write_text(hdi.retype_vias(routed.read_text(), rules.via_spans, layers, board.layers))
             routed.write_text(add_pours(routed.read_text(), board))        # outer pours go in after routing (see export.kicad)
             if spec.stitch_pitch_mm or spec.stitch_hz:
                 from . import stitching
@@ -132,7 +141,13 @@ def build_board(circuit: Circuit, spec: BoardSpec | None = None, log=print) -> B
             filled = work / f"{tag}_final.kicad_pcb"
             drc = kicad_backend.run_drc(routed, refill=True, rules=rules, save_to=filled)
             filled.with_suffix(".kicad_pro").write_bytes(raw.with_suffix(".kicad_pro").read_bytes())
+            if raw.with_suffix(".kicad_dru").exists():
+                filled.with_suffix(".kicad_dru").write_bytes(raw.with_suffix(".kicad_dru").read_bytes())
             checks = (krt.verify(routed.read_text(), [c for c in special if isinstance(c, (DiffPair, LengthGroup))], layer_z_mm(rules, layers), drc.violations) + krt.check_impedance(routed.read_text(), special, rules)) if special else []
+            if rules.via_spans:
+                from . import hdi
+                found, counts = hdi.check(routed.read_text(), rules, layer_z_mm(rules, layers), board.layers)
+                checks = checks + [{"kind": "via_span", "name": "partial-depth vias", "ok": not found, "counts": counts, "findings": [f"{f.where}: {f.problem}" for f in found]}]
             miss = [c["name"] for c in checks if c["ok"] is False]
             if miss:
                 say(f"   routing constraints NOT met (re-measured): {', '.join(miss)}")

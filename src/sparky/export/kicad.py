@@ -33,12 +33,13 @@ def layer_z_mm(rules, n: int) -> dict[str, float]:
     """Height (mm from the top copper surface) of each copper layer's centre, from the same stackup the exporter writes (copper per layer + equal cores)."""
     from ..pcb.rules import OZ_CU_MM
     names = ["F.Cu"] + [f"In{i}.Cu" for i in range(1, n - 1)] + ["B.Cu"]
+    from ..pcb.rules import dielectric_gaps
     cu = [rules.copper_oz_outer * OZ_CU_MM if k in (0, n - 1) else rules.copper_oz_inner * OZ_CU_MM for k in range(n)]
-    diel = max((rules.thickness_mm - sum(cu) - 2 * rules.mask_thickness_mm) / (n - 1), 0.0)
+    gaps = dielectric_gaps(rules)
     z, out = 0.0, {}
     for k, nm in enumerate(names):
         out[nm] = z + cu[k] / 2
-        z += cu[k] + diel
+        z += cu[k] + (gaps[k] if k < n - 1 else 0.0)
     return out
 
 
@@ -46,14 +47,15 @@ def _stackup(rules, n: int) -> list:
     """(stackup ...) describing the physical layers, derived entirely from `rules` (copper weights, board thickness, mask, dielectric)."""
     from ..pcb.rules import OZ_CU_MM
     names = ["F.Cu"] + [f"In{i}.Cu" for i in range(1, n - 1)] + ["B.Cu"]
+    from ..pcb.rules import dielectric_gaps
     cu = [rules.copper_oz_outer * OZ_CU_MM if k in (0, n - 1) else rules.copper_oz_inner * OZ_CU_MM for k in range(n)]
-    diel = max((rules.thickness_mm - sum(cu) - 2 * rules.mask_thickness_mm) / (n - 1), 0.0)
+    gaps = dielectric_gaps(rules)
     st: list = ["stackup", ["layer", Q("F.SilkS"), ["type", Q("Top Silk Screen")]], ["layer", Q("F.Paste"), ["type", Q("Top Solder Paste")]],
                 ["layer", Q("F.Mask"), ["type", Q("Top Solder Mask")], ["thickness", rules.mask_thickness_mm]]]
     for i, nm in enumerate(names):
         st.append(["layer", Q(nm), ["type", Q("copper")], ["thickness", round(cu[i], 5)]])
         if i < n - 1:
-            st.append(["layer", Q(f"dielectric {i + 1}"), ["type", Q("core")], ["thickness", round(diel, 4)], ["material", Q("FR4")],
+            st.append(["layer", Q(f"dielectric {i + 1}"), ["type", Q("core")], ["thickness", round(gaps[i], 4)], ["material", Q("FR4")],
                        ["epsilon_r", rules.dielectric_er], ["loss_tangent", rules.dielectric_tan_d]])
     st += [["layer", Q("B.Mask"), ["type", Q("Bottom Solder Mask")], ["thickness", rules.mask_thickness_mm]],
            ["layer", Q("B.Paste"), ["type", Q("Bottom Solder Paste")]], ["layer", Q("B.SilkS"), ["type", Q("Bottom Silk Screen")]],

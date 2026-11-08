@@ -30,21 +30,31 @@ def write_package(res: BuildResult, outdir: str | Path, project: str, extra: dic
     (out / "kicad_drc.json").write_text(json.dumps(res.drc.to_dict(), indent=1))
     files["kicad_drc.json"] = out / "kicad_drc.json"
     extra["KiCad DRC (authoritative)"] = kicad_drc_section(res.drc)
-    if res.pcb_path.with_suffix(".kicad_pro").exists():
-        (out / f"{project}.kicad_pro").write_bytes(res.pcb_path.with_suffix(".kicad_pro").read_bytes())
+    for ext in (".kicad_pro", ".kicad_dru"):                         # project limits and custom rules (per-via-type limits, skew rules) travel with the board
+        if res.pcb_path.with_suffix(ext).exists():
+            (out / f"{project}{ext}").write_bytes(res.pcb_path.with_suffix(ext).read_bytes())
 
     pol = policy or Policy()
     extra.update(_schematic(res, out, files, project))
     if res.routing_checks:
         rows = ["| Constraint | Measured | Limit | Met | Note |", "|--|--|--|--|--|"]
-        for c in res.routing_checks:
-            if c["kind"] == "impedance":
-                meas = f"{c['z_ohm'][0]}-{c['z_ohm'][1]} ohm vs {c['target_ohm']:g}" if c.get("z_ohm") else "-"
-                rows.append(f"| impedance: {c['name']} | {meas} | {c.get('limit_pct', '-')} % | {'NOT VERIFIED' if c['ok'] is None else 'yes' if c['ok'] else '**NO**'} | {c['note']} |")
+        for chk in res.routing_checks:
+            if chk["kind"] == "via_span":
+                n = ", ".join(f"{k}: {v}" for k, v in chk["counts"].items()) or "none used"
+                extra["Partial-depth vias (blind / buried / micro)"] = (
+                    f"Vias per span: {n}. Checked against the fab's span table by re-reading the routed copper: "
+                    + ("**all within the table** (layers, type, pad and drill, aspect ratio)." if chk["ok"] else "**PROBLEMS**: " + "; ".join(chk["findings"][:8]))
+                    + " KiCad DRC also applied per-type via limits. One Excellon drill file per span is in `gerber/` (laser vs mechanical drilling is the fab's process). "
+                    "NOT verified: stacked/staggered micro-via rules, via filling, sequential lamination order and the fab's own DFM check: send the stackup and drill files to the fab.")
+                continue
+            if chk["kind"] == "impedance":
+                meas = f"{chk['z_ohm'][0]}-{chk['z_ohm'][1]} ohm vs {chk['target_ohm']:g}" if chk.get("z_ohm") else "-"
+                rows.append(f"| impedance: {chk['name']} | {meas} | {chk.get('limit_pct', '-')} % | {'NOT VERIFIED' if chk['ok'] is None else 'yes' if chk['ok'] else '**NO**'} | {chk['note']} |")
             else:
-                k = f" (KiCad: {c['kicad']:.3f} mm)" if c.get("kicad") is not None else ""
-                rows.append(f"| {c['kind']}: {c['name']} | lengths {', '.join(map(str, c['lengths_mm']))} mm, skew {c['skew_mm']} mm{k} | {c['limit_mm']} mm | {'yes' if c['ok'] else '**NO**'} | KiCad DRC rule; our measurement is a cross-check |")
-        extra["Routing constraints (re-measured from the routed copper, tracks + via barrels)"] = "\n".join(rows)
+                k = f" (KiCad: {chk['kicad']:.3f} mm)" if chk.get("kicad") is not None else ""
+                rows.append(f"| {chk['kind']}: {chk['name']} | lengths {', '.join(map(str, chk['lengths_mm']))} mm, skew {chk['skew_mm']} mm{k} | {chk['limit_mm']} mm | {'yes' if chk['ok'] else '**NO**'} | KiCad DRC rule; our measurement is a cross-check |")
+        if len(rows) > 2:
+            extra["Routing constraints (re-measured from the routed copper, tracks + via barrels)"] = "\n".join(rows)
     extra["DC IR drop (open-source: kicad-irdrop)"] = _irdrop(res, out, files, pol)
     extra["Thermal (open-source FEM: pcb-analysis)"] = _thermal(res, out, files, pol)
     extra["Radiated emission, switching loop (pcb-analysis network model)"] = _emc(res, out, files, pol)

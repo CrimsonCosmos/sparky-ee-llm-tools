@@ -96,7 +96,7 @@ def _last_json(text: str) -> dict:
         return {}
 
 
-def route_pcb(pcb: str | Path, out: str | Path, *, passes: int = 20, timeout: int = 900) -> RouteResult:
+def route_pcb(pcb: str | Path, out: str | Path, *, passes: int = 20, timeout: int = 900, via_spans: tuple = (), layers: list[str] | None = None) -> RouteResult:
     """Route every unrouted connection of `pcb` and write the routed board to `out` (existing tracks are kept by KiCad's SES import)."""
     import time
     jv = java()
@@ -107,6 +107,9 @@ def route_pcb(pcb: str | Path, out: str | Path, *, passes: int = 20, timeout: in
     with tempfile.TemporaryDirectory(prefix="sparky_route_") as td:
         dsn, ses = Path(td) / "board.dsn", Path(td) / "board.ses"
         _py(_DSN, str(Path(pcb).resolve()), str(dsn))
+        if via_spans:                                                      # partial-depth vias: offer the fab's padstacks to the autorouter (pcb/hdi.py)
+            from .pcb import hdi
+            dsn.write_text(hdi.patch_dsn(dsn.read_text(), via_spans, layers or []))
         cmd = [jv, "-Djava.awt.headless=true", "-jar", str(jar), "-de", str(dsn), "-do", str(ses), "-mp", str(passes)]
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, cwd=td, env={**os.environ, "JAVA_TOOL_OPTIONS": ""})
         if not ses.exists():
