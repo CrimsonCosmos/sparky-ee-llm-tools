@@ -23,4 +23,7 @@ drill below the span's limit is rejected by both KiCad DRC and our checker. Stac
 - Whether a fab will build it: its DFM check, sequential-lamination order, laser vs mechanical drilling, via filling/capping, stacked-micro-via rules.
 - Combination with KiCadRoutingTools constraints (diff pairs, length groups, fanout): KRT lays through vias only, so such boards are refused with a message.
 - Via-in-pad under fine-pitch BGAs still needs `fab_tier='advanced'` and matching rule overrides.
-- Whether HDI routes boards that through-only cannot: see the density experiment in NEXT.md (measured, not assumed).
+- Whether partial vias help routing: **not demonstrated.** One dense board (STM32 LQFP-100 at 0.5 mm pitch to two 50-pin headers, 46 x 46 mm, 6 layers, one run each):
+  JLCPCB-6L rules, through vias only: 5 nets unconnected. Illustrative HDI profile (finer track/clearance) WITH micro/blind vias: 1 unconnected, 0 DRC errors (10 micro + 1 blind used).
+  The same HDI profile WITHOUT partial vias (control): also 1 unconnected. So the gain came from the finer rules, not from the partial vias. Single runs of a heuristic router:
+  treat as inconclusive; the machinery works, its routing benefit on this board is zero measured.
