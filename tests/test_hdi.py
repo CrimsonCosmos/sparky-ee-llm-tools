@@ -56,8 +56,8 @@ DSN = """(pcb x
 
 def test_dsn_offers_partial_vias_before_the_through_via():
     out = hdi.patch_dsn(DSN, R.via_spans, LAYERS)
-    assert '(via "Via[0-1]_300:100_um" "Via[4-5]_300:100_um" "Via[0-2]_400:200_um" "Via[1-4]_350:200_um" "Via[0-5]_500:250_um")' in out
-    assert '(use_via "Via[0-1]_300:100_um"' in out and out.count("(padstack ") == 5
+    assert '(via "Via[0-1]_250:100_um" "Via[4-5]_250:100_um" "Via[0-2]_400:200_um" "Via[1-4]_350:200_um" "Via[0-5]_500:250_um")' in out
+    assert '(use_via "Via[0-1]_250:100_um"' in out and out.count("(padstack ") == 5
     blind = re.search(r'\(padstack "Via\[0-2\]_400:200_um"(.*?)\(attach off\)', out, re.S).group(1)
     assert [m for m in re.findall(r"circle (\S+) 400", blind)] == ["F.Cu", "In1.Cu", "In2.Cu"]       # copper on the span's layers only
     assert hdi.patch_dsn(DSN, (), LAYERS) == DSN
@@ -207,5 +207,5 @@ def test_existing_copper_of_chosen_nets_is_protected_in_the_dsn():
 def test_dsn_with_several_through_via_sizes_is_patched_too():
     dsn = DSN.replace('(via "Via[0-5]_500:250_um")', '(via "Via[0-5]_600:300_um" "Via[0-5]_500:250_um")').replace('(use_via "Via[0-5]_500:250_um")', '(use_via "Via[0-5]_600:300_um")')
     out = hdi.patch_dsn(dsn, R.via_spans, LAYERS)
-    assert out.index('"Via[0-1]_300:100_um"') < out.index('"Via[0-5]_600:300_um"')                       # partial vias first in both lists
-    assert '(use_via "Via[0-1]_300:100_um" "Via[4-5]_300:100_um" "Via[0-2]_400:200_um" "Via[1-4]_350:200_um" "Via[0-5]_600:300_um")' in out
+    assert out.index('"Via[0-1]_250:100_um"') < out.index('"Via[0-5]_600:300_um"')                       # partial vias first in both lists
+    assert '(use_via "Via[0-1]_250:100_um" "Via[4-5]_250:100_um" "Via[0-2]_400:200_um" "Via[1-4]_350:200_um" "Via[0-5]_600:300_um")' in out

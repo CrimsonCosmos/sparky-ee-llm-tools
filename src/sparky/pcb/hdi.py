@@ -135,3 +135,31 @@ def lamination_sequence(rules: Rules, names: list[str]) -> list[str]:
             steps.append(f"drill {'(laser) ' if sp.kind == 'micro' else ''}and plate the {sp.kind} span {sp.first + 1}-{sp.last + 1}")
     steps.append("drill and plate the through holes")
     return steps
+
+
+def via_in_pad_positions(board, ref: str, span: ViaSpan) -> tuple[list[tuple[float, float, str]], list[str]]:
+    """(x, y, net) of the micro via for each connected top-face SMD pad of `ref`, and the pads left without one because the span's pad does not fit inside them."""
+    vias, skipped = [], []
+    for pad in board.pads_of(ref):
+        if pad.net is None or pad.thru or pad.side != "top":
+            continue
+        if min(pad.w, pad.h) < span.dia - 1e-9:
+            skipped.append(f"{ref}.{pad.number}")
+            continue
+        vias.append((round(pad.x, 4), round(pad.y, 4), pad.net))
+    return vias, skipped
+
+
+def inject_vias(pcb_text: str, vias: list[tuple[float, float, str]], span: ViaSpan, names: list[str]) -> str:
+    """Append micro vias to a board file that has a net table (the unrouted board our exporter writes)."""
+    ids = {m.group(2): m.group(1) for m in re.finditer(r'\(net (\d+) "([^"]*)"\)', pcb_text)}
+    items = []
+    for k, (x, y, net) in enumerate(vias):
+        items.append(f'  (via {span.kind} (at {x} {y}) (size {span.dia:g}) (drill {span.drill:g}) (layers "{names[span.first]}" "{names[span.last]}") (net {ids[net]}) (tstamp {_uuid(f"vip{k}{x}{y}")}))')
+    i = pcb_text.rstrip().rfind(")")
+    return pcb_text[:i] + "\n".join(items) + "\n" + pcb_text[i:]
+
+
+def _uuid(seed: str) -> str:
+    import uuid
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, "sparky:" + seed))

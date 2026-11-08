@@ -72,3 +72,11 @@ def test_restore_nets_puts_krt_copper_back_and_names_the_nets():
     assert segs == [("0 0", "5 0")]                                                     # the second router's two pieces replaced by KRT's one
     assert '(start 0 3) (end 4 3)' in out and out.count('(net "B")') == 1               # the other net is untouched (and KRT's B copper is not imported)
     assert out.rstrip().endswith(")") and out.count("(") == out.count(")")
+
+
+def test_restore_nets_writes_ids_into_a_file_that_has_a_net_table():
+    from sparky import krt
+    krt_text = '(kicad_pcb (net 0 "") (net 7 "A")\n\t(segment (start 0 0) (end 5 0) (width 0.2) (layer "F.Cu") (net 7))\n)\n'
+    base = '(kicad_pcb (net 0 "") (net 1 "A") (net 2 "B")\n)\n'
+    out = krt.restore_nets(krt_text, base, {"A"})
+    assert '(layer "F.Cu") (net 1))' in out                                              # A is net 1 in THIS file, not 7 as in KRT's

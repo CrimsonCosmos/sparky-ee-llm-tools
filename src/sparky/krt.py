@@ -293,6 +293,9 @@ def restore_nets(krt_text: str, routed_text: str, nets: set[str]) -> str:
         n = net_of(item, names)
         if n in nets:
             back.append(re.sub(r'\(net (?:"[^"]*"|\d+)\)', lambda _m: f'(net "{n}")', item, count=1))
+    table = {m.group(2): m.group(1) for m in re.finditer(r'\(net (\d+) "([^"]*)"\)', base)}      # a file with a net table writes items by id, one without by name
+    if table:
+        back = [re.sub(r'\(net "([^"]*)"\)', lambda m: f"(net {table[m.group(1)]})", b, count=1) for b in back]
     i = base.rstrip().rfind(")")
     return base[:i] + "\n".join(back) + "\n" + base[i:]
 

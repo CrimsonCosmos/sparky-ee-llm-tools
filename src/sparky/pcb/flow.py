@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 import tempfile
+import shutil
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from .. import krt
 from ..export.kicad import layer_z_mm
-from ..constraints import ControlledImpedance, DiffPair, Fanout, LengthGroup
+from ..constraints import ControlledImpedance, DiffPair, Fanout, LengthGroup, ViaInPad
 from ..model import Circuit
 from . import analysis
 from .board import Board
@@ -94,6 +95,23 @@ def build_board(circuit: Circuit, spec: BoardSpec | None = None, log=print) -> B
             raw, routed = work / f"{tag}.kicad_pcb", work / f"{tag}_routed.kicad_pcb"
             raw.write_text(to_kicad_pcb(board, circuit.name))
             special = [c for c in circuit.constraints if isinstance(c, (DiffPair, LengthGroup, Fanout, ControlledImpedance))]
+            vip_nets: set[str] = set()
+            vip = [c for c in circuit.constraints if isinstance(c, ViaInPad)]
+            if vip:
+                from . import hdi
+                span = next((sp for sp in rules.via_spans if sp.kind == "micro" and sp.first == 0), None)
+                if not (rules.via_in_pad and span):
+                    raise RuntimeError("ViaInPad needs a fab that fills and caps vias (Rules.via_in_pad) and offers a micro via span from the top layer (Rules.via_spans)")
+                if special:
+                    raise RuntimeError("ViaInPad cannot be combined with KiCadRoutingTools constraints yet: its fanout would duplicate the pad vias")
+                pad_vias = []
+                for c in vip:
+                    v, skipped = hdi.via_in_pad_positions(board, c.ref, span)
+                    pad_vias += v
+                    if skipped:
+                        board.warnings.append(f"via-in-pad: the {span.dia:g} mm micro via does not fit in pad(s) {', '.join(skipped)}; left to the router")
+                raw.write_text(hdi.inject_vias(raw.read_text(), pad_vias, span, board.layers))
+                vip_nets = {n for _, _, n in pad_vias}
             staged = bool(special and rules.via_spans)       # KiCadRoutingTools lays through vias only: it routes the constrained nets, Freerouting (with the partial-depth padstacks) the rest
             dru = []
             if special:                                      # KiCad grades length/skew itself from this rules file (router and DRC both read it)
@@ -113,19 +131,23 @@ def build_board(circuit: Circuit, spec: BoardSpec | None = None, log=print) -> B
                     try:
                         constrained = sorted({n for c in special for n in ((c.p, c.n) if isinstance(c, DiffPair) else c.nets if isinstance(c, (LengthGroup, ControlledImpedance)) else ())})
                         krt_out = work / f"{tag}_krt.kicad_pcb" if staged else routed
-                        kr = krt.route(raw, krt_out, rules=rules, constraints=special, all_nets=constrained if staged else [n for n, p in circuit.nets.items() if len(p) > 1],
+                        # KiCadRoutingTools matches lengths best when it routes the whole board, so it does: staged mode then keeps only the constrained (and fanout) copper from that run
+                        kr = krt.route(raw, krt_out, rules=rules, constraints=special, all_nets=[n for n, p in circuit.nets.items() if len(p) > 1],
                                        net_classes=net_classes_for(circuit, rules), timeout=int(max(120, spec.time_budget_s * 0.6)))
                         if staged:
                             keep_nets = set(constrained) | {n for f in special if isinstance(f, Fanout) for n, pins in circuit.nets.items() if any(q.startswith(f.ref + ".") for q in pins)}
+                            stage2 = work / f"{tag}_stage2.kicad_pcb"
+                            stage2.write_text(krt.restore_nets(krt_out.read_text(), raw.read_text(), keep_nets))
+                            shutil.copy(raw.with_suffix(".kicad_pro"), stage2.with_suffix(".kicad_pro"))
                             say("   constrained nets routed by KiCadRoutingTools (through vias); the rest by Freerouting with partial-depth vias")
-                            routing.route_pcb(krt_out, routed, passes=spec.passes, timeout=int(max(120, spec.time_budget_s * 0.6)), via_spans=rules.via_spans, layers=board.layers, protect=keep_nets)
+                            routing.route_pcb(stage2, routed, passes=spec.passes, timeout=int(max(120, spec.time_budget_s * 0.6)), via_spans=rules.via_spans, layers=board.layers, protect=keep_nets)
                             routed.write_text(krt.restore_nets(krt_out.read_text(), routed.read_text(), set(constrained)))
                     except (RuntimeError, ValueError) as e:
                         raise routing.RoutingError(str(e)) from e
                     rr = type("R", (), {"seconds": time.time() - t_r})()
                     msgs.append("krt: " + ", ".join(f"{s['step']} {s['seconds']}s" for s in kr.steps))
                 else:
-                    rr = routing.route_pcb(raw, routed, passes=spec.passes, timeout=int(max(120, spec.time_budget_s * 0.6)), via_spans=rules.via_spans, layers=board.layers)
+                    rr = routing.route_pcb(raw, routed, passes=spec.passes, timeout=int(max(120, spec.time_budget_s * 0.6)), via_spans=rules.via_spans, layers=board.layers, protect=vip_nets or None)
             except routing.RoutingError as e:
                 say(f"   routing failed: {e}")
                 continue

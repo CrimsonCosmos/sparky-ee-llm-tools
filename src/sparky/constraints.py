@@ -148,6 +148,16 @@ class Fanout:
 
 
 @dataclass
+class ViaInPad:
+    """Put a micro via in the centre of every connected top-face pad of this part (fine-pitch BGA/QFN whose pads a through via cannot escape). The fab must fill and
+    cap such vias (`Rules.via_in_pad`) and offer a micro span from the top layer; the part's own router escapes from the via's inner-layer pad."""
+    ref: str
+
+    def remap(self, refmap: dict[str, str], netmap: dict[str, str]) -> None:
+        self.ref = refmap.get(self.ref, self.ref)
+
+
+@dataclass
 class Side:
     """Assemble these parts on the given board face ('top' | 'bottom'). Honoured only where the fab profile allows
     two-sided assembly (`Rules.assembly_sides`); through-hole parts stay on top."""
