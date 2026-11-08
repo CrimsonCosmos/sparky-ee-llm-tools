@@ -25,12 +25,11 @@ def patch_dsn(dsn: str, spans: tuple[ViaSpan, ...], layers: list[str]) -> str:
     stacks = "".join(f"    (padstack {padstack_name(sp)}\n" + "".join(f"      (shape (circle {layers[i]} {round(sp.dia * 1000)}))\n" for i in range(sp.first, sp.last + 1))
                      + "      (attach off)\n    )\n" for sp in spans)
     names = " ".join(padstack_name(sp) for sp in spans)
-    through = re.search(r'\(via ("Via\[0-\d+\][^"]*")\)', dsn)
-    if not through:
+    listing = re.search(r'\(via ((?:"Via\[0-\d+\][^"]*"\s*)+)\)', dsn)
+    if not listing:
         raise ValueError("DSN has no through-via padstack to order the partial vias before")
-    t = through.group(1)
-    dsn = dsn.replace(f"(via {t})", f"(via {names} {t})", 1)
-    dsn = dsn.replace(f"(use_via {t})", f"(use_via {names} {t})")
+    dsn = dsn.replace(listing.group(0), f"(via {names} {listing.group(1).strip()})", 1)
+    dsn = re.sub(r'\(use_via (?=")', f"(use_via {names} ", dsn)               # every net class offers them, ahead of whatever through vias it lists
     i = dsn.index("  (network")
     j = dsn.rindex("  )\n", 0, i)                        # the closing of (library ...)
     return dsn[:j] + stacks + dsn[j:] + ""

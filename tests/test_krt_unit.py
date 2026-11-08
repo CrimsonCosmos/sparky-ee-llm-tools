@@ -1,3 +1,5 @@
+import re
+
 import pytest
 
 from sparky import krt
@@ -58,3 +60,15 @@ def test_hot_loop_follows_ref_renumbering():
     h = HotLoop("U1", "3", "1", ["C1", "C2"], 2.0, 0.3, 5e5, 5e-9)
     h.remap({"U1": "buck.U1", "C1": "buck.C1"}, {})
     assert h.ref == "buck.U1" and h.cap_refs == ["buck.C1", "C2"]
+
+
+def test_restore_nets_puts_krt_copper_back_and_names_the_nets():
+    from sparky import krt
+    krt_text = '(kicad_pcb (net 0 "") (net 1 "A") (net 2 "B")\n\t(segment (start 0 0) (end 5 0) (width 0.2) (layer "F.Cu") (net 1))\n\t(segment (start 0 1) (end 9 1) (width 0.2) (layer "F.Cu") (net 2))\n)\n'
+    routed = ('(kicad_pcb\n\t(segment (start 0 0) (end 2 0) (width 0.2) (layer "F.Cu") (net "A"))\n\t(segment (start 2 0) (end 5.5 0.5) (width 0.2) (layer "F.Cu") (net "A"))\n'
+              '\t(segment (start 0 3) (end 4 3) (width 0.2) (layer "F.Cu") (net "B"))\n)\n')
+    out = krt.restore_nets(krt_text, routed, {"A"})
+    segs = [(a, b) for a, b in re.findall(r'\(segment \(start ([\d. ]+)\) \(end ([\d. ]+)\)[^\n]*\(net "A"\)', out)]
+    assert segs == [("0 0", "5 0")]                                                     # the second router's two pieces replaced by KRT's one
+    assert '(start 0 3) (end 4 3)' in out and out.count('(net "B")') == 1               # the other net is untouched (and KRT's B copper is not imported)
+    assert out.rstrip().endswith(")") and out.count("(") == out.count(")")

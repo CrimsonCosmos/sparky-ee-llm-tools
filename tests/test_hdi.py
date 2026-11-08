@@ -198,3 +198,10 @@ def test_existing_copper_of_chosen_nets_is_protected_in_the_dsn():
     out = protect_nets(dsn, {"S1"})
     assert out.count("(type protect)") == 2 and out.count("(type route)") == 1                # S1's wire and via fixed, GND's wire left rippable
     assert "(net GND)(type route)" in out and protect_nets(dsn, set()) == dsn
+
+
+def test_dsn_with_several_through_via_sizes_is_patched_too():
+    dsn = DSN.replace('(via "Via[0-5]_500:250_um")', '(via "Via[0-5]_600:300_um" "Via[0-5]_500:250_um")').replace('(use_via "Via[0-5]_500:250_um")', '(use_via "Via[0-5]_600:300_um")')
+    out = hdi.patch_dsn(dsn, R.via_spans, LAYERS)
+    assert out.index('"Via[0-1]_300:100_um"') < out.index('"Via[0-5]_600:300_um"')                       # partial vias first in both lists
+    assert '(use_via "Via[0-1]_300:100_um" "Via[4-5]_300:100_um" "Via[0-2]_400:200_um" "Via[1-4]_350:200_um" "Via[0-5]_600:300_um")' in out

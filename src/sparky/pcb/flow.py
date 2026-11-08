@@ -116,8 +116,10 @@ def build_board(circuit: Circuit, spec: BoardSpec | None = None, log=print) -> B
                         kr = krt.route(raw, krt_out, rules=rules, constraints=special, all_nets=constrained if staged else [n for n, p in circuit.nets.items() if len(p) > 1],
                                        net_classes=net_classes_for(circuit, rules), timeout=int(max(120, spec.time_budget_s * 0.6)))
                         if staged:
+                            keep_nets = set(constrained) | {n for f in special if isinstance(f, Fanout) for n, pins in circuit.nets.items() if any(q.startswith(f.ref + ".") for q in pins)}
                             say("   constrained nets routed by KiCadRoutingTools (through vias); the rest by Freerouting with partial-depth vias")
-                            routing.route_pcb(krt_out, routed, passes=spec.passes, timeout=int(max(120, spec.time_budget_s * 0.6)), via_spans=rules.via_spans, layers=board.layers, protect=set(constrained) | {n for f in special if isinstance(f, Fanout) for n, pins in circuit.nets.items() if any(q.startswith(f.ref + ".") for q in pins)})
+                            routing.route_pcb(krt_out, routed, passes=spec.passes, timeout=int(max(120, spec.time_budget_s * 0.6)), via_spans=rules.via_spans, layers=board.layers, protect=keep_nets)
+                            routed.write_text(krt.restore_nets(krt_out.read_text(), routed.read_text(), keep_nets))
                     except (RuntimeError, ValueError) as e:
                         raise routing.RoutingError(str(e)) from e
                     rr = type("R", (), {"seconds": time.time() - t_r})()

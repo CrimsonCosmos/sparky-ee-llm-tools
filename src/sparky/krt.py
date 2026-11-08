@@ -251,6 +251,52 @@ def route(raw: Path, out: Path, *, rules, constraints: list, all_nets: list[str]
     return res
 
 
+def _blocks(text: str, heads=("segment", "via", "arc")) -> list[tuple[int, int, str]]:
+    """(start, end, head) of every top-level copper item of a KiCad board text, found by parenthesis depth."""
+    out, depth, start = [], 0, 0
+    for i, ch in enumerate(text):
+        if ch == "(":
+            depth += 1
+            if depth == 2:
+                start = i
+        elif ch == ")":
+            if depth == 2:
+                m = re.match(r"\((\w+)", text[start:start + 12])
+                if m and m.group(1) in heads:
+                    out.append((start, i + 1, m.group(1)))
+            depth -= 1
+    return out
+
+
+def restore_nets(krt_text: str, routed_text: str, nets: set[str]) -> str:
+    """Put `nets`' copper exactly as KiCadRoutingTools routed it into the board another router finished afterwards: the second router adds small pin stubs and may
+    nudge fixed wires, which would spoil length matching. The other router's copper for these nets is dropped, KRT's is written back with nets named (the form
+    KiCad >= 9 files use). KiCad's DRC on the result is what says whether the two routers' copper still fits together."""
+    names = {m.group(1): m.group(2) for m in re.finditer(r'\(net (\d+) "([^"]*)"\)', krt_text)}
+
+    def net_of(item: str, table: dict[str, str]) -> str | None:
+        m = re.search(r'\(net (?:"([^"]*)"|(\d+))\)', item)
+        if not m:
+            return None
+        return m.group(1) if m.group(1) is not None else table.get(m.group(2))
+
+    keep, pos = [], 0
+    for a, b, _ in _blocks(routed_text):
+        if net_of(routed_text[a:b], {}) in nets:
+            keep.append(routed_text[pos:a])
+            pos = b
+    keep.append(routed_text[pos:])
+    base = "".join(keep)
+    back = []
+    for a, b, _ in _blocks(krt_text):
+        item = krt_text[a:b]
+        n = net_of(item, names)
+        if n in nets:
+            back.append(re.sub(r'\(net (?:"[^"]*"|\d+)\)', lambda _m: f'(net "{n}")', item, count=1))
+    i = base.rstrip().rfind(")")
+    return base[:i] + "\n".join(back) + "\n" + base[i:]
+
+
 def pair_base(p: str, n: str) -> str:
     """KiCad's inDiffPair() takes the pair's base name (the net name without its polarity suffix)."""
     for pat, repl in _PAIR:
