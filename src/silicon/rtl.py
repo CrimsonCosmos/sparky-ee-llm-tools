@@ -113,17 +113,28 @@ def simulate(spec: SiliconSpec, files: list[Path], vec: dict[str, list[int]], pt
         return [l.strip() for l in out.read_text().splitlines() if l.strip()]
 
 
-def first_mismatch(a: list[str], b: list[str], names: list[str], x_warmup: int = 0) -> str | None:
+def _bits_differ(ref: str, got: str, ref_x_dont_care: bool) -> bool:
+    """One printed output value. A reference bit of x is 'undefined by the RTL': the netlist may resolve it to anything (ref_x_dont_care). A known reference bit must match
+    exactly, including a netlist bit that is x."""
+    if ref == got:
+        return False
+    if not ref_x_dont_care or len(ref) != len(got):
+        return True
+    return any(r != "x" and r != g for r, g in zip(ref.lower(), got.lower()))
+
+
+def first_mismatch(a: list[str], b: list[str], names: list[str], x_warmup: int = 0, ref_x_dont_care: bool = False) -> str | None:
     if len(a) != len(b):
         return f"different number of cycles ({len(a)} vs {len(b)})"
     for i, (x, y) in enumerate(zip(a, b)):
-        if i >= x_warmup and x != y:
-            bad = [n for n, p, q in zip(names, x.split(), y.split()) if p != q]
-            return f"cycle {i}: {', '.join(bad)} differ ({x} vs {y})"
+        if i >= x_warmup:
+            bad = [n for n, p, q in zip(names, x.split(), y.split()) if _bits_differ(p, q, ref_x_dont_care)]
+            if bad:
+                return f"cycle {i}: {', '.join(bad)} differ ({x} vs {y})"
     return None
 
 
-def equivalence(spec: SiliconSpec, result: FlowResult, reference_rtl: list[Path] | None = None, cycles: int = 200, seed: int = 1, x_warmup: int = 0) -> Verdict:
+def equivalence(spec: SiliconSpec, result: FlowResult, reference_rtl: list[Path] | None = None, cycles: int = 200, seed: int = 1, x_warmup: int = 0, ref_x_dont_care: bool = False) -> Verdict:
     """Gate-level netlist of the run vs the RTL (or `reference_rtl`), same random stimulus."""
     check = "equiv.gate_vs_rtl"
     if not result.ok or "netlist" not in result.artifacts:
@@ -139,5 +150,5 @@ def equivalence(spec: SiliconSpec, result: FlowResult, reference_rtl: list[Path]
     outs = sorted(n for n, (d, _) in pts.items() if d == "output")
     rtl = simulate(spec, list(reference_rtl or spec.verilog_files), vec, pts, cycles)
     gate = simulate(spec, [result.artifacts["netlist"], *map(Path, models)], vec, pts, cycles, prof.sim_defines)
-    bad = first_mismatch(rtl, gate, outs, x_warmup)
+    bad = first_mismatch(rtl, gate, outs, x_warmup, ref_x_dont_care)
     return Verdict(check, PASS if bad is None else FAIL, "rerun", f"{cycles} random cycles (seed {seed}): " + ("netlist equals RTL on every output" if bad is None else f"MISMATCH at {bad}"))

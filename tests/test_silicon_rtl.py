@@ -85,3 +85,12 @@ def test_gate_level_equals_rtl_and_fails_on_a_seeded_bug_and_a_mutated_netlist(c
     bad = flow.FlowResult(r.ok, r.run_dir, r.seconds, r.metrics, r.resolved, {**r.artifacts, "netlist": mutated}, r.log_path)
     m = rtl.equivalence(s, bad, cycles=300, seed=5)
     assert m.status == FAIL and "MISMATCH" in m.detail
+
+
+def test_x_in_the_reference_is_dont_care_but_a_known_bit_or_a_netlist_x_still_fails():
+    f = lambda a, b, dc: rtl.first_mismatch([a], [b], ["o"], 0, dc)
+    assert f("x0x1", "1001", True) is None                 # RTL undefined bits: netlist may choose
+    assert f("x0x1", "1001", False) is not None            # strict mode compares exactly
+    assert f("x0x1", "1000", True) is not None             # a defined reference bit differs
+    assert f("1001", "x001", True) is not None             # netlist undefined where the RTL is defined
+    assert f("1001", "1001", False) is None
