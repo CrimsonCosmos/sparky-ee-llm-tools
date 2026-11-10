@@ -32,3 +32,18 @@ which would replace much of the flop area (the register file and cache arrays ar
 OpenSTA on the mapped, UNBUFFERED netlist with an ideal 10 ns clock reports a worst setup slack of -415 ns (critical path ~425 ns). That number is NOT meaningful: the netlist has no fanout buffering or
 resizing (the flow's repair/CTS steps), so high-fanout enables/resets drive hundreds of thousands of pins through minimum-size cells. It only shows that timing closure cannot be judged before placement and repair.
 NOT done: placement, repair, clock tree, routing, power and real timing of this design (memory-bound on this machine, see the Borg result in `docs/NEXT.md`).
+
+## Past synthesis: the Vortex FP32 FMA unit through the full flow (sky130A, this machine)
+`tools/vortex_fma_flow.py` runs Vortex's `VX_fma_unit` (portable FP32 fused multiply-add, latency 6, subnormals and exceptions enabled, defaults otherwise) from RTL to GDS with LibreLane (slang frontend, 25 ns clock, 35 % utilisation target):
+| quantity | value |
+|---|---|
+| flow time | 939 s (15.7 min) |
+| instances / flip-flops | 44,511 / 501 |
+| cell area / die area | 203,961 um2 / 219,201 um2 (43 % utilisation) |
+| power (flow estimate, vectorless) | 24.2 mW |
+| KLayout DRC, Magic DRC, Netgen LVS, antenna | 0 violations / circuits match (flow and our independent re-runs agree) |
+| setup slack at nom_tt_025C_1v80 | +11.6 ns (flow and OpenSTA re-run agree) -> the unit alone closes around 13.4 ns at the typical corner |
+| setup slack, worst over all corners | -2.14 ns at the 25 ns clock (the slow corner needs ~27 ns) |
+| hold slack at tt | +0.33 ns |
+Reading: a real GPU arithmetic block goes from open-source RTL to DRC/LVS-clean sky130 layout with this repository's flow, with sign-off cross-checked by independent tool runs. At a 25 ns clock it does NOT meet the slow corner.
+What is NOT shown: functional equivalence of the gate-level netlist to the RTL (not run - the RTL uses SystemVerilog packages that the Icarus-based equivalence in `silicon/rtl.py` cannot read), power with real activity, anything above one unit (a full core is memory-bound here).
