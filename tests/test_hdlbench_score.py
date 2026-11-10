@@ -90,3 +90,30 @@ def test_sequential_near_miss_is_caught_and_correct_variant_is_solved():
     bad = good.replace("else if (en) n <= n + 4'd1;", "else if (en) n <= (n == 4'd13) ? 4'd0 : n + 4'd1;")        # skips two states
     s = ev("gray4", bad)
     assert not s.solved and (s.stages["heldout"].fraction < 1.0 or s.stages["formal"].status == "fail")
+
+
+# ---- reward-hacking regressions (found by thinking about what a proposer with a different goal could do) ----
+def test_initial_blocks_and_declaration_initialisers_are_forbidden():
+    good = "module gray4(input clk, input rst_n, input en, output [3:0] q); reg [3:0] n; always @(posedge clk) if (!rst_n) n <= 0; else if (en) n <= n + 4'd1; assign q = n ^ (n >> 1); endmodule"
+    assert ev("gray4", good).solved
+    for bad in (good.replace("reg [3:0] n;", "reg [3:0] n = 0;"), good.replace("reg [3:0] n;", "reg [3:0] n; initial n = 0;")):
+        s = ev("gray4", bad)
+        assert s.stages["interface"].status == "fail" and "forbidden" in s.stages["interface"].detail and s.reward == 0
+
+
+def test_a_design_that_ignores_reset_at_run_time_is_caught_by_heldout_resets_and_by_formal():
+    ref_like = "module gray4(input clk, input rst_n, input en, output [3:0] q); reg [3:0] n; always @(posedge clk) if (!rst_n && !en) n <= 0; else if (en) n <= n + 4'd1; assign q = n ^ (n >> 1); endmodule"
+    # resets only when en is low: identical after power-up reset (en low during the initial reset cycles is not guaranteed), differs when reset is pulsed with en high
+    s = ev("gray4", ref_like)
+    assert not s.solved
+    assert s.stages["heldout"].fraction < 1.0 or s.stages["formal"].status == "fail"
+
+
+def test_block_ram_use_is_visible_in_the_metrics_and_withholds_quality_credit(tmp_path):
+    from hdlbench import metrics
+    f = tmp_path / "ram.v"
+    f.write_text("module ram(input clk, input we, input [7:0] a, input [7:0] b, input [7:0] d, output reg [7:0] q); reg [7:0] mem [0:255]; always @(posedge clk) begin if (we) mem[a] <= d; q <= mem[b]; end endmodule")
+    p = problem.Problem(name="ram", dir=tmp_path, top="ram", kind="seq", spec_text="", reference_files=[f], clock="clk")
+    m = metrics.measure(p, [f], pnr=False)
+    assert m.other and any("RAM" in k for k in m.other), m.cells          # the memory maps to block RAM, which the LUT count alone would not show
+    assert any("NOT comparable" in n for n in m.notes)

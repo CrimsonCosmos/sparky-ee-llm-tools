@@ -57,25 +57,30 @@ def vectors(p: Problem, which_set: str) -> dict[str, list[int]]:
     for _ in range(n):
         for name, w in ins.items():
             cols[name].append(rng.getrandbits(w))
+    if p.kind == "seq" and p.reset:
+        active = 0 if p.reset_active_low else 1
+        length = len(next(iter(cols.values()))) if cols else n
+        pulse = random.Random(seed + 1000)
+        cols[p.reset] = [active if (which_set == "heldout" and pulse.random() < p.midrun_reset_prob) else 1 - active for _ in range(length)]
     return cols
 
 
 def _tb(p: Problem, top: str, ports: dict[str, tuple[str, int]], vec: dict[str, list[int]], cycles: int) -> str:
-    ins, outs = sorted(vec), p.outputs
+    ins, outs = sorted(n for n in vec if n != p.reset), p.outputs
     decl = [f"reg [{ports[n][1] - 1}:0] {n};" for n in ins] + [f"wire [{ports[n][1] - 1}:0] {n};" for n in outs]
     if p.clock:
         decl.append(f"reg {p.clock} = 0;")
     if p.reset:
         decl.append(f"reg {p.reset};")
         active = 0 if p.reset_active_low else 1
-    mems = [f"reg [{ports[n][1] - 1}:0] v_{n} [0:{cycles - 1}];" for n in ins]
+    mems = [f"reg [{ports[n][1] - 1}:0] v_{n} [0:{cycles - 1}];" for n in ins] + ([f"reg v_{p.reset} [0:{cycles - 1}];"] if p.reset and p.reset in vec else [])
     conns = [f".{n}({n})" for n in ins + outs] + ([f".{p.clock}({p.clock})"] if p.clock else []) + ([f".{p.reset}({p.reset})"] if p.reset else [])
     fmt = " ".join("%h" for _ in outs)
-    body = ["initial begin"] + [f'$readmemh("vec_{n}.hex", v_{n});' for n in ins] + ['fd = $fopen("out.txt", "w");']
+    body = ["initial begin"] + [f'$readmemh("vec_{n}.hex", v_{n});' for n in ins + ([p.reset] if p.reset and p.reset in vec else [])] + ['fd = $fopen("out.txt", "w");']
     if p.kind == "seq":
         body += [f"{p.reset} = {active};" if p.reset else "", "for (i = 0; i < " + str(p.reset_cycles) + "; i = i + 1) begin @(negedge " + p.clock + "); end",
                  "@(negedge " + p.clock + "); " + (f"{p.reset} = {1 - active};" if p.reset else "")]
-        body += [f"for (i = 0; i < {cycles}; i = i + 1) begin"] + [f"{n} = v_{n}[i];" for n in ins] + [f"@(posedge {p.clock}); #1;", f'$fdisplay(fd, "{fmt}"{"".join(", " + n for n in outs)});', f"@(negedge {p.clock});", "end"]
+        body += [f"for (i = 0; i < {cycles}; i = i + 1) begin"] + [f"{n} = v_{n}[i];" for n in ins] + ([f"{p.reset} = v_{p.reset}[i];"] if p.reset and p.reset in vec else []) + [f"@(posedge {p.clock}); #1;", f'$fdisplay(fd, "{fmt}"{"".join(", " + n for n in outs)});', f"@(negedge {p.clock});", "end"]
     else:
         body += [f"for (i = 0; i < {cycles}; i = i + 1) begin"] + [f"{n} = v_{n}[i];" for n in ins] + ["#1;", f'$fdisplay(fd, "{fmt}"{"".join(", " + n for n in outs)});', "end"]
     body += ["$fclose(fd); $finish;", "end"]

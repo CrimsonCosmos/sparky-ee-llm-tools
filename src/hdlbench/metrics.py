@@ -31,6 +31,7 @@ class Metrics:
     depth: int | None = None                    # longest path in LUT levels after `abc -lut N` (flip-flops excluded); a delay proxy, not a timing result
     gates: int | None = None                    # 2-input AND/OR/XOR + MUX count after ABC, technology neutral
     fmax_mhz: float | None = None               # sequential designs
+    other: dict[str, int] = field(default_factory=dict)      # mapped cells that are NOT LUT4/carry/flip-flop (block RAM, DSP, ...): their cost is not captured by the LUT count
     cells: dict[str, int] = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)
 
@@ -97,6 +98,9 @@ def measure(p: Problem, files: list[Path], target: Target | None = None, pnr: bo
         m.carries = cells.get("SB_CARRY", 0)
         m.flops = sum(v for k, v in cells.items() if k.startswith("SB_DFF"))
         m.depth = depth
+        m.other = {k: v for k, v in cells.items() if k != "SB_LUT4" and k != "SB_CARRY" and not k.startswith("SB_DFF")}
+        if m.other:
+            m.notes.append(f"uses other primitives {m.other}: LUT counts are NOT comparable (memory/DSP hidden from the LUT metric)")
         if depth is None:
             m.notes.append("longest path not reported by Yosys ltp")
         try:

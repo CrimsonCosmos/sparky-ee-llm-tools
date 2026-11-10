@@ -1,7 +1,7 @@
 """Formal equivalence of a candidate to the reference, by Yosys (combinational: miter + built-in SAT) and SymbiYosys with the ABC engines (sequential: unbounded proof by PDR, else a bounded
 check). Results: EQUIVALENT (proved), DIFFERENT (counterexample), BOUNDED (no difference found to depth N, NOT a proof), UNKNOWN (tool error/timeout). Only EQUIVALENT counts as solved.
 
-Combinational reference bits that are X are don't-care (miter -ignore_gold_x). Sequential designs are compared from the reset state: reset is asserted for `reset_cycles` cycles then released for good,
+Combinational reference bits that are X are don't-care (miter -ignore_gold_x). Sequential designs are compared from the reset state: reset is asserted for `reset_cycles` cycles, afterwards it is a free input (the design must obey reset at any time),
 and outputs are compared in every cycle after that (so a Mealy dependence on an input is compared too)."""
 from __future__ import annotations
 
@@ -70,12 +70,12 @@ def _parse_model(log: str, p: Problem) -> dict[str, str]:
 def _seq_wrapper(p: Problem) -> str:
     ports = p.ports
     ins = p.data_inputs
-    decl = ", ".join(["input " + p.clock] + [f"input [{w - 1}:0] {n}" for n, w in ins.items()])
+    decl = ", ".join(["input " + p.clock] + [f"input [{w - 1}:0] {n}" for n, w in ins.items()] + (["input rst_free"] if p.reset else []))
     gw = "\n".join(f"  wire [{ports[o][1] - 1}:0] g_{o}, c_{o};" for o in p.outputs)
     conn = lambda pre: ", ".join([f".{p.clock}({p.clock})"] + ([f".{p.reset}(rst)"] if p.reset else []) + [f".{n}({n})" for n in ins] + [f".{o}({pre}_{o})" for o in p.outputs])
     active = 0 if p.reset_active_low else 1
     cmp = " && ".join(f"(g_{o} === c_{o})" for o in p.outputs)
-    rst = f"  wire rst = (cyc < {p.reset_cycles}) ? 1'b{active} : 1'b{1 - active};\n" if p.reset else ""
+    rst = f"  wire rst = (cyc < {p.reset_cycles}) ? 1'b{active} : rst_free;\n" if p.reset else ""      # after the initial reset, reset is a FREE input: the design must obey it at any time
     return (f"module formal_top({decl});\n  reg [15:0] cyc = 0;\n  always @(posedge {p.clock}) if (cyc != 16'hFFFF) cyc <= cyc + 1;\n{rst}{gw}\n"
             f"  gold g ({conn('g')});\n  gate c ({conn('c')});\n  always @* if (cyc >= {p.reset_cycles}) assert({cmp});\nendmodule\n")
 

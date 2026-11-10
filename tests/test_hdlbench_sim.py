@@ -71,24 +71,32 @@ def _expected_comb(name, v, i):
 
 
 def _seq_model(name, v, n, reset_cycles_state=None):
-    """Per-vector expected outputs (sampled after the rising edge that consumes the vector); state is reset before the first vector."""
-    out, st = [], None
+    """Per-vector expected outputs (sampled after the rising edge that consumes the vector); state is reset before the first vector and whenever the vector's rst_n is 0 (synchronous reset)."""
+    out = []
+    rst = v.get("rst_n", [1] * n)
     if name == "gray4":
         c = 0
         for i in range(n):
-            if v["en"][i]:
+            if not rst[i]:
+                c = 0
+            elif v["en"][i]:
                 c = (c + 1) & 15
             out.append({"q": c ^ (c >> 1)})
     elif name == "lfsr8":
         q = 1
         for i in range(n):
-            if v["en"][i]:
+            if not rst[i]:
+                q = 1
+            elif v["en"][i]:
                 q = ((q << 1) & 0xFF) | (((q >> 7) ^ (q >> 5) ^ (q >> 4) ^ (q >> 3)) & 1)
             out.append({"q": q})
     elif name == "seqdet":
         hist = []
-        hit = 0
         for i in range(n):
+            if not rst[i]:
+                hist = []
+                out.append({"hit": 0})
+                continue
             hit = int(len(hist) >= 3 and hist[-3:] + [v["d"][i]] == [1, 0, 1, 1])
             hist.append(v["d"][i])
             out.append({"hit": hit})

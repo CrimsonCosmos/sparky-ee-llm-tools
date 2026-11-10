@@ -15,7 +15,7 @@ from .problem import Problem, ports_of
 
 STAGES = ("interface", "compiles", "synthesizable", "visible", "heldout", "formal", "quality")
 RESERVED_MODULES = {"tb", "gold", "gate", "miter", "formal_top"}                     # names the harness itself uses
-FORBIDDEN = re.compile(r"\$(?:fopen|fclose|fdisplay|fwrite|fscanf|fgets|fread|readmemh|readmemb|system|test\$plusargs|value\$plusargs|dumpfile|dumpvars|stop|finish)\b|`include\b|`define\s+\w+\s*\$|\bforce\b")
+FORBIDDEN = re.compile(r"\$(?:fopen|fclose|fdisplay|fwrite|fscanf|fgets|fread|readmemh|readmemb|system|test\$plusargs|value\$plusargs|dumpfile|dumpvars|stop|finish)\b|`include\b|`define\s+\w+\s*\$|\bforce\b|\binitial\b|\b(?:reg|logic|integer|bit)\b[^;()]*?\w\s*=[^=]")
 
 
 @dataclass
@@ -73,7 +73,7 @@ def scan(p: Problem, text: str, cfg: RewardConfig) -> list[str]:
         bad.append(f"candidate is {len(text)} characters (limit {cfg.max_chars})")
     m = FORBIDDEN.search(text)
     if m:
-        bad.append(f"forbidden construct '{m.group(0).strip()}' (file/system tasks, includes and force are not allowed in a design)")
+        bad.append(f"forbidden construct '{m.group(0).strip()}' (file/system tasks, includes, force and initial blocks / declaration initialisers are not allowed in a design: state must come from reset)")
     for name in re.findall(r"^\s*module\s+(\w+)", text, re.M):
         if name in RESERVED_MODULES:
             bad.append(f"module name '{name}' is reserved by the harness")
@@ -189,6 +189,9 @@ def evaluate(p: Problem, text: str, cfg: RewardConfig | None = None, ref_metrics
             if m.fmax_mhz and ref_metrics.fmax_mhz:
                 s.ratios["fmax_mhz_inverse"] = ref_metrics.fmax_mhz / m.fmax_mhz            # <1 = faster than the reference
             qs = []
+            if m.other:                                                      # block RAM / DSP would hide cost from the LUT count: no quality credit, say why
+                s.warnings.append(f"design uses non-LUT primitives {m.other}: quality credit withheld (cost not comparable)")
+                s.ratios = {}
             for k, r in s.ratios.items():
                 if r is None:
                     continue
