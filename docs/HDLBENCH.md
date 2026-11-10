@@ -56,5 +56,5 @@ Bitstream generation is tested (round trip through `iceunpack`); loading onto ha
 * Sequential designs are proved from the reset state, with reset asserted for the first cycles and released for good; designs relying on reset pulses mid-run are not compared there.
 * The reward's formal stage can time out (`unknown`), which earns nothing; large arithmetic with very different structure may need a longer `formal_timeout`.
 * iCE40 is the cost model (LUT4); other architectures need another `Target`.
-* Not yet exercised with a real LLM in this repository (no API key in the build environment): the loop is tested with scripted proposers.
+* First LLM runs (a subagent as proposer, 9 problems): docs/HDLBENCH_EVAL.md. The direct Anthropic API path is still untested (no API key here); the loop itself is tested with scripted proposers.
 * Benchmarks measured by others (VerilogEval, RTLLM, CodeV-R1, VeriThoughts) report different numbers across versions; none of those numbers are reproduced here.
