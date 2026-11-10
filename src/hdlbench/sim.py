@@ -49,6 +49,13 @@ def vectors(p: Problem, which_set: str) -> dict[str, list[int]]:
             shift += w
         return cols
     cols = {name: [] for name in ins}
+    if which_set == "heldout" and p.cross_corners and p.kind == "comb":
+        import itertools
+        vals = {name: sorted({c for w2 in (w,) for k in range(w2) for c in ((1 << k) - 1, 1 << k, (1 << k) + 1)} | {0, (1 << w) - 1} | {v for v in p.directed_values if v < (1 << w)}) for name, w in ins.items()}
+        vals = {k: [v for v in vs if v < (1 << ins[k])] for k, vs in vals.items()}
+        for combo in itertools.product(*vals.values()):
+            for name, v in zip(vals, combo):
+                cols[name].append(v)
     if which_set == "heldout":                                              # directed corners first (only in the held-out set, so they are never visible)
         for name, w in ins.items():
             for c in _corner(w):

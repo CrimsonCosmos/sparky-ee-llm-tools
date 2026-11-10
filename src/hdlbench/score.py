@@ -84,7 +84,7 @@ def scan(p: Problem, text: str, cfg: RewardConfig) -> list[str]:
 
 def _yosys_check(p: Problem, f: Path, td: Path, timeout: int = 60) -> tuple[bool, str]:
     y = tools.which("yosys")
-    rc, text = tools.run([y, "-p", f"read_verilog -sv {f}; hierarchy -top {p.top}; flatten; proc; tee -o st.txt stat; check -assert", "-l", "y.log"], td, timeout)
+    rc, text = tools.run([y, "-p", f"read_verilog -sv {f}; hierarchy -top {p.top}; flatten; proc; opt_clean -purge; tee -o st.txt stat; check -assert", "-l", "y.log"], td, timeout)
     log = (td / "y.log").read_text() if (td / "y.log").is_file() else text
     if rc != 0:
         why = re.findall(r"(?:ERROR|Warning): (.*)", log)

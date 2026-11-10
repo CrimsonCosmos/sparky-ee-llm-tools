@@ -104,3 +104,68 @@ def test_mul8s_accepts_a_different_architecture_and_rejects_near_misses():
     for name, m in mutants.items():
         assert m != ref, name
         assert not score.evaluate(p, m).solved, f"scorer accepted the wrong design: {name}"
+
+
+# ---- fp16add: independent model = Python's correctly rounded double -> binary16 conversion (struct 'e'); a sum of two halves is exact in a double ----
+import math
+import struct
+
+
+def half_to_float(h):
+    return struct.unpack("<e", struct.pack("<H", h))[0]
+
+
+def fp16_add_model(a, b):
+    x, y = half_to_float(a), half_to_float(b)
+    if math.isnan(x) or math.isnan(y):
+        return 0x7E00
+    if math.isinf(x) and math.isinf(y) and (x > 0) != (y > 0):
+        return 0x7E00
+    s = x + y
+    if s == 0 and not (x == 0 and y == 0 and (math.copysign(1, x) < 0) and (math.copysign(1, y) < 0)):
+        return 0x0000                                                  # exact cancellation and (+0)+(-0) give +0 in round-to-nearest
+    try:
+        return struct.unpack("<H", struct.pack("<e", s))[0]
+    except OverflowError:                                              # struct refuses to overflow: the correctly rounded result is infinity (|s| >= 65520)
+        return 0x7C00 if s > 0 else 0xFC00
+
+
+def test_python_fp16_model_known_values():
+    assert fp16_add_model(0x3C00, 0x3C00) == 0x4000                    # 1 + 1 = 2
+    assert fp16_add_model(0x7BFF, 0x7BFF) == 0x7C00                    # max + max overflows to +inf
+    assert fp16_add_model(0x0001, 0x0001) == 0x0002                    # smallest subnormals
+    assert fp16_add_model(0x3C00, 0xBC00) == 0x0000 and fp16_add_model(0x8000, 0x8000) == 0x8000
+    assert fp16_add_model(0x7C00, 0xFC00) == 0x7E00 and fp16_add_model(0x7E01, 0x3C00) == 0x7E00
+    assert fp16_add_model(0x7BFF, 0x3C00) == 0x7BFF                    # 65504 + 1 rounds back to 65504 (ties-to-even region)
+    assert fp16_add_model(0x7BFF, 0x4000 | 0x0) != 0x7C00 or True
+
+
+def test_fp16add_reference_matches_independent_model():
+    p = problem.get("fp16add")
+    rnd = random.Random(21)
+    pairs = [(rnd.getrandbits(16), rnd.getrandbits(16)) for _ in range(40000)]
+    specials = [0x0000, 0x8000, 0x0001, 0x8001, 0x03FF, 0x0400, 0x3C00, 0xBC00, 0x7BFF, 0xFBFF, 0x7C00, 0xFC00, 0x7E00, 0x7C01, 0x3555, 0x0200, 0x7800, 0x7BFE, 0x3BFF, 0x4000]
+    pairs += [(x, y) for x in specials for y in specials]
+    pairs += [(rnd.choice(specials), rnd.getrandbits(16)) for _ in range(5000)]
+    rows = sim.simulate(p, p.reference_files, {"a": [x for x, _ in pairs], "b": [y for _, y in pairs]})
+    bad = [(hex(x), hex(y), r[0], hex(fp16_add_model(x, y))) for (x, y), r in zip(pairs, rows) if int(r[0], 16) != fp16_add_model(x, y)]
+    assert not bad, bad[:5]
+
+
+@pytest.mark.slow
+def test_fp16add_scorer_rejects_each_single_rule_mutation_of_the_reference():
+    from hdlbench import score
+    p = problem.get("fp16add")
+    ref = (p.dir / "reference.v").read_text()
+    muts = {
+        "tie rounds up": ref.replace("guard && (sticky || m11[0])", "guard"),
+        "sticky ignored": ref.replace("guard && (sticky || m11[0])", "guard && m11[0]"),
+        "subnormal flush": ref.replace("if (p <= 10) begin ef", "if (p <= 9) begin y = {sr,15'd0}; end else if (p <= 10) begin ef"),
+        "nan payload propagated": ref.replace("y = 16'h7E00;\n    else if (a_inf)", "y = a_nan ? a : 16'h7E00;\n    else if (a_inf)"),
+        "overflow threshold": ref.replace("if (ef >= 31) y", "if (ef >= 32) y"),
+        "-0 + -0 = +0": ref.replace("(sa & sb)", "1'b0"),
+        "inf + -inf = +inf": ref.replace("(a_inf && b_inf && (sa != sb))", "1'b0"),
+    }
+    for name, m in muts.items():
+        assert m != ref, name
+        assert not score.evaluate(p, m, do_metrics=False).solved, f"scorer accepted: {name}"

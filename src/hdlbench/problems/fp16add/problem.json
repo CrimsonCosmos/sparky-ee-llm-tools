@@ -1,0 +1,1 @@
+{"top": "fp16add", "kind": "comb", "formal_mode": "off", "cross_corners": true, "visible_vectors": 200, "heldout_vectors": 300000, "directed_values": [0, 32768, 1, 32769, 1023, 33791, 1024, 33792, 15360, 48128, 31743, 64511, 31744, 64512, 32256, 65024, 31745, 64513, 32255, 13653, 30720, 31742, 15359]}

@@ -117,3 +117,11 @@ def test_block_ram_use_is_visible_in_the_metrics_and_withholds_quality_credit(tm
     m = metrics.measure(p, [f], pnr=False)
     assert m.other and any("RAM" in k for k in m.other), m.cells          # the memory maps to block RAM, which the LUT count alone would not show
     assert any("NOT comparable" in n for n in m.notes)
+
+
+def test_dead_latch_on_an_unused_loop_variable_is_not_a_latch_failure_but_a_real_latch_is():
+    dead = ("module popcount8(input [7:0] in, output reg [3:0] count); integer i;\n  always @* begin count = 0; if (in[7]) begin for (i = 0; i < 8; i = i + 1) count = count + in[i]; end else begin count = in[0] + in[1] + in[2] + in[3] + in[4] + in[5] + in[6]; end end\nendmodule")
+    s = ev("popcount8", dead)
+    assert s.stages["synthesizable"].status == "pass", s.stages["synthesizable"].detail       # 'i' is only assigned in one branch (dead latch, drives nothing)
+    real = "module popcount8(input [7:0] in, output reg [3:0] count); always @* if (in[0]) count = 4'd1; endmodule"
+    assert ev("popcount8", real).stages["synthesizable"].status == "fail"
