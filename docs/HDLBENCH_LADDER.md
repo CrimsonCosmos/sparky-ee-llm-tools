@@ -12,3 +12,7 @@ how a proposer with a different goal could cheat.
 |---|---|---|---|---|---|---|---|---|
 | 1 | crc16 (CRC-16/CCITT byte update) | 1 | yes | 0.950 | 20 / 2 | 20 / 2 | pass (binascii.crc_hqx) | clean |
 | 2 | shift32 (4-mode 32-bit shifter) | 2 | yes | 0.966 | 302 / 7 | 477 / 6 | pass (6000 random vs Python) | clean |
+| 3 | div8 (8-bit divider, b=0 defined) | 2 | yes | 0.950 | 49 / 31 | 49 / 29 | pass (all 65,536 inputs vs Python) | clean |
+
+Level 3 note: the design is a restoring array divider = the golden design's cost. The agent suspected the 49-LUT figure hides carry logic; I confirmed it: the mapped design is 49 LUT4 + 75 SB_CARRY cells.
+LUT4 counts therefore under-state adder/comparator-heavy designs (carry cells are not counted). A logic-cell count after packing would be fairer; the ladder keeps the original metric so levels stay comparable.
