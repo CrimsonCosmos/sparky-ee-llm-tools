@@ -18,3 +18,17 @@ Reading: one small Vortex core is already about 630k generic gates, dominated by
 design (a flop is several times a NAND2); with SRAM macros (see `silicon/macros.py`, OpenRAM from the PDK) the flop count would drop but macros dominate area. The Borg core run on this machine showed the flow after
 synthesis (placement/STA) is memory-bound at this scale (OOM at 13.9 GB for 380k instances), so a full P&R of even one Vortex core would need a bigger machine; synthesis alone is feasible. NOT measured: technology mapping,
 timing, area in a real PDK, the effect of the FPU/extension choices (default extension set was used), multi-core, caches at realistic size.
+
+## Mapped to sky130_fd_sc_hd (Yosys `synth`, `dfflibmap`, `abc -liberty`, hierarchical; this machine)
+| quantity | value |
+|---|---|
+| wall time / peak memory | 1,056 s (17.6 min) / 2.63 GB |
+| cells | 523,144 |
+| cell area | 8,464,272 um2 = 8.46 mm2 (tt 1.8 V library areas) |
+| of which sequential | 6,338,000 um2 (74.9 %) |
+Raw: `docs/vortex_core_sky130_mapped.stat`. At a typical 40-50 % placement utilisation (an assumption, not measured here) one such core would need a die of roughly 17-21 mm2 on sky130 - before any SRAM macros,
+which would replace much of the flop area (the register file and cache arrays are mapped to flip-flops; a 1 KB OpenRAM macro from the PDK is 0.19 mm2 by itself, see `docs/GPU_HOLES_PLAN.md` row 2).
+
+OpenSTA on the mapped, UNBUFFERED netlist with an ideal 10 ns clock reports a worst setup slack of -415 ns (critical path ~425 ns). That number is NOT meaningful: the netlist has no fanout buffering or
+resizing (the flow's repair/CTS steps), so high-fanout enables/resets drive hundreds of thousands of pins through minimum-size cells. It only shows that timing closure cannot be judged before placement and repair.
+NOT done: placement, repair, clock tree, routing, power and real timing of this design (memory-bound on this machine, see the Borg result in `docs/NEXT.md`).
