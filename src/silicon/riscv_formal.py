@@ -36,6 +36,14 @@ class RvfResult:
         return {c.name: c.status for c in self.checks}
 
 
+def verdict(text: str) -> str:
+    """pass | fail | error from sby's output. The engine's own verdict line is authoritative: ABC engines report FAIL without a trace file, which sby then flags as an ERROR ('did not produce any traces')."""
+    eng = re.search(r"engine_\d+ \([^)]*\) returned (PASS|FAIL|pass|fail)", text)
+    if eng:
+        return eng.group(1).lower()
+    return "pass" if "DONE (PASS" in text else "fail" if "DONE (FAIL" in text else "error"
+
+
 def find_root(root: str | Path | None = None) -> Path | None:
     for cand in (root, os.environ.get("RISCV_FORMAL")):
         if cand and (Path(cand) / "checks" / "genchecks.py").is_file():
@@ -85,7 +93,7 @@ def run(workdir: str | Path, core: str, core_files: dict[str, Path], checks: lis
         try:
             p = subprocess.run([sby, "-f", sby_file.name], cwd=cdir / "checks", capture_output=True, text=True, timeout=timeout, env=env)
             text = p.stdout + p.stderr
-            status = "pass" if "DONE (PASS" in text else "fail" if "DONE (FAIL" in text else "error"
+            status = verdict(text)
             detail = "" if status == "pass" else text.strip()[-300:]
         except subprocess.TimeoutExpired:
             status, detail = "timeout", f"no verdict within {timeout} s"
