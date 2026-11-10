@@ -34,7 +34,7 @@ def main(argv: list[str] | None = None) -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("list")
     sub.add_parser("tools")
-    s = sub.add_parser("score"); s.add_argument("problem"); s.add_argument("file"); s.add_argument("--no-formal", action="store_true"); s.add_argument("--json", action="store_true"); s.add_argument("--root")
+    s = sub.add_parser("score"); s.add_argument("problem"); s.add_argument("file"); s.add_argument("--no-formal", action="store_true"); s.add_argument("--json", action="store_true"); s.add_argument("--root"); s.add_argument("--log", help="append a JSON record of this attempt (code, stages, reward, cost) to this file")
     b = sub.add_parser("baseline"); b.add_argument("problems", nargs="*"); b.add_argument("--root")
     r = sub.add_parser("run"); r.add_argument("problem"); r.add_argument("--proposer", required=True); r.add_argument("--model"); r.add_argument("--iterations", type=int, default=10)
     r.add_argument("--candidates", type=int, default=4); r.add_argument("--max-candidates", type=int, default=100); r.add_argument("--max-seconds", type=float); r.add_argument("--max-tokens", type=int)
@@ -56,7 +56,10 @@ def main(argv: list[str] | None = None) -> int:
     elif a.cmd == "score":
         p = _problem(a)
         sc = evaluate(p, Path(a.file).read_text(), RewardConfig(), do_formal=not a.no_formal)
-        print(json.dumps({"reward": sc.reward, "solved": sc.solved, "solved_by": sc.solved_by, "stages": {k: [v.status, v.fraction, v.detail] for k, v in sc.stages.items()}, "ratios": sc.ratios}, indent=1) if a.json else sc.feedback)
+        if a.log:
+            from .archive import Archive
+            Archive(a.log).add(sum(1 for _ in open(a.log)) if Path(a.log).is_file() else 0, None, Path(a.file).read_text(), sc)
+        print(json.dumps({"reward": sc.reward, "solved": sc.solved, "solved_by": sc.solved_by, "stages": {k: [v.status, v.fraction, v.detail] for k, v in sc.stages.items()}, "ratios": sc.ratios}, indent=1) if a.json else sc.feedback + f"\nFINAL: reward {sc.reward:.4f} {'SOLVED' if sc.solved else 'NOT SOLVED'}")
         return 0 if sc.solved else 1
     elif a.cmd == "baseline":
         print(baselines.markdown(baselines.reference_rows(a.problems or None, Path(a.root) if a.root else None)))
