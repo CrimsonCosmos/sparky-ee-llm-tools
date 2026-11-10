@@ -54,6 +54,7 @@ class Score:
     feedback: str = ""
     mismatches: list[sim.Mismatch] = field(default_factory=list)
     counterexample: dict[str, str] | None = None
+    solved_by: str = ""                         # 'formal proof' | 'tests only (NOT proved)' | ''
 
     def stage(self, name: str) -> StageResult | None:
         return self.stages.get(name)
@@ -103,7 +104,11 @@ def evaluate(p: Problem, text: str, cfg: RewardConfig | None = None, ref_metrics
             st.setdefault(n, StageResult(n, "not_run", "an earlier stage failed"))
         w = {"compiles": cfg.w_compiles, "synthesizable": cfg.w_synth, "visible": cfg.w_visible, "heldout": cfg.w_heldout, "formal": cfg.w_formal, "quality": cfg.w_quality}
         s.reward = round(sum(w[n] * st[n].fraction for n in w), 6) if st["interface"].status == "pass" else 0.0          # no credit for a design with the wrong interface
-        s.solved = st["formal"].status == "pass" and st["visible"].fraction == 1.0 and st["heldout"].fraction == 1.0
+        tests_ok = st["visible"].fraction == 1.0 and st["heldout"].fraction == 1.0
+        s.solved = st["formal"].status == "pass" and tests_ok
+        s.solved_by = "formal proof" if s.solved else ""
+        if p.formal_mode == "off" and tests_ok and st["interface"].status == "pass":
+            s.solved, s.solved_by = True, "tests only (NOT proved)"
         s.feedback = feedback or _feedback(p, s)
         return s
 
@@ -160,7 +165,10 @@ def evaluate(p: Problem, text: str, cfg: RewardConfig | None = None, ref_metrics
             st["visible"] = StageResult("visible", "fail", f"simulation error: {e}")
             return done()
         # 5. formal
-        if not do_formal:
+        if p.formal_mode == "off":
+            st["formal"] = StageResult("formal", "pass" if st["visible"].fraction == 1.0 and st["heldout"].fraction == 1.0 else "not_run",
+                                       "formal checking is OFF for this problem (see problem.json): the tests are the only judge, so this is NOT a proof", 1.0 if st["visible"].fraction == 1.0 and st["heldout"].fraction == 1.0 else 0.0)
+        elif not do_formal:
             st["formal"] = StageResult("formal", "not_run", "disabled")
         elif st["visible"].fraction < 1.0 or st["heldout"].fraction < 1.0:
             st["formal"] = StageResult("formal", "not_run", "skipped: simulation already shows a difference")
@@ -170,7 +178,7 @@ def evaluate(p: Problem, text: str, cfg: RewardConfig | None = None, ref_metrics
             st["formal"] = StageResult("formal", "pass" if r.proved else ("partial" if r.status == formal.BOUNDED else ("fail" if r.status == formal.DIFFERENT else "not_run")), f"{r.method}: {r.detail}", frac)
             s.counterexample = r.counterexample
         # 6. quality (only for proved designs)
-        if st["formal"].status == "pass" and do_metrics:
+        if st["formal"].status == "pass" and do_metrics and (p.formal_mode == "off" or st["formal"].detail):
             m = metrics.measure(p, [f])
             s.metrics = m
             if ref_metrics is None:
@@ -189,7 +197,7 @@ def evaluate(p: Problem, text: str, cfg: RewardConfig | None = None, ref_metrics
 
 
 def _feedback(p: Problem, s: Score) -> str:
-    lines = [f"reward {s.reward:.3f} ({'SOLVED' if s.solved else 'not solved'})"]
+    lines = [f"reward {s.reward:.3f} ({'SOLVED by ' + s.solved_by if s.solved else 'not solved'})"]
     for n in STAGES:
         r = s.stages[n]
         lines.append(f"- {n}: {r.status} - {r.detail}")

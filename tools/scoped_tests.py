@@ -36,6 +36,9 @@ def select(files: list[str]) -> list[str] | None:
         p = Path(f)
         if p.parts[:1] == ("tests",) and p.suffix == ".py" and p.name.startswith("test_"):
             tests.add(f)
+        elif p.parts[:2] in (("src", "hdlbench"), ("src", "silicon")):
+            hits = sorted((ROOT / "tests").glob(f"test_{p.parts[1]}*.py"))
+            tests.update(str(h.relative_to(ROOT)) for h in hits)
         elif p.parts[:2] == ("src", "sparky"):
             area = p.parts[2].removesuffix(".py") if len(p.parts) > 2 else ""
             pats = AREA_TESTS.get(area)

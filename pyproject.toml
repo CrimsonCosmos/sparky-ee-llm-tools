@@ -15,9 +15,11 @@ analysis = ["pcb-analysis==0.12.1"]       # thermal/EMC; needs its compiled kern
 vendor-import = ["easyeda2kicad==1.0.1"]  # AGPL-3.0: run only as an external command (libsrc), never imported
 rf = ["scikit-rf==2.2.0"]                  # transmission-line impedance (analysis/lines.py); KiCad's PCB Calculator has no CLI
 anthropic = ["anthropic"]
+fpga = ["yowasp-nextpnr-ice40==0.11.1.0.post826", "yowasp-icepack"]   # hdlbench: nextpnr timing + bitstream; optional (reported NOT RUN when missing)
 
 [project.scripts]
 sparky = "sparky.cli:main"
+hdlbench = "hdlbench.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
