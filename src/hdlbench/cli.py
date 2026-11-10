@@ -41,6 +41,7 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--strategy", choices=["refine", "population"], default="refine"); r.add_argument("--stop-when-solved", action="store_true"); r.add_argument("--archive"); r.add_argument("--root")
     m = sub.add_parser("mutate-baseline"); m.add_argument("problem"); m.add_argument("--start", help="Verilog file to mutate (default: the reference)"); m.add_argument("--iterations", type=int, default=5); m.add_argument("--root")
     i = sub.add_parser("import-verilogeval"); i.add_argument("src"); i.add_argument("dest"); i.add_argument("--limit", type=int)
+    cv = sub.add_parser("coverage"); cv.add_argument("problem"); cv.add_argument("--file", help="design to measure (default: the reference)"); cv.add_argument("--set", choices=["visible", "heldout"], default="heldout"); cv.add_argument("--root")
     h = sub.add_parser("bitstream"); h.add_argument("problem"); h.add_argument("file"); h.add_argument("--out", required=True); h.add_argument("--device", required=True, help="nextpnr-ice40 device, e.g. hx8k / up5k"); h.add_argument("--package", required=True)
     h.add_argument("--pcf"); h.add_argument("--load", action="store_true", help="program an attached board (needs openFPGALoader/iceprog)"); h.add_argument("--root")
     a = ap.parse_args(argv)
@@ -71,6 +72,11 @@ def main(argv: list[str] | None = None) -> int:
         if res.best:
             print(res.best.code)
         return 0 if res.solved else 1
+    elif a.cmd == "coverage":
+        from . import coverage
+        p = _problem(a)
+        c = coverage.measure(p, [Path(a.file)] if a.file else None, a.set)
+        print(c.text()); [print("  never hit:", u) for u in c.uncovered]; [print("  note:", n) for n in c.notes]
     elif a.cmd == "mutate-baseline":
         p = _problem(a)
         start = Path(a.start).read_text() if a.start else "\n".join(Path(f).read_text() for f in p.reference_files)
