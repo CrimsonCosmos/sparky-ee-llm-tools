@@ -1,0 +1,1 @@
+Write a synchronous Verilog module `lfsr8` with inputs `clk`, `rst_n` (active-low synchronous reset to 8'h01), `en` and output `q[7:0]`. When `en` is 1 on a rising edge the register shifts left by one and the new bit 0 is q[7]^q[5]^q[4]^q[3] (taps of the polynomial x^8+x^6+x^5+x^4+1); when `en` is 0 it holds. `q` is the register.

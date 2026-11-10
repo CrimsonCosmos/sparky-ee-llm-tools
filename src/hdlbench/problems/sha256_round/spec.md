@@ -1,0 +1,3 @@
+Write a combinational Verilog module `sha256_round` for ONE round of the SHA-256 compression function (FIPS 180-4, section 6.2.2 step 3). Inputs: 32-bit working variables `a,b,c,d,e,f,g,h`, the round constant `k` and message-schedule word `w`. Outputs `na,nb,nc,nd,ne,nf,ng,nh` are the next values:
+T1 = h + Sigma1(e) + Ch(e,f,g) + k + w;  T2 = Sigma0(a) + Maj(a,b,c);  na = T1 + T2; nb = a; nc = b; nd = c; ne = d + T1; nf = e; ng = f; nh = g.
+Sigma0(x)=ROTR2^ROTR13^ROTR22, Sigma1(x)=ROTR6^ROTR11^ROTR25, Ch(x,y,z)=(x&y)^(~x&z), Maj(x,y,z)=(x&y)^(x&z)^(y&z); all arithmetic mod 2^32. Fewer LUTs / shallower logic is better.

@@ -1,0 +1,1 @@
+Write a synchronous Verilog module `seqdet` with inputs `clk`, `rst_n` (active-low synchronous reset), `d` (serial bit) and output `hit`. `hit` is a registered (Moore) output that is 1 in the cycle after the last four sampled bits of `d` were 1,0,1,1 (oldest to newest); overlapping matches count. After reset no bits are remembered.

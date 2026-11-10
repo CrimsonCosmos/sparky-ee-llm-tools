@@ -1,0 +1,1 @@
+Write a combinational Verilog module `sort4` with four 4-bit unsigned inputs `a0,a1,a2,a3` and four 4-bit outputs `s0,s1,s2,s3` holding the same four values in ascending order (s0 <= s1 <= s2 <= s3). Fewer LUTs and shallower logic are better; the answer must be exactly correct for all inputs.

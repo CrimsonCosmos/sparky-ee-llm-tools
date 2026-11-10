@@ -1,0 +1,1 @@
+Write a combinational Verilog module `prienc8` with input `in[7:0]` and outputs `idx[2:0]`, `valid`. `valid` is 1 when any bit of `in` is set; `idx` is the index of the HIGHEST set bit. When `in` is all zero, `idx` is don't-care (any value is accepted) and `valid` is 0.
