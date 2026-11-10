@@ -32,15 +32,17 @@ def _corner(w: int) -> list[int]:
 
 
 def vectors(p: Problem, which_set: str) -> dict[str, list[int]]:
-    """Per data input, one value per cycle. 'visible' and 'heldout' use different seeds; small combinational problems are exhaustive (visible = even indices, held-out = odd)."""
+    """Per data input, one value per cycle. 'visible' and 'heldout' use different seeds; small combinational problems are exhaustive: a seeded random subset is visible, ALL the remaining vectors are held-out."""
     ins = p.data_inputs
     seed = p.visible_seed if which_set == "visible" else p.heldout_seed
     n = p.visible_vectors if which_set == "visible" else p.heldout_vectors
     rng = random.Random(seed)
     total = sum(ins.values())
     if p.kind == "comb" and total <= p.exhaustive_max_input_bits:
-        allv = range(1 << total)
-        pick = [v for v in allv if (v % 2 == 0) == (which_set == "visible")]
+        order = list(range(1 << total))
+        random.Random(p.visible_seed).shuffle(order)                         # one shuffle shared by both sets: visible = first part, held-out = the rest (disjoint, together exhaustive)
+        cut = min(p.visible_vectors, len(order) // 2)
+        pick = sorted(order[:cut]) if which_set == "visible" else sorted(order[cut:])
         cols, shift = {}, 0
         for name, w in ins.items():
             cols[name] = [(v >> shift) & ((1 << w) - 1) for v in pick]

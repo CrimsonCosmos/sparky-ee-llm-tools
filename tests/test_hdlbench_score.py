@@ -1,0 +1,92 @@
+"""The scorer must not be foolable: cheats and near misses must lose reward at the stage designed to catch them, and equivalent designs must be SOLVED."""
+import pytest
+
+from hdlbench import problem, score, sim, tools
+
+pytestmark = pytest.mark.skipif(not (tools.which("yosys") and tools.which("iverilog") and tools.which("sby")), reason="yosys/iverilog/sby not available")
+CFG = score.RewardConfig()
+
+
+def ev(name, text, **kw):
+    return score.evaluate(problem.get(name), text, CFG, **kw)
+
+
+def ref(name):
+    return (problem.get(name).dir / "reference.v").read_text()
+
+
+def test_reference_is_solved_with_full_stage_credit():
+    s = ev("popcount8", ref("popcount8"))
+    assert s.solved and s.reward == pytest.approx(0.95)               # quality = 0.5 of its weight when equal to the reference
+    assert all(s.stages[n].status == "pass" for n in score.STAGES)
+
+
+def test_hardcoded_visible_vectors_pass_visible_but_lose_heldout_and_formal():
+    p = problem.get("add8")
+    v = sim.vectors(p, "visible")
+    cases = "\n".join(f"      {{8'd{v['a'][i]}, 8'd{v['b'][i]}, 1'd{v['cin'][i]}}}: {{cout, sum}} = 9'd{v['a'][i] + v['b'][i] + v['cin'][i]};" for i in range(len(v["a"])))
+    cheat = f"module add8(input [7:0] a, input [7:0] b, input cin, output reg [7:0] sum, output reg cout);\n  always @* begin\n    {{cout, sum}} = 9'd0;\n    case ({{a, b, cin}})\n{cases}\n      default: ;\n    endcase\n  end\nendmodule"
+    s = ev("add8", cheat)
+    assert s.stages["visible"].fraction == 1.0                         # fools the visible tests...
+    assert s.stages["heldout"].fraction < 0.2                          # ...but not the held-out set
+    assert s.stages["formal"].status == "not_run" and not s.solved and s.reward < 0.5
+
+
+def test_rare_input_bug_passes_tests_but_formal_refutes_it():
+    bug = ref("add8").replace("assign {cout, sum} = a + b + cin;", "assign {cout, sum} = (a == 8'hA5 && b == 8'h5A && cin) ? 9'd0 : a + b + cin;")
+    s = ev("add8", bug)
+    assert s.stages["visible"].fraction == 1.0
+    assert s.stages["formal"].status == "fail" and s.counterexample and not s.solved
+    assert s.reward < 0.6
+
+
+def test_equivalent_but_different_design_is_solved_and_quality_is_relative_to_the_reference():
+    shift_add = "module mulc45(input [7:0] x, output [13:0] y); assign y = (x << 5) + (x << 3) + (x << 2) + x; endmodule"
+    s = ev("mulc45", shift_add)
+    assert s.solved and s.metrics and s.ratios["luts"] is not None
+    assert s.stages["quality"].fraction > 0
+
+
+def test_latch_in_a_combinational_design_fails_synthesizable():
+    latch = "module popcount8(input [7:0] in, output reg [3:0] count); always @* if (in[0]) count = 4'd1; endmodule"
+    s = ev("popcount8", latch)
+    assert s.stages["synthesizable"].status == "fail" and "latch" in s.stages["synthesizable"].detail
+    assert s.stages["visible"].status == "not_run" and s.reward == pytest.approx(0.05)
+
+
+def test_interface_mismatch_scores_zero():
+    s = ev("add8", "module add8(input [7:0] a, input [7:0] b, output [8:0] sum); assign sum = a + b; endmodule")
+    assert s.stages["interface"].status == "fail" and s.reward == 0 and "cin" in s.stages["interface"].detail
+
+
+@pytest.mark.parametrize("snippet", ['initial $readmemh("answers.hex", mem);', '$fopen("x")', "`include \"ref.v\"", "initial $system(\"ls\");"])
+def test_forbidden_constructs_are_rejected_before_any_tool_runs(snippet):
+    s = ev("add8", ref("add8").replace("endmodule", snippet + "\nendmodule"))
+    assert s.stages["interface"].status == "fail" and s.reward == 0 and "forbidden" in s.stages["interface"].detail
+
+
+def test_reserved_module_names_and_missing_top_are_rejected():
+    assert ev("add8", ref("add8") + "\nmodule tb; endmodule").stages["interface"].status == "fail"
+    assert "no module named" in ev("add8", "module other(input a); endmodule").stages["interface"].detail
+
+
+def test_syntax_error_fails_compiles_with_the_tool_message():
+    s = ev("add8", "module add8(input [7:0] a, input [7:0] b, input cin, output [7:0] sum, output cout); assign sum = a + ; endmodule")
+    assert s.stages["compiles"].status == "fail" and s.reward == pytest.approx(0)
+
+
+def test_feedback_shows_failing_visible_vectors_but_never_heldout_vectors():
+    wrong = ref("popcount8").replace("count + in[i]", "count + (in[i] & ~in[0])")          # wrong whenever bit 0 is set
+    s = ev("popcount8", wrong)
+    assert s.mismatches and "failing visible vectors" in s.feedback
+    heldout_inputs = set(sim.vectors(problem.get("popcount8"), "heldout")["in"])
+    shown = {m.inputs["in"] for m in s.mismatches}
+    assert shown and not shown & heldout_inputs
+
+
+def test_sequential_near_miss_is_caught_and_correct_variant_is_solved():
+    good = "module gray4(input clk, input rst_n, input en, output [3:0] q); reg [3:0] n; always @(posedge clk) if (!rst_n) n <= 0; else if (en) n <= n + 4'd1; assign q = n ^ (n >> 1); endmodule"
+    assert ev("gray4", good).solved
+    bad = good.replace("else if (en) n <= n + 4'd1;", "else if (en) n <= (n == 4'd13) ? 4'd0 : n + 4'd1;")        # skips two states
+    s = ev("gray4", bad)
+    assert not s.solved and (s.stages["heldout"].fraction < 1.0 or s.stages["formal"].status == "fail")

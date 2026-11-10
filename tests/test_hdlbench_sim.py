@@ -123,9 +123,10 @@ def test_seq_references_match_independent_python_models(name):
 
 
 def test_visible_and_heldout_sets_are_different_and_exhaustive_when_small():
-    p = problem.get("popcount8")                                     # 8 input bits -> exhaustive, split by parity
+    p = problem.get("popcount8")                                     # 8 input bits -> exhaustive: random visible subset, the rest held out
     a, b = sim.vectors(p, "visible")["in"], sim.vectors(p, "heldout")["in"]
     assert sorted(a + b) == list(range(256)) and not set(a) & set(b)
+    assert len(a) == p.visible_vectors and len({v & 1 for v in a}) == 2 and len({v >> 7 for v in a}) == 2      # the visible subset is not confined to one half-space
     p = problem.get("add8")                                          # 17 bits -> random, different seeds, held-out has the directed corners
     va, vb = sim.vectors(p, "visible"), sim.vectors(p, "heldout")
     assert va["a"] != vb["a"][: len(va["a"])]
@@ -134,7 +135,7 @@ def test_visible_and_heldout_sets_are_different_and_exhaustive_when_small():
 
 def test_compare_x_semantics_and_failing_vector_report(tmp_path):
     p = problem.get("prienc8")
-    v = sim.vectors(p, "visible")
+    v = {"in": [0, 1, 2, 16, 17, 128, 255, 64]}                       # explicit vectors, including 16 and the reference's don't-care case (0)
     ref = sim.simulate(p, p.reference_files, v)
     # candidate that is correct but resolves the reference's don't-care idx (in == 0) to 0: still passes
     good = tmp_path / "good.v"
@@ -152,7 +153,7 @@ def test_compare_x_semantics_and_failing_vector_report(tmp_path):
     xs = tmp_path / "xs.v"
     xs.write_text("module prienc8(input [7:0] in, output [2:0] idx, output valid); assign valid = |in; assign idx = 3'bxxx; endmodule")
     ok, tot, bad = sim.compare(p, v, ref, sim.simulate(p, [xs], v))
-    assert ok < tot - 10
+    assert ok < tot
 
 
 def test_a_candidate_that_does_not_compile_raises_with_the_tool_message(tmp_path):

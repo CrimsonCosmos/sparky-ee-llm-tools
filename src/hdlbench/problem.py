@@ -24,7 +24,7 @@ class Problem:
     heldout_vectors: int = 512
     visible_seed: int = 1
     heldout_seed: int = 2
-    exhaustive_max_input_bits: int = 12         # combinational problems with at most this many input bits are tested exhaustively (split visible/held-out by index parity)
+    exhaustive_max_input_bits: int = 12         # combinational problems with at most this many input bits are tested exhaustively (a seeded random visible subset, everything else held out)
     reset_cycles: int = 3
     formal_depth: int = 40                      # bounded-proof depth for sequential designs when an unbounded proof is not found
     notes: str = ""
