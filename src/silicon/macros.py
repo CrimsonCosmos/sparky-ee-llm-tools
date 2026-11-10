@@ -9,7 +9,8 @@ from pathlib import Path
 from .flow import FlowResult
 from .spec import SiliconSpec
 
-_CORNER = re.compile(r"(?P<tt>tt|ss|ff)[_-]?(?P<temp>n?\d+C)[_-]?(?P<v>\d+[pv]\d+V?)", re.I)
+_CORNER = re.compile(r"(?P<tt>tt|ss|ff)[_-]?(?P<temp>n?\d+C)[_-]?(?P<v>\d+[pv]\d+V?)", re.I)      # e.g. tt_025C_1v80
+_CORNER_PVT = re.compile(r"(?P<tt>TT|SS|FF)_(?P<v>\d+p\d+)V_(?P<temp>n?\d+)C", re.I)               # e.g. TT_1p8V_25C (OpenRAM naming)
 
 
 @dataclass
@@ -55,18 +56,21 @@ def lef_power_pins(lef: Path) -> tuple[list[str], list[str]]:
     return power, ground
 
 
-def lef_power_pin_extent(lef: Path) -> tuple[float, float]:
-    """Smallest (width, height) of any power/ground pin RECT in the LEF: the parent's supply straps must be dense enough that one crosses every such pin."""
-    ws, hs, name, use = [], [], None, {}
+def lef_power_pin_extent(lef: Path) -> dict[str, float]:
+    """For each power/ground pin rectangle: a horizontal pin (wider than tall) is crossed by VERTICAL parent straps, so their pitch must be <= half its length; a vertical pin needs HORIZONTAL straps with
+    pitch <= half its length. Returns the binding length per direction: {"v": shortest horizontal-pin length, "h": shortest vertical-pin length} (a key is absent when no pin needs that direction)."""
+    out: dict[str, float] = {}
     text = lef.read_text()
     for blk in re.finditer(r"PIN\s+(\S+)(.*?)END\s+\1", text, re.S):
         if re.search(r"USE\s+(POWER|GROUND)", blk.group(2)):
             for r in re.finditer(r"RECT\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)", blk.group(2)):
                 x0, y0, x1, y1 = map(float, r.groups())
-                ws.append(x1 - x0); hs.append(y1 - y0)
-    if not ws:
+                w, h = x1 - x0, y1 - y0
+                key, length = ("v", w) if w >= h else ("h", h)
+                out[key] = min(out.get(key, length), length)
+    if not out:
         raise ValueError(f"no power pin geometry in {lef}")
-    return min(ws), min(hs)
+    return out
 
 
 def from_flow(result: FlowResult, name: str | None = None) -> MacroView:
@@ -100,14 +104,22 @@ def from_pdk(name: str, pdk_root: Path, pdk: str, library: str) -> MacroView:
         raise FileNotFoundError(f"macro {name}: LEF/GDS not found in {base}")
     lib: dict[str, list[Path]] = {}
     for f in pick("lib", ".lib"):
+        m = _CORNER_PVT.search(f.name)
+        if m:                                                       # normalise to the flow's corner naming: <proc>_<temp 3 digits>C_<V>v<frac>, e.g. tt_025C_1v80
+            volts = m.group("v").split("p")
+            frac = (volts[1] + "0")[:2]
+            lib[f"*_{m.group('tt').lower()}_{m.group('temp').zfill(3)}C_{volts[0]}v{frac}"] = [f]
+            continue
         m = _CORNER.search(f.name)
-        if m and m.group("tt").lower() == "tt" and "25C" in m.group("temp"):
-            lib["*_tt_025C_1v80"] = [f]                  # the corner the flow uses for its default analysis; others are listed only if present
-        elif m:
-            lib[f"*_{m.group('tt').lower()}_{m.group('temp')[:-1].zfill(3) + 'C'}_{m.group('v').lower().replace('p', 'v').rstrip('v')}"] = [f]
+        if m:
+            lib[f"*_{m.group(0).lower()}"] = [f]
     if not any(k.startswith("*_tt") for k in lib):
         raise FileNotFoundError(f"macro {name}: no TT Liberty file found in {base}/lib")
-    return MacroView(name, gds[:1], lef[:1], pick("verilog", ".v")[:1], lib, {}, pick("spice", ".spice")[:1], lef_size(lef[0]), f"PDK library {library}")
+    note = ""
+    if len(lib) == 1:                                       # one characterised corner only: the flow analyses several, so this single view is used for ALL of them (an approximation, stated in `source`)
+        lib = {"*": next(iter(lib.values()))}
+        note = "; only ONE Liberty corner exists, used for every corner (timing of the macro at other corners is NOT characterised)"
+    return MacroView(name, gds[:1], lef[:1], pick("verilog", ".v")[:1], lib, {}, pick("spice", ".spice")[:1], lef_size(lef[0]), f"PDK library {library}{note}")
 
 
 def with_macros(spec: SiliconSpec, placements: dict[str, tuple[MacroView, dict[str, tuple[float, float, str]]]], power_net: str, ground_net: str) -> SiliconSpec:
@@ -121,10 +133,62 @@ def with_macros(spec: SiliconSpec, placements: dict[str, tuple[MacroView, dict[s
         power, ground = lef_power_pins(m.lef[0])
         if not power or not ground:
             raise ValueError(f"macro {m.name}: no USE POWER/GROUND pins in its LEF")
-        conns += [f"{i} {power[0]} {ground[0]} {power_net} {ground_net}" for i in inst]
+        conns += [f"{i} {power_net} {ground_net} {power[0]} {ground[0]}" for i in inst]          # LibreLane order: instance, power NET, ground NET, power PIN, ground PIN
     extra["PDN_MACRO_CONNECTIONS"] = conns
-    # a parent strap must cross each macro supply pin: pitch <= half of the smallest pin extent (a derived geometric requirement, not a tuned value); user overrides in spec.extra win
-    ext = [lef_power_pin_extent(m.lef[0]) for m, _ in placements.values()]
-    extra.setdefault("PDN_HPITCH", float(int(min(h for _, h in ext) / 2)))
-    extra.setdefault("PDN_VPITCH", float(int(min(w for w, _ in ext) / 2)) if min(w for w, _ in ext) > 8 else extra.get("PDN_VPITCH", 153.6))
+    # a parent strap must cross each macro supply pin: pitch <= half of the pin length in that direction (a derived geometric requirement, not a tuned value); user overrides in spec.extra win
+    need = [lef_power_pin_extent(m.lef[0]) for m, _ in placements.values()]
+    for d, var in (("h", "PDN_HPITCH"), ("v", "PDN_VPITCH")):
+        lens = [n[d] for n in need if d in n]
+        if lens:
+            extra.setdefault(var, float(int(min(lens) / 2)))
     return dataclasses.replace(spec, extra=extra)
+
+
+def relax_max_transition(view: MacroView, max_transition_ns: float, outdir: Path) -> MacroView:
+    """Copy of a macro whose Liberty `max_transition` limits are raised to `max_transition_ns`. Needed when a macro's pin limit is tighter than any driver in the library can meet (OpenRAM's SRAM input pins state
+    0.04 ns; the flow's repair step then stops with RSZ-0090 'best achievable transition time is X'). The value is the caller's engineering decision (take it from that message); the relaxation is recorded in `source`
+    and the original Liberty is untouched. Timing sign-off that uses this macro is valid only as far as the relaxed limit is acceptable for the macro's real inputs."""
+    import dataclasses
+    outdir.mkdir(parents=True, exist_ok=True)
+    new_lib: dict[str, list[Path]] = {}
+    for k, files in view.lib.items():
+        out = []
+        for f in files:
+            text = re.sub(r"(max_transition\s*:\s*)[\d.]+", lambda m: f"{m.group(1)}{max_transition_ns:g}", f.read_text())
+            dst = outdir / f.name
+            dst.write_text(text)
+            out.append(dst)
+        new_lib[k] = out
+    return dataclasses.replace(view, lib=new_lib, source=view.source + f"; Liberty max_transition relaxed to {max_transition_ns:g} ns (see relax_max_transition)")
+
+
+def prune_gds_to_top(view: MacroView, outdir: Path) -> MacroView:
+    """Copy of a macro whose GDS keeps only the macro's top cell and what it references. Vendor GDS (e.g. OpenRAM's) often contains extra unreferenced top-level cells; the final merged layout then has several
+    top cells and KLayout's DRC/XOR refuse it ('multiple top cells'). Uses KLayout's Python API inside the silicon tool environment; the original file is untouched."""
+    import dataclasses
+    import subprocess
+
+    from . import toolchain
+    outdir.mkdir(parents=True, exist_ok=True)
+    code = ("import sys, klayout.db as kdb\nly = kdb.Layout(); ly.read(sys.argv[1]); keep = ly.cell(sys.argv[3])\n"
+            "if keep is None: sys.exit('no cell ' + sys.argv[3])\n"
+            "for c in [c for c in ly.top_cells() if c.cell_index() != keep.cell_index()]: c.prune_cell()\n"
+            "ly.write(sys.argv[2]); print(len(ly.top_cells()), ly.cells())\n")
+    out = []
+    for g in view.gds:
+        dst = outdir / g.name
+        r = subprocess.run([toolchain.python(), "-c", code, str(g), str(dst), view.name], capture_output=True, text=True, env=toolchain.env())
+        if r.returncode != 0 or not dst.is_file():
+            raise RuntimeError(f"GDS pruning failed: {(r.stderr or r.stdout).strip()[-300:]}")
+        out.append(dst)
+    return dataclasses.replace(view, gds=out, source=view.source + "; GDS pruned to its top cell")
+
+
+def openram_flow_extra() -> dict:
+    """LibreLane settings for a parent design that contains an OpenRAM-generated SRAM macro (as shipped in the PDK), found necessary by running the flow:
+      * Magic cannot read OpenRAM's GDS (unknown layers) and then emits many top cells, which breaks every later step that consumes Magic's output. Those steps are substituted out: Magic stream-out/LEF/DRC/
+        spice extraction, Netgen LVS, XOR, the flow's own KLayout DRC (it takes Magic's GDS) and the render.
+      * Consequence, stated plainly: for such a design the flow's own DRC and LVS do NOT run. Use `signoff.rerun_klayout_drc(result, gds=<final/klayout_gds file>)` on the KLayout-streamed GDS; LVS stays NOT RUN."""
+    skip = ["KLayout.Render", "Magic.StreamOut", "Magic.WriteLEF", "Magic.DRC", "Checker.MagicDRC", "Magic.SpiceExtraction", "Netgen.LVS", "Checker.LVS", "KLayout.XOR", "Checker.XOR",
+            "KLayout.DRC", "Checker.KLayoutDRC", "Odb.CheckDesignAntennaProperties"]
+    return {"meta": {"version": 3, "flow": "Classic", "substituting_steps": {s: None for s in skip}}}

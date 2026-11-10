@@ -72,14 +72,42 @@ def count_lyrdb_items(path: Path) -> int:
     return 0 if items is None else len(items.findall("item"))
 
 
+def _pdk_runset(result: FlowResult) -> str | None:
+    """The PDK's own KLayout DRC runset (libs.tech/klayout/drc/*_mr.drc) when the flow's configuration does not name one (e.g. DRC steps substituted out)."""
+    root, pdk = result.resolved.get("PDK_ROOT"), result.resolved.get("PDK")
+    if not (root and pdk):
+        return None
+    hits = sorted(Path(root).rglob(f"{pdk}/libs.tech/klayout/drc/{pdk}_mr.drc"))
+    return str(hits[0]) if hits else None
+
+
+def _pdk_drc_defines(result: FlowResult) -> dict | None:
+    """The rule-group switches the PDK's own flow configuration passes to its KLayout deck (libs.tech/openlane/config.tcl: `KLAYOUT_DRC_OPTIONS [dict create beol 1 feol 1 ...]`). Without them the sky130 deck runs with every
+    rule group OFF and reports 0 violations on anything - so when they cannot be read, the check is NOT RUN rather than guessed."""
+    root, pdk = result.resolved.get("PDK_ROOT"), result.resolved.get("PDK")
+    if not (root and pdk):
+        return None
+    for cfg in sorted(Path(root).rglob(f"{pdk}/libs.tech/openlane/config.tcl")):
+        m = re.search(r"KLAYOUT_DRC_OPTIONS\)\s*\[dict create ([^\]]+)\]", cfg.read_text())
+        if m:
+            toks = m.group(1).split()
+            return dict(zip(toks[0::2], toks[1::2]))
+    return None
+
+
 def rerun_klayout_drc(result: FlowResult, gds: Path | None = None) -> Verdict:
     runset = result.resolved.get("KLAYOUT_DRC_RUNSET")
+    fallback_defines = None
+    if not runset and gds is not None:
+        runset, fallback_defines = _pdk_runset(result), _pdk_drc_defines(result)
+        if runset and not fallback_defines:
+            return Verdict("drc.klayout", NOT_RUN, "rerun", "the PDK's KLayout rule-group switches could not be read (the deck would run with all rule groups off): NOT RUN")
     if not runset:
         return Verdict("drc.klayout", NOT_RUN, "rerun", "the PDK configuration names no KLayout DRC runset")
     gds = gds or result.artifacts["gds"]
     with tempfile.TemporaryDirectory(prefix="kldrc_") as td:
         report = Path(td) / "drc.lyrdb"
-        defines = [x for k, v in (result.resolved.get("KLAYOUT_DRC_DEFINES") or {}).items() for x in ("-rd", f"{k}={v}")]
+        defines = [x for k, v in (result.resolved.get("KLAYOUT_DRC_DEFINES") or fallback_defines or {}).items() for x in ("-rd", f"{k}={v}")]
         rc, text = _run([toolchain.which("klayout"), "-b", "-zz", "-r", runset, "-rd", f"input={gds}", "-rd", f"topcell={_top(result)}", "-rd", f"report={report}", *defines, "-rd", "threads=2"])
         if not report.is_file():
             return Verdict("drc.klayout", NOT_RUN, "rerun", f"KLayout produced no report (rc={rc}): {text.strip()[-200:]}")
