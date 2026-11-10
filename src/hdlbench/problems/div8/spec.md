@@ -1,0 +1,1 @@
+Write a combinational Verilog module `div8` with unsigned inputs `a[7:0]` (dividend) and `b[7:0]` (divisor) and outputs `q[7:0]`, `r[7:0]`: q = floor(a / b) and r = a mod b. When b is 0 the outputs are q = 8'hFF and r = a. Fewer LUT4s and fewer logic levels are better.
