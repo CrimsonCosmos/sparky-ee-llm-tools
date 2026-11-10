@@ -80,12 +80,18 @@ def _seq_wrapper(p: Problem) -> str:
             f"  gold g ({conn('g')});\n  gate c ({conn('c')});\n  always @* if (cyc >= {p.reset_cycles}) assert({cmp});\nendmodule\n")
 
 
+def BMC_ENGINE() -> str:
+    """SMT-based bounded check when a solver is installed (much stronger on arithmetic than ABC's bmc3), else ABC bmc3."""
+    return "smtbmc z3" if tools.which("z3") and tools.which("yosys-smtbmc") else "abc bmc3"
+
+
 def _seq(p: Problem, ref: list[Path], cand: list[Path], timeout: int) -> FormalResult:
     sby = tools.which("sby")
     if not sby:
         return FormalResult(UNKNOWN, "sby", "SymbiYosys (sby) not found: NOT RUN", 0.0)
     t0 = time.time()
-    for mode, engine, depth in (("prove", "abc pdr", None), ("bmc", "abc bmc3", p.formal_depth)):
+    plan = (("bmc", BMC_ENGINE(), p.formal_depth),) if p.formal_mode == "bounded" else (("prove", "abc pdr", None), ("bmc", BMC_ENGINE(), p.formal_depth))
+    for mode, engine, depth in plan:
         with tempfile.TemporaryDirectory(prefix="hb_sby_") as td:
             td = Path(td)
             (td / "formal_top.v").write_text(_seq_wrapper(p))
@@ -95,12 +101,12 @@ def _seq(p: Problem, ref: list[Path], cand: list[Path], timeout: int) -> FormalR
             rc, text = tools.run([sby, "-f", "eq.sby"], td, timeout)
         dt = time.time() - t0
         # the ABC engines can report FAIL without a trace file, which sby then flags as an error: the engine's own verdict line is authoritative
-        passed = "DONE (PASS" in text or re.search(r"engine_0 \(abc .*?\) returned pass", text)
-        failed = "DONE (FAIL" in text or re.search(r"engine_0 \(abc .*?\) returned FAIL", text)
+        passed = "DONE (PASS" in text or re.search(r"engine_0 \((?:abc|smtbmc) .*?\) returned pass", text)
+        failed = "DONE (FAIL" in text or re.search(r"engine_0 \((?:abc|smtbmc) .*?\) returned FAIL", text)
         if passed and not failed:
             if mode == "prove":
                 return FormalResult(EQUIVALENT, "sby abc pdr", "unbounded proof from the reset state", dt)
-            return FormalResult(BOUNDED, "sby abc bmc3", f"no difference within {depth} cycles after reset (NOT a proof)", dt)
+            return FormalResult(BOUNDED, f"sby {engine}", f"no difference within {depth} cycles after reset (NOT a proof)", dt)
         if failed:
             return FormalResult(DIFFERENT, f"sby {engine}", "outputs differ after reset (no trace kept; see the simulation feedback for the failing vectors)", dt)
     return FormalResult(UNKNOWN, "sby", f"no verdict: {text.strip()[-300:]}", time.time() - t0)

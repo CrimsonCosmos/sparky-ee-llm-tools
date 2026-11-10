@@ -1,6 +1,7 @@
 """Tool lookup and process running. Reuses the silicon toolchain lookup (Yosys, Icarus, Verilator, SymbiYosys); nextpnr comes from the optional YoWASP wheel. A missing tool is reported, never skipped silently."""
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -23,7 +24,9 @@ def nextpnr_ice40() -> str | None:
 
 def run(cmd: list[str], cwd: Path | str | None = None, timeout: int = 300, stdin: str = "") -> tuple[int, str]:
     try:
-        r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout, env=toolchain.env(), input=stdin)
+        env = toolchain.env()
+        env["PATH"] = env.get("PATH", "") + os.pathsep + str(Path(sys.executable).parent)      # tools installed next to this interpreter (z3, YoWASP wheels) stay reachable for sby/yosys
+        r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout, env=env, input=stdin)
     except subprocess.TimeoutExpired:
         return 124, f"timeout after {timeout} s: {' '.join(cmd[:3])}"
     return r.returncode, r.stdout + r.stderr

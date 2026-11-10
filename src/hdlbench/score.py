@@ -108,7 +108,7 @@ def evaluate(p: Problem, text: str, cfg: RewardConfig | None = None, ref_metrics
         s.reward = round(sum(w[n] * st[n].fraction for n in w), 6) if st["interface"].status == "pass" else 0.0          # no credit for a design with the wrong interface
         tests_ok = st["visible"].fraction == 1.0 and st["heldout"].fraction == 1.0
         s.solved = st["formal"].status == "pass" and tests_ok
-        s.solved_by = "formal proof" if s.solved else ""
+        s.solved_by = ("formal proof" if "BOUNDED check" not in " ".join(s.warnings) else f"bounded check ({p.formal_depth} cycles) + tests, NOT an unbounded proof") if s.solved else ""
         if p.formal_mode == "off" and tests_ok and st["interface"].status == "pass":
             s.solved, s.solved_by = True, "tests only (NOT proved)"
         s.feedback = feedback or _feedback(p, s)
@@ -176,8 +176,11 @@ def evaluate(p: Problem, text: str, cfg: RewardConfig | None = None, ref_metrics
             st["formal"] = StageResult("formal", "not_run", "skipped: simulation already shows a difference")
         else:
             r = formal.check(p, [f], cfg.formal_timeout)
-            frac = 1.0 if r.proved else (cfg.bounded_fraction if r.status == formal.BOUNDED else 0.0)
-            st["formal"] = StageResult("formal", "pass" if r.proved else ("partial" if r.status == formal.BOUNDED else ("fail" if r.status == formal.DIFFERENT else "not_run")), f"{r.method}: {r.detail}", frac)
+            bounded_ok = p.formal_mode == "bounded" and r.status == formal.BOUNDED
+            frac = 1.0 if (r.proved or bounded_ok) else (cfg.bounded_fraction if r.status == formal.BOUNDED else 0.0)
+            st["formal"] = StageResult("formal", "pass" if (r.proved or bounded_ok) else ("partial" if r.status == formal.BOUNDED else ("fail" if r.status == formal.DIFFERENT else "not_run")), f"{r.method}: {r.detail}", frac)
+            if bounded_ok:
+                s.warnings.append(f"formal result is a BOUNDED check ({p.formal_depth} cycles after reset), not an unbounded proof; judged together with held-out simulation incl. mid-run resets")
             s.counterexample = r.counterexample
         # 6. quality (only for proved designs)
         if st["formal"].status == "pass" and do_metrics and (p.formal_mode == "off" or st["formal"].detail):

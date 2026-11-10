@@ -1,0 +1,1 @@
+{"top": "mul8s", "kind": "seq", "clock": "clk", "reset": "rst_n", "visible_vectors": 400, "heldout_vectors": 300000, "formal_mode": "bounded", "formal_depth": 12, "midrun_reset_prob": 0.01, "reset_cycles": 1}
