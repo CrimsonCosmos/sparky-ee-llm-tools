@@ -93,3 +93,12 @@ def test_seq_fsm_implementation_of_the_pattern_detector_is_proved_and_a_differen
     wrong = SEQDET_FSM.replace("2: s <= d ? 3 : 0;", "2: s <= d ? 3 : 2;")                           # the 1,0,0,1,0,1,1 style history now matches differently
     r = formal.check(p, w(tmp_path, wrong))
     assert r.status == formal.DIFFERENT, r.detail
+
+
+def test_regression_unknown_default_in_the_reference_must_not_hide_a_real_difference(tmp_path):
+    """Found by mutation testing: without 4-state modelling the SAT proof called a prienc8 with one wrong casez branch 'equivalent' because the reference has an X default."""
+    p = problem.get("prienc8")
+    ref = (p.dir / "reference.v").read_text()
+    assert formal.check(p, w(tmp_path, ref.replace("8'b01??????: idx = 6;", "8'b01??????: idx = 7;"))).status == formal.DIFFERENT
+    allx = "module prienc8(input [7:0] in, output [2:0] idx, output valid); assign valid = |in; assign idx = 3'bxxx; endmodule"
+    assert formal.check(p, w(tmp_path, allx)).status == formal.DIFFERENT                    # an all-X candidate is not 'equal to anything'

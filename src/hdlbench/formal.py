@@ -42,7 +42,7 @@ def _comb(p: Problem, ref: list[Path], cand: list[Path], timeout: int) -> Formal
     yosys = tools.which("yosys")
     script = (_load_script(p, ref, cand, False) + "design -copy-from gold_d -as gold gold\ndesign -copy-from gate_d -as gate gate\n"
               "miter -equiv -flatten -make_outputs -ignore_gold_x gold gate miter\nhierarchy -top miter\n"
-              f"sat -verify -prove trigger 0 -show-inputs -show-outputs -timeout {timeout} miter\n")
+              f"sat -verify -enable_undef -set-def-inputs -prove trigger 0 -show-inputs -show-outputs -timeout {timeout} miter\n")
     with tempfile.TemporaryDirectory(prefix="hb_eq_") as td:
         (Path(td) / "eq.ys").write_text(script)
         rc, text = tools.run([yosys, "-q", "-s", "eq.ys", "-l", "log.txt"], td, timeout + 60)
