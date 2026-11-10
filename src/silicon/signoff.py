@@ -126,6 +126,24 @@ def rerun_lvs(result: FlowResult, layout_spice: Path | None = None, netlist: Pat
     return Verdict("lvs.netgen", NOT_RUN, "rerun", f"Netgen gave no verdict (rc={rc}): {text.strip()[-200:]}")
 
 
+def _macro_views(result: FlowResult, corner: str | None) -> tuple[list[str], list[tuple[str, str]]]:
+    """Macro views for the STA re-run, the way the flow itself uses them: a macro with a netlist AND parasitics is analysed hierarchically (its netlist is read and its SPEF applied under each instance); a macro with only a
+    Liberty view is a timing black box. Returns (extra files to read: Liberty or netlists, (instance, SPEF) pairs)."""
+    import fnmatch
+    files, spefs = [], []
+    tag = (corner or "nom_").split("_")[0]
+    for name, m in (result.resolved.get("MACROS") or {}).items():
+        sp = next((v for pat, v in (m.get("spef") or {}).items() if pat.startswith(tag)), None)
+        if m.get("nl") and sp:
+            files += [("netlist", str(x)) for x in m["nl"][:1]]
+            spefs += [(inst, str(sp[0])) for inst in (m.get("instances") or {})]
+        else:
+            lib = next((v for pat, v in (m.get("lib") or {}).items() if pat == "*" or (corner and fnmatch.fnmatch(corner, pat))), None)
+            if lib:
+                files.append(("lib", str(lib[0])))
+    return files, spefs
+
+
 def rerun_sta(result: FlowResult, corner: str | None = None, sdc: Path | None = None) -> list[Verdict]:
     """OpenSTA on the final netlist with the flow's SDC and extracted parasitics at one corner: worst setup and hold slack."""
     corner = corner or result.resolved.get("DEFAULT_CORNER")
@@ -139,8 +157,11 @@ def rerun_sta(result: FlowResult, corner: str | None = None, sdc: Path | None = 
                 Verdict("timing.hold", NOT_RUN, "rerun", "same")]
     with tempfile.TemporaryDirectory(prefix="sta_") as td:
         script = Path(td) / "sta.tcl"
-        script.write_text(f"read_liberty {lib}\nread_verilog {result.artifacts['netlist']}\nlink_design {top}\nread_sdc {sdc}\nread_spef {spef}\n"
-                          "report_worst_slack -max -digits 4\nreport_worst_slack -min -digits 4\nexit\n")
+        macro_files, macro_spefs = _macro_views(result, corner)
+        script.write_text(f"read_liberty {lib}\n" + "".join(f"read_liberty {f}\n" for k, f in macro_files if k == "lib") + f"read_verilog {result.artifacts['netlist']}\n" + "".join(f"read_verilog {f}\n" for k, f in macro_files if k == "netlist")
+                          + f"link_design {top}\nread_sdc {sdc}\nread_spef {spef}\n"
+                          + "".join(f"read_spef -path {inst} {sp}\n" for inst, sp in macro_spefs)
+                          + "report_worst_slack -max -digits 4\nreport_worst_slack -min -digits 4\nexit\n")
         rc, text = _run([toolchain.which("sta"), "-no_splash", "-exit", str(script)])
     out = []
     for kind, word in (("SETUP", "max"), ("HOLD", "min")):
