@@ -106,10 +106,31 @@ def _seq(p: Problem, ref: list[Path], cand: list[Path], timeout: int) -> FormalR
     return FormalResult(UNKNOWN, "sby", f"no verdict: {text.strip()[-300:]}", time.time() - t0)
 
 
+def _exhaustive(p: Problem, candidate: list[Path], sim_timeout: int = 30) -> FormalResult:
+    """Complete proof by simulating EVERY input (only for combinational problems with few input bits). Used when the SAT proof gives no verdict; the SAT path is validated against it in the tests."""
+    from . import sim
+    t0 = time.time()
+    n = sum(p.data_inputs.values())
+    cols, shift = {}, 0
+    for name, w in p.data_inputs.items():
+        cols[name] = [(v >> shift) & ((1 << w) - 1) for v in range(1 << n)]
+        shift += w
+    ref, got = sim.simulate(p, p.reference_files, cols, sim_timeout), sim.simulate(p, candidate, cols, sim_timeout)
+    ok, tot, bad = sim.compare(p, cols, ref, got, limit=1)
+    if ok == tot:
+        return FormalResult(EQUIVALENT, "exhaustive simulation", f"all {tot} input combinations equal the reference (X in the reference = don't care)", time.time() - t0)
+    return FormalResult(DIFFERENT, "exhaustive simulation", "a counterexample exists", time.time() - t0, {k: str(v) for k, v in bad[0].inputs.items()})
+
+
 def check(p: Problem, candidate: list[Path], timeout: int = 120) -> FormalResult:
     if not tools.which("yosys"):
         return FormalResult(UNKNOWN, "yosys", "yosys not found: NOT RUN", 0.0)
     try:
-        return _comb(p, p.reference_files, candidate, timeout) if p.kind == "comb" else _seq(p, p.reference_files, candidate, timeout)
+        r = _comb(p, p.reference_files, candidate, timeout) if p.kind == "comb" else _seq(p, p.reference_files, candidate, timeout)
+        if r.status == UNKNOWN and p.kind == "comb" and sum(p.data_inputs.values()) <= p.exhaustive_max_input_bits:
+            e = _exhaustive(p, candidate)                                # SAT gave no verdict (timeout/odd netlist): enumerate all inputs instead
+            e.detail += f" (SAT proof had no verdict: {r.detail[:80]})"
+            return e
+        return r
     except Exception as e:
         return FormalResult(UNKNOWN, "formal", f"{type(e).__name__}: {e}", 0.0)

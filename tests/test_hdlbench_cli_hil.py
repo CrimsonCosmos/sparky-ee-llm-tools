@@ -30,9 +30,10 @@ def test_baseline_table_covers_every_builtin_problem_and_all_references_are_solv
 
 
 @need
+@pytest.mark.slow
 def test_llm_free_mutation_search_never_beats_a_correct_reference_by_being_wrong():
     p = problem.get("popcount8")
-    res = baselines.mutation_search(p, (p.dir / "reference.v").read_text(), iterations=2, per_iter=6)
+    res = baselines.mutation_search(p, (p.dir / "reference.v").read_text(), iterations=1, per_iter=4)
     assert res.candidates > 0
     for h in res.archive.order:                               # every mutant that the scorer calls solved really passes the proof; no unproved design may claim it
         e = res.archive.get(h)

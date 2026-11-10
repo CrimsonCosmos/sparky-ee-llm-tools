@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import tempfile
 from dataclasses import dataclass, field
+from functools import cached_property
 from pathlib import Path
 
 from . import tools
@@ -31,7 +32,7 @@ class Problem:
     notes: str = ""
     extra: dict = field(default_factory=dict)
 
-    @property
+    @cached_property
     def ports(self) -> dict[str, tuple[str, int]]:
         return ports_of(self.reference_files, self.top)
 

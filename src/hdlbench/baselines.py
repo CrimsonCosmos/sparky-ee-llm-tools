@@ -39,7 +39,7 @@ def markdown(rows: list[Row]) -> str:
     return "\n".join(out)
 
 
-def mutation_search(p: problem.Problem, start_text: str, iterations: int = 5, per_iter: int = 8, seed: int = 0):
+def mutation_search(p: problem.Problem, start_text: str, iterations: int = 5, per_iter: int = 8, seed: int = 0, formal_timeout: int = 20):
     """LLM-free baseline: the loop with a proposer that only applies random single-edit mutations to `start_text`."""
     prop = proposers.ScriptedProposer(mutate.mutation_proposer(start_text, seed))
-    return loop.run(p, prop, loop.Budget(max_iterations=iterations, max_candidates=iterations * per_iter), loop.LoopConfig(candidates_per_iteration=per_iter, optimize=False))
+    return loop.run(p, prop, loop.Budget(max_iterations=iterations, max_candidates=iterations * per_iter), loop.LoopConfig(candidates_per_iteration=per_iter, optimize=False, reward=RewardConfig(formal_timeout=formal_timeout)))

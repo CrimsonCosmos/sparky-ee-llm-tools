@@ -31,6 +31,8 @@ class RewardConfig:
     max_chars: int = 200_000
     lut_warn_case_items: int = 64               # heuristic WARNING threshold for table-style designs (formal remains the judge)
     formal_timeout: int = 120
+    sim_timeout: int = 30                       # per simulation run; a design that loops forever fails 'visible' instead of stalling the scorer
+    tool_timeout: int = 60                      # Yosys elaboration / Icarus compile
 
 
 @dataclass
@@ -80,9 +82,9 @@ def scan(p: Problem, text: str, cfg: RewardConfig) -> list[str]:
     return bad
 
 
-def _yosys_check(p: Problem, f: Path, td: Path) -> tuple[bool, str]:
+def _yosys_check(p: Problem, f: Path, td: Path, timeout: int = 60) -> tuple[bool, str]:
     y = tools.which("yosys")
-    rc, text = tools.run([y, "-p", f"read_verilog -sv {f}; hierarchy -top {p.top}; flatten; proc; tee -o st.txt stat; check -assert", "-l", "y.log"], td, 120)
+    rc, text = tools.run([y, "-p", f"read_verilog -sv {f}; hierarchy -top {p.top}; flatten; proc; tee -o st.txt stat; check -assert", "-l", "y.log"], td, timeout)
     log = (td / "y.log").read_text() if (td / "y.log").is_file() else text
     if rc != 0:
         why = re.findall(r"(?:ERROR|Warning): (.*)", log)
@@ -123,7 +125,7 @@ def evaluate(p: Problem, text: str, cfg: RewardConfig | None = None, ref_metrics
         # 1. compiles
         try:
             iv = tools.which("iverilog")
-            rc, out = tools.run([iv, "-g2012", "-o", str(td / "c.vvp"), str(f)], td, 60)
+            rc, out = tools.run([iv, "-g2012", "-o", str(td / "c.vvp"), str(f)], td, cfg.tool_timeout)
             if rc != 0:
                 raise RuntimeError(out.strip()[-400:])
         except RuntimeError as e:
@@ -143,7 +145,7 @@ def evaluate(p: Problem, text: str, cfg: RewardConfig | None = None, ref_metrics
             return done()
         st["interface"] = StageResult("interface", "pass", "ports match the reference exactly", 1.0)
         # 2. synthesizable
-        ok, why = _yosys_check(p, f, td)
+        ok, why = _yosys_check(p, f, td, cfg.tool_timeout)
         if not ok:
             st["synthesizable"] = StageResult("synthesizable", "fail", why)
             return done()
@@ -154,8 +156,8 @@ def evaluate(p: Problem, text: str, cfg: RewardConfig | None = None, ref_metrics
         try:
             for which in ("visible", "heldout"):
                 vec = sim.vectors(p, which)
-                ref_rows = sim.simulate(p, p.reference_files, vec)
-                rows = sim.simulate(p, [f], vec)
+                ref_rows = sim.simulate(p, p.reference_files, vec, cfg.sim_timeout)
+                rows = sim.simulate(p, [f], vec, cfg.sim_timeout)
                 ok_n, tot, mism = sim.compare(p, vec, ref_rows, rows)
                 frac = ok_n / tot if tot else 0.0
                 st[which] = StageResult(which, "pass" if ok_n == tot else ("partial" if ok_n else "fail"), f"{ok_n}/{tot} {which} vectors match the reference", frac)
