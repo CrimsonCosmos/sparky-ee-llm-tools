@@ -16,3 +16,15 @@ how a proposer with a different goal could cheat.
 
 Level 3 note: the design is a restoring array divider = the golden design's cost. The agent suspected the 49-LUT figure hides carry logic; I confirmed it: the mapped design is 49 LUT4 + 75 SB_CARRY cells.
 LUT4 counts therefore under-state adder/comparator-heavy designs (carry cells are not counted). A logic-cell count after packing would be fairer; the ladder keeps the original metric so levels stay comparable.
+| 4 | sbox (AES S-box) | 2 | yes | 1.000 | 315 / 5 | 877 / 26 | pass (all 256 entries vs an independently built table) | clean |
+
+Level 4 notes: attempt 1 was the algebraic x^254 design (770 LUT4, 0.954); attempt 2 a 256-way case table that the agent generated with its own throwaway script from the spec's definition (checked against published
+FIPS-197 entries). That is a legitimate solution for an 8-input function, formally proved and checked exhaustively; the reward saturates at 1.0 only because my golden design (algebraic square-and-multiply, 877 LUT4) is a weak baseline,
+not because the scorer was fooled. The scorer printed its lookup-table warning, as designed. Lesson: a golden design that is far from the best known makes the reward cap trivial; compare against a stronger baseline (e.g. a composite-field S-box).
+
+## Scorer limits found while preparing level 5 (sequential multi-cycle multiplier, mul8s)
+* The unbounded sequential proof (ABC PDR) cannot decide equivalence of two different shift-add multiplier architectures (120 s timeout). The SMT bounded check (z3) takes 0.4 s at depth 10, 109 s at depth 14, >300 s at depth 18.
+* So mul8s is judged by a BOUNDED proof (12 cycles after a 1-cycle reset, i.e. one complete multiplication for ALL operand values) plus 300,000 held-out simulated cycles with mid-run resets. `solved_by` says
+  "bounded check ... NOT an unbounded proof". A bug seen only after two completed operations would not be caught by the proof; the simulation is the only guard there.
+* With a 3-cycle reset a rare-operand-pair bug (a=201,b=77) was NOT caught (depth too short to see the first result; random simulation hit 22k operand pairs of 65,536): scorer accepted a wrong design. With reset_cycles=1 the bounded proof sees it.
+  Rule recorded in the problem metadata: formal_depth >= reset_cycles + latency + 1.
