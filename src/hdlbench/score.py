@@ -155,12 +155,15 @@ def evaluate(p: Problem, text: str, cfg: RewardConfig | None = None, ref_metrics
         # 3/4. tests
         try:
             for which in ("visible", "heldout"):
-                vec = sim.vectors(p, which)
-                ref_rows = sim.simulate(p, p.reference_files, vec, cfg.sim_timeout)
-                rows = sim.simulate(p, [f], vec, cfg.sim_timeout)
-                ok_n, tot, mism = sim.compare(p, vec, ref_rows, rows)
+                if p.testbench:
+                    ok_n, tot, mism = sim.compare_tb(p, which, [f], timeout=cfg.sim_timeout)
+                else:
+                    vec = sim.vectors(p, which)
+                    ref_rows = sim.simulate(p, p.reference_files, vec, cfg.sim_timeout)
+                    rows = sim.simulate(p, [f], vec, cfg.sim_timeout)
+                    ok_n, tot, mism = sim.compare(p, vec, ref_rows, rows)
                 frac = ok_n / tot if tot else 0.0
-                st[which] = StageResult(which, "pass" if ok_n == tot else ("partial" if ok_n else "fail"), f"{ok_n}/{tot} {which} vectors match the reference", frac)
+                st[which] = StageResult(which, "pass" if ok_n == tot else ("partial" if ok_n else "fail"), f"{ok_n}/{tot} {which} {'trace cycles' if p.testbench else 'vectors'} match the reference", frac)
                 if which == "visible":
                     s.mismatches = mism
         except RuntimeError as e:

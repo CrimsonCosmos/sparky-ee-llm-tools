@@ -38,3 +38,7 @@ not because the scorer was fooled. The scorer printed its lookup-table warning, 
 Observations: both were solved on the first scored attempt, from the spec alone (the transcript shows only the spec file and the scorer being used). The model's design process is not visible to me beyond that.
 Scorer bugs found while building these levels (all mine): a false latch failure on a dead loop variable (fixed); special values (inf/NaN encodings) missing from the cross-product held-out set let an "inf + -inf" bug through (fixed with `directed_values`);
 my own rv32i reference had a Verilog signedness bug (arithmetic shift inside ?: became logical), caught only because an independent Python model disagreed.
+
+## Level 7 (verified)
+| 7 | rv32i_exec (RV32I execute/writeback/address unit, illegal+misaligned rules, don't-cares) | 2 | yes | 0.965 | 1145 LUT4 / depth 23 | 1783 / 18 | simulation only (400k structured held-out vectors) | pass: 3 fresh stimulus seeds x 350k + 300k fully random words + all opcode x funct3 x funct7 patterns vs my Python RV32I model | clean |
+My own rv32i reference first disagreed with the independent model (signedness bug); fixed before the level was given. The scorer rejects 8 single-rule mutants of the reference.

@@ -21,7 +21,7 @@ class Mismatch:
     outputs: list[str]
 
     def text(self) -> str:
-        ins = ", ".join(f"{k}={v:#x}" for k, v in self.inputs.items())
+        ins = ", ".join(f"{k}={v:#x}" if isinstance(v, int) and k != "program" else f"{k}={v}" for k, v in self.inputs.items())
         bad = ", ".join(f"{o}: expected {self.expected[o]} got {self.got[o]}" for o in self.outputs)
         return f"cycle {self.cycle}: inputs {ins} -> {bad}"
 
@@ -144,3 +144,51 @@ def compare(p: Problem, vec: dict[str, list[int]], ref_rows: list[list[str]], go
         else:
             ok += 1
     return ok, len(ref_rows), bad
+
+
+# ---- problem-specific testbench (processor cores etc.): programs in, per-cycle trace out --------------------------------------------------
+def simulate_tb(p: Problem, files: list[Path], words: list[int], timeout: int = 120) -> list[list[str]]:
+    iverilog, vvp = tools.which("iverilog"), tools.which("vvp")
+    if not (iverilog and vvp):
+        raise RuntimeError("iverilog/vvp not found")
+    with tempfile.TemporaryDirectory(prefix="hb_tb_") as td:
+        td = Path(td)
+        (td / "tb.v").write_text((p.dir / p.testbench).read_text())
+        (td / "prog.hex").write_text("\n".join(f"{w & 0xFFFFFFFF:08x}" for w in words) + "\n")
+        rc, text = tools.run([iverilog, "-g2012", f"-DCYCLES={p.cycles}", "-o", str(td / "s.vvp"), str(td / "tb.v"), *map(str, files)], td, timeout)
+        if rc != 0:
+            raise RuntimeError(f"iverilog: {text.strip()[-500:]}")
+        rc, text = tools.run([vvp, str(td / "s.vvp")], td, timeout)
+        out = td / "out.txt"
+        if rc != 0 or not out.is_file():
+            raise RuntimeError(f"simulation failed (rc={rc}): {text.strip()[-300:]}")
+        rows = [ln.split() for ln in out.read_text().splitlines() if ln.strip()]
+    if len(rows) != p.cycles:
+        raise RuntimeError(f"testbench produced {len(rows)} trace lines for {p.cycles} cycles")
+    return rows
+
+
+def programs(p: Problem, which_set: str) -> list[list[int]]:
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(f"hb_prog_{p.name}", p.dir / "stimulus.py")
+    mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
+    seed = p.visible_seed if which_set == "visible" else p.heldout_seed
+    return mod.programs(which_set, seed, p.visible_vectors if which_set == "visible" else p.heldout_vectors)
+
+
+def compare_tb(p: Problem, which_set: str, cand_files: list[Path], limit: int = 5, timeout: int = 120):
+    """(matching cycles, total cycles, first mismatches) over all programs of a set; reference X = don't care."""
+    ok = tot = 0
+    bad: list[Mismatch] = []
+    for k, words in enumerate(programs(p, which_set)):
+        ref = simulate_tb(p, p.reference_files, words, timeout)
+        got = simulate_tb(p, cand_files, words, timeout)
+        for c, (r, g) in enumerate(zip(ref, got)):
+            tot += 1
+            badf = [f for f, a, b in zip(p.trace_fields, r, g) if _bad(a, b)]
+            if badf:
+                if len(bad) < limit:
+                    bad.append(Mismatch(c, {"program": k}, dict(zip(p.trace_fields, r)), dict(zip(p.trace_fields, g)), badf))
+            else:
+                ok += 1
+    return ok, tot, bad

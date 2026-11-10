@@ -1,0 +1,1 @@
+{"top":"rv32i_core","kind":"seq","clock":"clk","reset":"rst_n","formal_mode":"off","reference_files":["reference.v","exec_ref.v"],"testbench":"tb.v","trace_fields":["imem_addr","dmem_addr","dmem_wdata","dmem_wstrb"],"visible_vectors":2,"heldout_vectors":60,"cycles":1500}

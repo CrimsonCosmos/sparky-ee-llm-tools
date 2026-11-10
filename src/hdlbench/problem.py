@@ -27,6 +27,9 @@ class Problem:
     heldout_seed: int = 2
     exhaustive_max_input_bits: int = 12         # combinational problems with at most this many input bits are tested exhaustively (a seeded random visible subset, everything else held out)
     reset_cycles: int = 3
+    testbench: str = ""                         # problem-specific testbench template (uses `CYCLES, reads prog.hex, prints one line of trace_fields per cycle); programs come from stimulus.py
+    trace_fields: list = field(default_factory=list)
+    cycles: int = 1000
     directed_values: list = field(default_factory=list)   # extra special values (from the spec) added to every data input's boundary set for the cross product (e.g. IEEE infinity/NaN encodings)
     cross_corners: bool = False                 # held-out set also contains the CROSS PRODUCT of boundary values (0, all-ones, one-hot, 2^k-1, 2^k, 2^k+1) of every data input (for numeric problems)
     midrun_reset_prob: float = 0.05             # held-out sequential vectors re-assert reset in this fraction of cycles (a design must obey reset at any time, not only at power-up)

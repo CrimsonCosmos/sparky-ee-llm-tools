@@ -291,3 +291,72 @@ def test_rv32i_scorer_rejects_single_rule_mutations_of_the_reference():
     for name, m in muts.items():
         assert m != ref, name
         assert not score.evaluate(p, m, do_metrics=False).solved, f"scorer accepted: {name}"
+
+
+# ---- rv32i_core: instruction-set simulator in Python (built on the independent per-instruction model above) as the referee for the reference core ----
+def iss_trace(words, cycles, p):
+    """Trace lines [imem_addr, dmem_addr, dmem_wdata, dmem_wstrb] as the testbench samples them (None = don't care). The first instruction executes before sampling starts (reset released one edge earlier)."""
+    imem = list(words) + [0] * (256 - len(words))
+    dmem = [0] * 1024
+    x = [0] * 32
+    pc = 0
+    trace = []
+    for step in range(cycles + 1):
+        instr = imem[(pc >> 2) & 255]
+        rs1, rs2 = x[(instr >> 15) & 31], x[(instr >> 20) & 31]
+        # the memory word the load would see (the model only needs it for loads)
+        op = instr & 0x7F
+        addr = (rs1 + (_sx(instr >> 20, 12) if op == 0x03 else 0)) & M
+        rdata = dmem[(addr >> 2) & 1023]
+        o = rv32i_model(instr, pc, rs1, rs2, rdata)
+        if step > 0:
+            trace.append([pc, o["mem_addr"], o["mem_wdata"], o["mem_wstrb"]])
+        reset_edge = step == 701                                           # the testbench pulses reset at the edge after sample index 700 (sample index = step - 1)
+        if o["rd_we"] and ((instr >> 7) & 31) != 0 and not reset_edge:
+            x[(instr >> 7) & 31] = o["rd_val"]
+        if o["mem_wstrb"]:
+            a, d, s = o["mem_addr"], o["mem_wdata"], o["mem_wstrb"]
+            w = dmem[(a >> 2) & 1023]
+            for lane in range(4):
+                if s >> lane & 1:
+                    w = (w & ~(0xFF << 8 * lane)) | (d & (0xFF << 8 * lane))
+            dmem[(a >> 2) & 1023] = w
+        pc = o["next_pc"]
+        if reset_edge:
+            pc, x = 0, [0] * 32
+    return trace
+
+
+def test_rv32i_core_reference_trace_equals_python_iss():
+    p = problem.get("rv32i_core")
+    for which in ("visible", "heldout"):
+        for k, words in enumerate(sim.programs(p, which)[:6]):
+            rows = sim.simulate_tb(p, p.reference_files, words)
+            exp = iss_trace(words, p.cycles, p)
+            assert len(rows) == len(exp)
+            for c, (r, e) in enumerate(zip(rows, exp)):
+                assert int(r[0], 16) == e[0], (which, k, c, "imem_addr", r, e)
+                assert int(r[3], 16) == e[3], (which, k, c, "wstrb", r, e)
+                if e[1] is not None:
+                    assert int(r[1], 16) == e[1], (which, k, c, "dmem_addr", r, e)
+                if e[3] != 0:
+                    assert int(r[2], 16) == e[2], (which, k, c, "wdata", r, e)
+
+
+@pytest.mark.slow
+def test_rv32i_core_scorer_rejects_wrong_cores_and_accepts_the_reference():
+    from hdlbench import score
+    p = problem.get("rv32i_core")
+    ref, ex = (p.dir / "reference.v").read_text(), (p.dir / "exec_ref.v").read_text()
+    assert score.evaluate(p, ref + "\n" + ex, do_metrics=False).solved
+    muts = {
+        "x0 writable": ref.replace("if (we && rd != 0)", "if (we)").replace("(ra == 0) ? 32'd0 : x[ra]", "x[ra]").replace("(rb == 0) ? 32'd0 : x[rb]", "x[rb]"),
+        "reset keeps registers": ref.replace("for (k = 0; k < 32; k = k + 1) x[k] <= 0;", ""),
+        "pc not reset to 0": ref.replace("pc <= 0;", "pc <= 4;"),
+        "illegal stalls pc": ref.replace("pc <= npc;", "pc <= (ill ? pc : npc);"),
+        "store strobe delayed": ref.replace("assign imem_addr = pc, dmem_addr = ma, dmem_wdata = mw, dmem_wstrb = ms;", "reg [3:0] msd; always @(posedge clk) msd <= ms; assign imem_addr = pc, dmem_addr = ma, dmem_wdata = mw, dmem_wstrb = msd;"),
+        "mid-run reset ignored for pc": ref.replace("if (!rst_n) begin pc <= 0; for", "if (!rst_n) begin if (pc == 0) pc <= 0; for"),
+    }
+    for name, m in muts.items():
+        assert m != ref, name
+        assert not score.evaluate(p, m + "\n" + ex, do_metrics=False).solved, f"scorer accepted: {name}"
