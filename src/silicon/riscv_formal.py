@@ -77,6 +77,9 @@ def run(workdir: str | Path, core: str, core_files: dict[str, Path], checks: lis
     if gen.returncode != 0:
         return RvfResult(not_run=f"genchecks failed: {(gen.stderr or gen.stdout).strip()[-300:]}")
     out = RvfResult()
+    if solver in ("bmc3", "btormc"):                       # genchecks emits `skip N` (smtbmc-only); the ABC/btor engines reject it, so the (optimisation-only) option is dropped
+        for f in (cdir / "checks").glob("*.sby"):
+            f.write_text(re.sub(r"(?m)^skip\s+\d+\s*\n", "", f.read_text()))
     for sby_file in sorted((cdir / "checks").glob("*.sby")):
         t0 = time.time()
         try:
