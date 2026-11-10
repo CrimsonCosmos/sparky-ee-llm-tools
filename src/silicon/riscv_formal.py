@@ -65,7 +65,7 @@ def prepare(workdir: Path, root: Path, core: str, core_files: dict[str, Path], c
         cfg = cfg.replace("PICORV32_TESTBUG_NONE", f"PICORV32_TESTBUG_{bug}")
     cfg = re.sub(r"(\[options\]\n)", r"\1solver " + solver + "\n", cfg, count=1)
     for key, vals in (depth or {}).items():                         # e.g. {"reg": "10 18"} replaces that line of the [depth] section (a smaller bound: a shorter, weaker proof - say so when reporting)
-        cfg, n = re.subn(rf"(?m)^{re.escape(key)}(\s+)[\d ]+$", f"{key}\\1{vals}", cfg)
+        cfg, n = re.subn(rf"(?m)^{re.escape(key)}(\s+)[\d ]+$", f"{key}\\g<1>{vals}", cfg)
         if not n:
             raise ValueError(f"no depth line '{key}' in the core's checks.cfg")
     cfg += "\n[filter-checks]\n" + "".join(f"+ {c}$\n" for c in checks) + "- .*\n"

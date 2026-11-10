@@ -28,3 +28,14 @@ def test_clean_core_passes_and_testbug_variants_fail(tmp_path):
     for bug in ("003", "005"):                                   # bugs 001/002 are not detected by these two checks (recorded in docs/GPU_HOLES_PLAN.md)
         r = run(tmp_path, bug)
         assert "fail" in r.by_name().values(), (bug, r.not_run or r.by_name())
+
+
+def test_register_file_bugs_are_caught_by_the_reg_check_at_a_shallow_bound(tmp_path):
+    """Testbugs 001 (write to the wrong register) and 002 (write a corrupted value) damage the register FILE, which the per-instruction checks do not see; riscv-formal's `reg` check does.
+    Bound reduced to `reg 6 12` (default `15 25` timed out for the clean core after 25 minutes): a shorter, weaker proof."""
+    kw = dict(checks=["reg_ch0"], root=ROOT, solver="bmc3", timeout=900, depth={"reg": "6 12"})
+    clean = rf.run(tmp_path / "clean", "picorv32", {"picorv32.v": Path(PICO)}, **kw)
+    assert clean.all_pass, clean.not_run or clean.by_name()
+    for bug in ("001", "002"):
+        r = rf.run(tmp_path / bug, "picorv32", {"picorv32.v": Path(PICO)}, bug=bug, **kw)
+        assert r.by_name() == {"reg_ch0": "fail"}, (bug, r.not_run or r.by_name())
