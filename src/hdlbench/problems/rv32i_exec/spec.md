@@ -1,0 +1,12 @@
+Write a combinational Verilog module `rv32i_exec`: the execute/memory-address/writeback logic of a single-cycle RV32I (base integer, no M/A/C/F/CSR, no FENCE/ECALL/EBREAK) core. Inputs: `instr[31:0]` (instruction word), `pc[31:0]`, `rs1[31:0]` and `rs2[31:0]` (register file values already read for the fields rs1/rs2 of `instr`), `mem_rdata[31:0]` (the aligned little-endian 32-bit memory word at address `mem_addr & ~3`, valid for loads).
+Outputs:
+ * `rd_we` (1 if the instruction writes a register; set regardless of whether rd is x0), `rd_val[31:0]` (value to write);
+ * `next_pc[31:0]`;
+ * `mem_addr[31:0]` (byte address, loads and stores), `mem_wdata[31:0]`, `mem_wstrb[3:0]` (byte enables; 0 = no store);
+ * `illegal` (1 for any encoding that is not a valid RV32I instruction as listed below, including compressed (instr[1:0] != 2'b11), M-extension (funct7 = 0000001) and reserved funct3/funct7 values), `misaligned` (1 for a load/store whose address is not aligned to its size: LH/LHU/SH need addr[0]=0, LW/SW need addr[1:0]=0).
+Instructions (standard RV32I encodings): LUI, AUIPC; JAL (rd = pc+4, next_pc = pc + J-imm); JALR (funct3 must be 000; rd = pc+4, next_pc = (rs1 + I-imm) with bit 0 cleared); BEQ BNE BLT BGE BLTU BGEU (funct3 010/011 are illegal; taken -> next_pc = pc + B-imm); LB LH LW LBU LHU (funct3 011/110/111 illegal; rd_val = the addressed byte/halfword of mem_rdata, sign- or zero-extended; the byte lane is addr[1:0]); SB SH SW (other funct3 illegal; mem_wdata = rs2 << (8*addr[1:0]), mem_wstrb = (1/3/15) << addr[1:0]);
+ADDI SLTI SLTIU XORI ORI ANDI SLLI SRLI SRAI (shift immediates: shamt = instr[24:20], funct7 must be 0000000, or 0100000 for SRAI only, otherwise illegal); ADD SUB SLL SLT SLTU XOR SRL SRA OR AND (funct7 0100000 only for SUB and SRA, else 0000000, otherwise illegal).
+Arithmetic is mod 2^32; SLT/BLT/BGE/SRA are signed, SLTU/BLTU/BGEU unsigned. Defaults for every instruction: next_pc = pc + 4, rd_we = 0, mem_wstrb = 0, illegal = 0, misaligned = 0.
+For an illegal instruction: rd_we = 0, mem_wstrb = 0, misaligned = 0, next_pc = pc + 4, and rd_val, mem_addr, mem_wdata are don't-care. For a misaligned load/store: rd_we = 0, mem_wstrb = 0, misaligned = 1, next_pc = pc + 4, mem_addr is the computed address, rd_val and mem_wdata don't-care.
+In all other cases the following are don't-care (any value is accepted): rd_val when rd_we = 0; mem_addr when the instruction is not a load or store; mem_wdata when mem_wstrb = 0.
+Fewer LUT4s and fewer logic levels are better. The design must be exactly right for every input.

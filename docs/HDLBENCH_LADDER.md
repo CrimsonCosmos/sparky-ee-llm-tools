@@ -28,3 +28,13 @@ not because the scorer was fooled. The scorer printed its lookup-table warning, 
   "bounded check ... NOT an unbounded proof". A bug seen only after two completed operations would not be caught by the proof; the simulation is the only guard there.
 * With a 3-cycle reset a rare-operand-pair bug (a=201,b=77) was NOT caught (depth too short to see the first result; random simulation hit 22k operand pairs of 65,536): scorer accepted a wrong design. With reset_cycles=1 the bounded proof sees it.
   Rule recorded in the problem metadata: formal_depth >= reset_cycles + latency + 1.
+
+## Levels 5-6 (verified)
+| level | problem | attempts | solved | best reward | cost | golden | judged by | independent check | audit |
+|---|---|---|---|---|---|---|---|---|---|
+| 5 | mul8s (sequential 8-cycle multiplier, exact timing) | 1 | yes | 0.986 | 28 LUT4 / 45 FF / depth 6 | 80 LUT4 / 53 FF (approx. from ratios) | bounded SMT check (12 cycles) + 300k-cycle simulation with mid-run resets, NOT an unbounded proof | pass: my own cycle-accurate model written from the spec; all 65,536 operand pairs + 400k random cycles with 1% resets + reset at every phase | clean |
+| 6 | fp16add (IEEE-754 half-precision adder, RNE, subnormals, NaN/inf rules) | 1 | yes | 0.988 | 335 LUT4 / depth 33 | 812 / 42 | simulation only (304k held-out vectors incl. special-value cross product; formal infeasible) | pass: 1.5M random pairs + every special value x all 65,536 patterns (both orders) + 1.5M pairs over all exponent pairs, against Python's correctly rounded double->binary16 | clean |
+
+Observations: both were solved on the first scored attempt, from the spec alone (the transcript shows only the spec file and the scorer being used). The model's design process is not visible to me beyond that.
+Scorer bugs found while building these levels (all mine): a false latch failure on a dead loop variable (fixed); special values (inf/NaN encodings) missing from the cross-product held-out set let an "inf + -inf" bug through (fixed with `directed_values`);
+my own rv32i reference had a Verilog signedness bug (arithmetic shift inside ?: became logical), caught only because an independent Python model disagreed.

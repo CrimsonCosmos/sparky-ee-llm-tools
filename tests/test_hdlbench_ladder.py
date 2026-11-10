@@ -169,3 +169,125 @@ def test_fp16add_scorer_rejects_each_single_rule_mutation_of_the_reference():
     for name, m in muts.items():
         assert m != ref, name
         assert not score.evaluate(p, m, do_metrics=False).solved, f"scorer accepted: {name}"
+
+
+# ---- rv32i_exec: an independent Python model written from the spec text (table-driven, different structure from the reference) ----
+M = 0xFFFFFFFF
+
+
+def _sx(v, bits):
+    return v - (1 << bits) if v >> (bits - 1) else v
+
+
+def rv32i_model(instr, pc, rs1, rs2, rdata):
+    """Returns dict of outputs; None = don't-care."""
+    o = dict(rd_we=0, rd_val=None, next_pc=(pc + 4) & M, mem_addr=None, mem_wdata=None, mem_wstrb=0, illegal=0, misaligned=0)
+    op, f3, f7 = instr & 0x7F, (instr >> 12) & 7, instr >> 25
+    immI = _sx(instr >> 20, 12) & M
+    immS = _sx(((instr >> 25) << 5) | ((instr >> 7) & 0x1F), 12) & M
+    immB = _sx(((instr >> 31) << 12) | (((instr >> 7) & 1) << 11) | (((instr >> 25) & 0x3F) << 5) | (((instr >> 8) & 0xF) << 1), 13) & M
+    immU = instr & 0xFFFFF000
+    immJ = _sx(((instr >> 31) << 20) | (((instr >> 12) & 0xFF) << 12) | (((instr >> 20) & 1) << 11) | (((instr >> 21) & 0x3FF) << 1), 21) & M
+    s1, s2 = _sx(rs1, 32), _sx(rs2, 32)
+
+    def bad():
+        return dict(rd_we=0, rd_val=None, next_pc=(pc + 4) & M, mem_addr=None, mem_wdata=None, mem_wstrb=0, illegal=1, misaligned=0)
+    if op & 3 != 3:
+        return bad()
+    if op == 0x37:
+        o.update(rd_we=1, rd_val=immU)
+    elif op == 0x17:
+        o.update(rd_we=1, rd_val=(pc + immU) & M)
+    elif op == 0x6F:
+        o.update(rd_we=1, rd_val=(pc + 4) & M, next_pc=(pc + immJ) & M)
+    elif op == 0x67:
+        if f3 != 0:
+            return bad()
+        o.update(rd_we=1, rd_val=(pc + 4) & M, next_pc=((rs1 + immI) & M) & ~1)
+    elif op == 0x63:
+        t = {0: rs1 == rs2, 1: rs1 != rs2, 4: s1 < s2, 5: s1 >= s2, 6: rs1 < rs2, 7: rs1 >= rs2}.get(f3)
+        if t is None:
+            return bad()
+        if t:
+            o["next_pc"] = (pc + immB) & M
+    elif op == 0x03:
+        if f3 not in (0, 1, 2, 4, 5):
+            return bad()
+        a = (rs1 + immI) & M
+        o["mem_addr"] = a
+        size = {0: 1, 4: 1, 1: 2, 5: 2, 2: 4}[f3]
+        if a % size:
+            o["misaligned"] = 1
+        else:
+            word = rdata >> (8 * (a & 3))
+            val = {0: _sx(word & 0xFF, 8), 4: word & 0xFF, 1: _sx(word & 0xFFFF, 16), 5: word & 0xFFFF, 2: rdata}[f3] & M
+            o.update(rd_we=1, rd_val=val)
+    elif op == 0x23:
+        if f3 not in (0, 1, 2):
+            return bad()
+        a = (rs1 + immS) & M
+        o["mem_addr"] = a
+        size = {0: 1, 1: 2, 2: 4}[f3]
+        if a % size:
+            o["misaligned"] = 1
+        else:
+            o.update(mem_wstrb=(((1 << size) - 1) << (a & 3)) & 0xF, mem_wdata=(rs2 << (8 * (a & 3))) & M)
+    elif op == 0x13:
+        sh = (instr >> 20) & 31
+        if f3 == 1 and f7 != 0 or f3 == 5 and f7 not in (0, 0x20):
+            return bad()
+        v = {0: rs1 + immI, 2: int(s1 < _sx(immI, 32)), 3: int(rs1 < immI), 4: rs1 ^ immI, 6: rs1 | immI, 7: rs1 & immI, 1: rs1 << sh, 5: (s1 >> sh) if f7 == 0x20 else (rs1 >> sh)}[f3]
+        o.update(rd_we=1, rd_val=v & M)
+    elif op == 0x33:
+        if not (f7 == 0 or (f7 == 0x20 and f3 in (0, 5))):
+            return bad()
+        sh = rs2 & 31
+        v = {0: (rs1 - rs2) if f7 == 0x20 else (rs1 + rs2), 1: rs1 << sh, 2: int(s1 < s2), 3: int(rs1 < rs2), 4: rs1 ^ rs2, 5: (s1 >> sh) if f7 == 0x20 else (rs1 >> sh), 6: rs1 | rs2, 7: rs1 & rs2}[f3]
+        o.update(rd_we=1, rd_val=v & M)
+    else:
+        return bad()
+    return o
+
+
+def test_rv32i_reference_matches_independent_model():
+    import importlib.util
+    p = problem.get("rv32i_exec")
+    cols = sim.vectors(p, "heldout")
+    n = 60000
+    cols = {k: v[:n] for k, v in cols.items()}
+    rows = sim.simulate(p, p.reference_files, cols)
+    outs = p.outputs
+    bad = []
+    for i, r in enumerate(rows):
+        got = dict(zip(outs, r))
+        exp = rv32i_model(cols["instr"][i], cols["pc"][i], cols["rs1"][i], cols["rs2"][i], cols["mem_rdata"][i])
+        for k, e in exp.items():
+            if e is None:
+                continue
+            if "x" in got[k].lower() or int(got[k], 16) != e:
+                bad.append((i, k, got[k], hex(e)))
+        if len(bad) > 5:
+            break
+    assert not bad, bad
+    # the don't-care outputs of the reference really are X (so the scorer will not over-constrain a proposer)
+    assert any("x" in dict(zip(outs, r))["rd_val"].lower() for r in rows)
+
+
+@pytest.mark.slow
+def test_rv32i_scorer_rejects_single_rule_mutations_of_the_reference():
+    from hdlbench import score
+    p = problem.get("rv32i_exec")
+    ref = (p.dir / "reference.v").read_text()
+    muts = {
+        "jalr keeps bit 0": ref.replace("(rs1 + immI) & 32'hFFFFFFFE", "(rs1 + immI)"),
+        "BLT unsigned": ref.replace("3'b100: taken = lt_s;", "3'b100: taken = lt_u;"),
+        "SRA becomes SRL": ref.replace("? sra_r :", "? (rs1 >> rs2[4:0]) :"),
+        "LH misaligned allowed": ref.replace("3'b001: if (addr[0]) begin misaligned = 1; rd_val = 32'bx; end else begin rd_we = 1; rd_val = {{16{h[15]}}, h[15:0]}; end", "3'b001: begin rd_we = 1; rd_val = {{16{h[15]}}, h[15:0]}; end"),
+        "M extension accepted as ADD": ref.replace("if (f7 != 7'b0000000 && !(f7 == 7'b0100000 && (f3 == 3'b000 || f3 == 3'b101))) illegal = 1;", "if (f7 != 7'b0000001 && f7 != 7'b0000000 && !(f7 == 7'b0100000 && (f3 == 3'b000 || f3 == 3'b101))) illegal = 1;"),
+        "SB strobe not shifted": ref.replace("3'b000: begin mem_wstrb = 4'b0001 << addr[1:0]; end", "3'b000: begin mem_wstrb = 4'b0001; end"),
+        "SLTIU signed compare": ref.replace("3'b011: rd_val = {31'b0, rs1 < immI};", "3'b011: rd_val = {31'b0, s1 < $signed(immI)};"),
+        "rd_we for x0 suppressed": ref.replace("5'b01101: begin rd_we = 1;", "5'b01101: begin rd_we = (instr[11:7] != 0);"),
+    }
+    for name, m in muts.items():
+        assert m != ref, name
+        assert not score.evaluate(p, m, do_metrics=False).solved, f"scorer accepted: {name}"

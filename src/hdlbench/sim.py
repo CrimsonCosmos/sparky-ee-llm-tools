@@ -36,6 +36,14 @@ def vectors(p: Problem, which_set: str) -> dict[str, list[int]]:
     ins = p.data_inputs
     seed = p.visible_seed if which_set == "visible" else p.heldout_seed
     n = p.visible_vectors if which_set == "visible" else p.heldout_vectors
+    hook = p.dir / "stimulus.py"
+    if hook.is_file() and p.kind == "comb":                                 # problem-specific structured stimulus (e.g. valid instruction words); part of the problem definition
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(f"hb_stim_{p.name}", hook)
+        mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
+        cols = mod.vectors(which_set, seed, n)
+        assert set(cols) == set(ins), f"stimulus.py must return columns for exactly {sorted(ins)}"
+        return cols
     rng = random.Random(seed)
     total = sum(ins.values())
     if p.kind == "comb" and total <= p.exhaustive_max_input_bits:
