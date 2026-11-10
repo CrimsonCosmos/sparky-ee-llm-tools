@@ -51,7 +51,7 @@ def find_root(root: str | Path | None = None) -> Path | None:
     return None
 
 
-def prepare(workdir: Path, root: Path, core: str, core_files: dict[str, Path], checks: list[str], bug: str | None = None, solver: str = "z3") -> Path:
+def prepare(workdir: Path, root: Path, core: str, core_files: dict[str, Path], checks: list[str], bug: str | None = None, solver: str = "z3", depth: dict[str, str] | None = None) -> Path:
     """Copy the checkout to `workdir`, add the core's source files, and write a configuration that keeps only `checks` (regexes matched from the start of the check name). Returns the core directory."""
     tree = workdir / "rvf"
     if tree.exists():
@@ -64,12 +64,16 @@ def prepare(workdir: Path, root: Path, core: str, core_files: dict[str, Path], c
     if bug:
         cfg = cfg.replace("PICORV32_TESTBUG_NONE", f"PICORV32_TESTBUG_{bug}")
     cfg = re.sub(r"(\[options\]\n)", r"\1solver " + solver + "\n", cfg, count=1)
+    for key, vals in (depth or {}).items():                         # e.g. {"reg": "10 18"} replaces that line of the [depth] section (a smaller bound: a shorter, weaker proof - say so when reporting)
+        cfg, n = re.subn(rf"(?m)^{re.escape(key)}(\s+)[\d ]+$", f"{key}\\1{vals}", cfg)
+        if not n:
+            raise ValueError(f"no depth line '{key}' in the core's checks.cfg")
     cfg += "\n[filter-checks]\n" + "".join(f"+ {c}$\n" for c in checks) + "- .*\n"
     (cdir / "checks.cfg").write_text(cfg)
     return cdir
 
 
-def run(workdir: str | Path, core: str, core_files: dict[str, Path], checks: list[str], root: str | Path | None = None, bug: str | None = None, solver: str = "z3", timeout: int = 900) -> RvfResult:
+def run(workdir: str | Path, core: str, core_files: dict[str, Path], checks: list[str], root: str | Path | None = None, bug: str | None = None, solver: str = "z3", timeout: int = 900, depth: dict[str, str] | None = None) -> RvfResult:
     r = find_root(root)
     if r is None:
         return RvfResult(not_run="no riscv-formal checkout (set RISCV_FORMAL or pass root; https://github.com/YosysHQ/riscv-formal)")
@@ -80,7 +84,7 @@ def run(workdir: str | Path, core: str, core_files: dict[str, Path], checks: lis
         return RvfResult(not_run=f"need sby and the SMT solver '{solver}' (pip install z3-solver)")
     workdir = Path(workdir)
     workdir.mkdir(parents=True, exist_ok=True)
-    cdir = prepare(workdir, r, core, core_files, checks, bug, solver)
+    cdir = prepare(workdir, r, core, core_files, checks, bug, solver, depth)
     gen = subprocess.run([sys.executable, "-I", "../../checks/genchecks.py"], cwd=cdir, capture_output=True, text=True, env=env)
     if gen.returncode != 0:
         return RvfResult(not_run=f"genchecks failed: {(gen.stderr or gen.stdout).strip()[-300:]}")
