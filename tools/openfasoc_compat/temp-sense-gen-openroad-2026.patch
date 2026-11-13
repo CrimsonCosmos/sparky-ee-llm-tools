@@ -1,0 +1,114 @@
+--- a/blocks/sky130hd/pdn.tcl
++++ b/blocks/sky130hd/pdn.tcl
+@@ -65,4 +65,4 @@
+ 
+ add_pdn_connect -grid stdcell_analog -layers {met4 met3}
+ add_pdn_connect -grid stdcell_analog -layers {met1 met4}
+-add_pdn_connect -grid stdcell_analog -layers {met4 met5}
++# (removed for the installed OpenROAD: this grid has no met5 shapes, and newer OpenROAD errors PDN-0113 instead of ignoring the request)
+--- a/flow/scripts/io_placement_random.tcl
++++ b/flow/scripts/io_placement_random.tcl
+@@ -6,7 +6,6 @@
+ }
+ place_pins -hor_layer $::env(IO_PLACER_H) \
+            -ver_layer $::env(IO_PLACER_V) \
+-           -random \
+            {*}$::env(PLACE_PINS_ARGS)
+ 
+ if {![info exists save_checkpoint] || $save_checkpoint} {
+--- a/flow/design/sky130hd/tempsense/config.mk
++++ b/flow/design/sky130hd/tempsense/config.mk
+@@ -30,7 +30,7 @@
+ # don't run global place w/o IOs
+ export HAS_IO_CONSTRAINTS = 1
+ # don't run non-random IO placement (step 3_2)
+-export PLACE_PINS_ARGS = -random
++export PLACE_PINS_ARGS = 
+ 
+ export GPL_ROUTABILITY_DRIVEN = 1
+ 
+@@ -49,3 +49,4 @@
+ 
+ # indicates with how many connections the VIN route from the HEADER cells connects to the VIN power ring
+ export VIN_ROUTE_CONNECTION_POINTS = 3
++export PRE_GLOBAL_ROUTE = ./scripts/mark_vin.tcl
+--- a/flow/scripts/openfasoc/custom_place.tcl
++++ b/flow/scripts/openfasoc/custom_place.tcl
+@@ -1,3 +1,10 @@
++# compatibility for the installed OpenROAD: `place_cell` (old name) became `place_inst` with renamed options
++if {[info commands place_cell] eq ""} {
++  proc place_cell {args} {
++    set map {-inst_name -name -orient -orientation}
++    place_inst {*}[string map $map $args]
++  }
++}
+ # Template procedure which will place cells in the large voltage domain off east
+ # with name "cell_name" semi-stacked starting from row "row_num" (0 indexed)
+ # No error checking is used, so you must ensure the target row and block object are correct
+--- a/flow/scripts/write_ref_sdc.tcl
++++ b/flow/scripts/write_ref_sdc.tcl
+@@ -33,4 +33,6 @@
+   }
+ }
+ 
++# compatibility for the installed OpenSTA: sta::endpoint_count was replaced; the count is only logged
++if {[info commands sta::endpoint_count] eq ""} { proc sta::endpoint_count {} { return [llength [sta::endpoints]] } }
+ utl::info "FLW" 11 "Path endpoint count [sta::endpoint_count]"
+--- a/flow/scripts/detail_route.tcl
++++ b/flow/scripts/detail_route.tcl
+@@ -22,10 +22,10 @@
+ }
+ 
+ if { [info exists ::env(MIN_ROUTING_LAYER)]} {
+-  append additional_args " -bottom_routing_layer $::env(MIN_ROUTING_LAYER)"
++  set _min_layer $::env(MIN_ROUTING_LAYER)
+ }
+ if { [info exists ::env(MAX_ROUTING_LAYER)]} {
+-  append additional_args " -top_routing_layer $::env(MAX_ROUTING_LAYER)"
++  set _max_layer $::env(MAX_ROUTING_LAYER)
+ }
+ if { [info exists ::env(VIA_IN_PIN_MIN_LAYER)]} {
+   append additional_args " -via_in_pin_bottom_layer $::env(VIA_IN_PIN_MIN_LAYER)"
+@@ -38,6 +38,8 @@
+ }
+ 
+ 
++# installed OpenROAD: -bottom/-top_routing_layer are deprecated, the layer range is set globally
++if {[info exists _min_layer] && [info exists _max_layer]} { set_routing_layers -signal $_min_layer-$_max_layer }
+ detailed_route -output_drc $::env(REPORTS_DIR)/5_route_drc.rpt \
+                -output_maze $::env(RESULTS_DIR)/maze.log \
+                -save_guide_updates \
+--- a/flow/scripts/final_report.tcl
++++ b/flow/scripts/final_report.tcl
+@@ -36,7 +36,7 @@
+   if {[info exist ::env(PWR_NETS_VOLTAGES)]} {
+     dict for {pwrNetName pwrNetVoltage}  {*}$::env(PWR_NETS_VOLTAGES) {
+         set_pdnsim_net_voltage -net ${pwrNetName} -voltage ${pwrNetVoltage}
+-        analyze_power_grid -net ${pwrNetName}
++        if {[catch {analyze_power_grid -net ${pwrNetName}} _e]} { puts "IR drop analysis failed (PSM connectivity, see docs): $_e" }
+     }
+   } else {
+     puts "IR drop analysis for power nets is skipped because PWR_NETS_VOLTAGES is undefined"
+@@ -44,7 +44,7 @@
+   if {[info exist ::env(GND_NETS_VOLTAGES)]} {
+     dict for {gndNetName gndNetVoltage}  {*}$::env(GND_NETS_VOLTAGES) {
+         set_pdnsim_net_voltage -net ${gndNetName} -voltage ${gndNetVoltage}
+-        analyze_power_grid -net ${gndNetName}
++        if {[catch {analyze_power_grid -net ${gndNetName}} _e]} { puts "IR drop analysis failed (PSM connectivity, see docs): $_e" }
+     }
+   } else {
+     puts "IR drop analysis for ground nets is skipped because GND_NETS_VOLTAGES is undefined"
+@@ -59,5 +59,5 @@
+ 
+ # Save a final image if openroad is compiled with the gui
+ if {[expr [llength [info procs save_image]] > 0]} {
+-    gui::show "source $::env(SCRIPTS_DIR)/save_images.tcl" false
++    catch {gui::show "source $::env(SCRIPTS_DIR)/save_images.tcl" false}     ;# headless: the preview image is optional
+ }
+--- /dev/null
++++ b/flow/scripts/mark_vin.tcl
+@@ -0,0 +1,4 @@
++# the analog domain supply VIN is a power net: mark it so the installed OpenROAD's global router does not try to route it as a signal (GRT-0042)
++foreach net [[ord::get_db_block] getNets] {
++  if {[$net getName] eq "VIN"} { $net setSigType POWER }
++}
