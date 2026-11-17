@@ -77,6 +77,7 @@ def softmax(x: np.ndarray) -> np.ndarray:
 
 
 class Llama:
+    group_attn = False        # set True to map the query heads of a GQA group onto one attention GEMM
     def __init__(self, model_dir: str | Path):
         d = Path(model_dir)
         self.cfg = Config.load(d / "config.json")
@@ -131,11 +132,21 @@ class Llama:
             S = K.shape[0]
             mask = (np.arange(S)[None, :] > (pos[:, None]))                # key index > query position -> masked
             out = np.zeros((T, c.heads, c.head_dim), np.float32)
-            for hh in range(c.heads):
-                g = hh // rep
-                sc = self.attn_qk(q[:, hh], K[:, g]) / np.sqrt(c.head_dim)
-                sc = np.where(mask, -1e30, sc)
-                out[:, hh] = self.attn_pv(softmax(sc).astype(np.float32), V[:, g])
+            if self.group_attn:                                           # GQA: the `rep` query heads sharing one KV head become extra ROWS of a single GEMM (K / V stream once, not rep times)
+                for g in range(c.kv_heads):
+                    hs = list(range(g * rep, (g + 1) * rep))
+                    qg = np.concatenate([q[:, h] for h in hs], axis=0)          # [rep*T, hd]
+                    sc = self.attn_qk(qg, K[:, g]) / np.sqrt(c.head_dim)
+                    sc = np.where(np.tile(mask, (rep, 1)), -1e30, sc)
+                    o = self.attn_pv(softmax(sc).astype(np.float32), V[:, g])   # [rep*T, hd]
+                    for i, h in enumerate(hs):
+                        out[:, h] = o[i * T:(i + 1) * T]
+            else:
+                for hh in range(c.heads):
+                    g = hh // rep
+                    sc = self.attn_qk(q[:, hh], K[:, g]) / np.sqrt(c.head_dim)
+                    sc = np.where(mask, -1e30, sc)
+                    out[:, hh] = self.attn_pv(softmax(sc).astype(np.float32), V[:, g])
             x = x + self.linear(out.reshape(T, c.hidden), p + "self_attn.o_proj.weight")
             h = rmsnorm(x, self.w[p + "post_attention_layernorm.weight"], c.eps)
             g = self.linear(h, p + "mlp.gate_proj.weight")
