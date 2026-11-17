@@ -88,10 +88,11 @@ def build_harness(version: str, n: int, mmax: int, ktmax: int, workdir: Path) ->
 class Sim:
     """Persistent simulator process; `gemm(x, w)` computes x[M,K] @ w[K,N] exactly as the RTL does (M chunked to MMAX) and accumulates cycle statistics."""
 
-    def __init__(self, exe: Path, mmax: int, bw: tuple[int, int] = (1, 1), lat: int = 0):
+    def __init__(self, exe: Path, mmax: int, bw: tuple[int, int] = (1, 1), lat: int = 0, n: int = 0):
         self.p = subprocess.Popen([str(exe)], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
-        self.mmax, self.bw, self.lat = mmax, bw, lat
+        self.mmax, self.bw, self.lat, self.n = mmax, bw, lat, n
         self.cycles = 0
+        self.abuf_cycles = 0                                    # host activation-buffer fill (one entry per cycle, NOT overlapped with compute): reported separately
         self.macs = 0
         self.calls: list[tuple[int, int, int, int]] = []        # (m, k, n, cycles)
 
@@ -108,6 +109,7 @@ class Sim:
             cyc = int(np.frombuffer(self.p.stdout.read(8), np.int64)[0])
             out[m0:m0 + mm] = np.frombuffer(self.p.stdout.read(4 * mm * n), np.int32).reshape(mm, n)
             self.cycles += cyc
+            self.abuf_cycles += mm * (-(-k // self.n)) if getattr(self, 'n', None) else 0
             self.macs += mm * k * n
             self.calls.append((mm, k, n, cyc))
         return out

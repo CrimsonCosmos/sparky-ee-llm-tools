@@ -13,7 +13,7 @@ tk = llm.tokenizer(D)
 test = np.array(tk.encode(open("/home/user/data/wikitext2/test.txt").read()[:max(60000, ntok * 30)]).ids)[:ntok]
 wsm = dict(np.load(Path(D) / "smooth_a0.5.npz"))
 exe = rtl.build_harness(version, 16, 64, 96, Path(f"/home/user/data/tpu_build/{version}_n16"))
-sim = rtl.Sim(exe, 64)
+sim = rtl.Sim(exe, 64, n=16)
 bad = [0, 0]
 
 

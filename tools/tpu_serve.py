@@ -17,7 +17,7 @@ tk = llm.tokenizer(D)
 wsm = dict(np.load(Path(D) / "smooth_a0.5.npz"))
 wd = Path(f"/home/user/data/tpu_build/{a.version}_n{a.n}")
 exe = rtl.build_harness(a.version, a.n, 64, 96, wd) if a.cores == 1 else rtl.build_multi(a.version, a.n, 64, 96, a.cores, Path(f"{wd}_k{a.cores}"))
-sim = rtl.Sim(exe, 64)
+sim = rtl.Sim(exe, 64, n=a.n)
 chk = [0, 0]
 
 
@@ -35,17 +35,17 @@ t0 = time.time()
 nxt = []
 for b in range(B):
     nxt.append(int(np.argmax(m.forward(ids[b], caches[b], 0)[-1])))
-pre_cycles = sim.cycles
+pre_cycles = sim.cycles; pre_abuf = sim.abuf_cycles
 gen = [[t] for t in nxt]
 for step in range(a.new - 1):
     lg = m.forward_batch(np.array([g[-1] for g in gen]), caches, [len(ids[b]) + step for b in range(B)])
     for b in range(B):
         gen[b].append(int(np.argmax(lg[b])))
-dec_cycles = sim.cycles - pre_cycles
+dec_cycles = sim.cycles - pre_cycles; dec_abuf = sim.abuf_cycles - pre_abuf
 sim.close()
 f = a.clock_mhz * 1e6
 res = {"version": a.version, "N": a.n, "cores": a.cores, "sequences": B, "new_tokens_each": a.new, "gemms_checked": chk[0], "gemms_mismatching": chk[1],
-       "prefill_cycles": pre_cycles, "decode_cycles": dec_cycles, "decode_cycles_per_generated_token": dec_cycles / (B * (a.new - 1)),
+       "prefill_cycles": pre_cycles, "decode_cycles": dec_cycles, "decode_abuf_fill_cycles_not_overlapped": dec_abuf, "decode_cycles_per_generated_token_incl_abuf_fill": (dec_cycles + dec_abuf) / (B * (a.new - 1)), "decode_cycles_per_generated_token": dec_cycles / (B * (a.new - 1)),
        "assumed_clock_mhz": a.clock_mhz, "decode_tokens_per_s_at_assumed_clock": B * (a.new - 1) / (dec_cycles / f), "wall_s": time.time() - t0,
        "outputs": [{"prompt": p, "completion": tk.decode(g)} for p, g in zip(prompts, gen)]}
 for o in res["outputs"]:

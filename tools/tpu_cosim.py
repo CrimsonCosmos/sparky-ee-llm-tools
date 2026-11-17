@@ -29,7 +29,7 @@ else:
 
 wd = Path(f"/home/user/data/tpu_build/{a.version}_n{a.n}")
 exe = rtl.build_harness(a.version, a.n, a.mmax, a.ktmax, wd) if a.cores == 1 else rtl.build_multi(a.version, a.n, a.mmax, a.ktmax, a.cores, Path(f"{wd}_k{a.cores}"))
-sim = rtl.Sim(exe, a.mmax, (bwn, bwd), a.lat)
+sim = rtl.Sim(exe, a.mmax, (bwn, bwd), a.lat, n=a.n)
 checked = {"gemms": 0, "mismatch": 0}
 
 
@@ -62,7 +62,7 @@ nxt = []
 for b in range(B):
     lg = qm.forward(seqs[b], caches[b], 0)
     nxt.append(int(np.argmax(lg[-1])))
-pre_calls = len(sim.calls); pre_cycles = sim.cycles; pre_macs = sim.macs
+pre_calls = len(sim.calls); pre_cycles = sim.cycles; pre_macs = sim.macs; pre_abuf = sim.abuf_cycles
 gens = [[t] for t in nxt]
 for i in range(a.decode - 1):
     if B == 1:
@@ -74,7 +74,7 @@ for i in range(a.decode - 1):
 gen = gens[0]
 sim.close()
 wall = time.time() - t0
-dec_cycles = sim.cycles - pre_cycles; dec_macs = sim.macs - pre_macs
+dec_cycles = sim.cycles - pre_cycles; dec_macs = sim.macs - pre_macs; dec_abuf = sim.abuf_cycles - pre_abuf
 ref_model = quant.QuantLlama(D); ref_model.w = wsm; ref_model.group_attn = a.gqa
 fp = llm.Llama(D)
 gens_ref = [run(ref_model, seqs[b], a.decode) for b in range(B)]
@@ -93,7 +93,8 @@ res = {
     "gemms_checked": checked["gemms"], "gemms_mismatching": checked["mismatch"], "batch": B, "tpu_tokens_equal_numpy_int_reference": gens == gens_ref,
     "greedy_agreement_with_float32": float(np.mean([x == y for g, f in zip(gens, gens_fp) for x, y in zip(g, f)])),
     "prefill": {"cycles": pre_cycles, "macs": pre_macs, "utilization": pre_macs / (pre_cycles * macs_per_cycle), "roofline_cycles": pre_roof, "roofline_fraction": pre_roof / pre_cycles},
-    "decode": {"cycles": dec_cycles, "macs": dec_macs, "utilization": dec_macs / (dec_cycles * macs_per_cycle), "cycles_per_token": dec_cycles / max(1, (a.decode - 1) * B), "roofline_cycles": dec_roof, "roofline_fraction": dec_roof / dec_cycles},
+    "decode": {"cycles": dec_cycles, "macs": dec_macs, "utilization": dec_macs / (dec_cycles * macs_per_cycle), "cycles_per_token": dec_cycles / max(1, (a.decode - 1) * B), "roofline_cycles": dec_roof, "roofline_fraction": dec_roof / dec_cycles,
+               "abuf_fill_cycles_not_overlapped": dec_abuf, "roofline_fraction_incl_abuf_fill": dec_roof / (dec_cycles + dec_abuf)},
     "wall_s": wall,
 }
 print(json.dumps(res, indent=1))
