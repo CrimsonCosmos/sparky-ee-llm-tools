@@ -15,7 +15,7 @@ top = sys.argv[5] if len(sys.argv) > 5 else "tpu_array"
 util = int(sys.argv[6]) if len(sys.argv) > 6 else 40
 hw = Path(__file__).resolve().parents[1] / "hardware" / "tpu" / version
 work.mkdir(parents=True, exist_ok=True)
-files = sorted(hw.glob("*.v"))
+files = [hw / "tpu_pe.v", hw / "tpu_array.v"] if top == "tpu_array" else sorted(hw.glob("*.v"))
 import math
 lg = max(1, math.ceil(math.log2(n)))
 if top == "tpu_array":   # v2/v3 array port list; a wrapper fixes the parameter without touching the RTL

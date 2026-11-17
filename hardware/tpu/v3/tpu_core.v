@@ -55,12 +55,13 @@ module tpu_core #(parameter N = 16, parameter MMAX = 64, parameter KTMAX = 8) (
   reg [1:0]  fs;
   reg [15:0] f_beat;
   reg        f_more;
+  reg [31:0] f_fetched;
   assign mem_rready = (fs == F_LOAD) && !sh_valid && f_more;
   wire       wload = mem_rvalid && mem_rready;
   always @(posedge clk) begin
     if (!rst_n) begin fs <= F_IDLE; mem_req_valid <= 1'b0; sh_valid <= 1'b0; f_more <= 1'b0; end
     else begin
-      if (start_cmd) begin f_more <= 1'b1; f_beat <= 0; sh_valid <= 1'b0; fs <= F_IDLE; end
+      if (start_cmd) begin f_more <= 1'b1; f_beat <= 0; f_fetched <= 0; sh_valid <= 1'b0; fs <= F_IDLE; end
       else begin
         case (fs)
           F_IDLE: if (run && f_more) begin mem_req_valid <= 1'b1; mem_req_addr <= wbase_r; fs <= F_REQ; end
@@ -77,8 +78,6 @@ module tpu_core #(parameter N = 16, parameter MMAX = 64, parameter KTMAX = 8) (
       end
     end
   end
-  reg [31:0] f_fetched;
-  always @(posedge clk) if (start_cmd) f_fetched <= 0;
 
   // ---------------- compute engine ----------------
   wire       a_valid = cs_active;
