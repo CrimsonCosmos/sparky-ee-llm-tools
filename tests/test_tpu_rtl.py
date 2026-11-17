@@ -8,7 +8,7 @@ pytestmark = pytest.mark.skipif(not toolchain.which("verilator"), reason="NOT RU
 N, MMAX, KTMAX = 8, 16, 4
 
 
-VERSIONS = ["v1", "v2"]
+VERSIONS = ["v1", "v2", "v3"]
 
 
 @pytest.fixture(scope="module", params=VERSIONS)

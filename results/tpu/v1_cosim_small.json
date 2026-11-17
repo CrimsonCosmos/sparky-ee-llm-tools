@@ -13,13 +13,17 @@
  "prefill": {
   "cycles": 34814654,
   "macs": 2160525312,
-  "utilization": 0.24241378357515775
+  "utilization": 0.24241378357515775,
+  "roofline_cycles": 8439552,
+  "roofline_fraction": 0.24241378357515775
  },
  "decode": {
   "cycles": 54025468,
   "macs": 270169344,
   "utilization": 0.019534287051432855,
-  "cycles_per_token": 27012734.0
+  "cycles_per_token": 27012734.0,
+  "roofline_cycles": 16885584,
+  "roofline_fraction": 0.3125485928229257
  },
- "wall_s": 43.60954737663269
+ "wall_s": 42.9408745765686
 }

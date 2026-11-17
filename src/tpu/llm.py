@@ -144,6 +144,37 @@ class Llama:
         x = rmsnorm(x, self.w["model.norm.weight"], c.eps)
         return self.linear(x, "lm_head.weight" if "lm_head.weight" in self.w else "model.embed_tokens.weight")
 
+    def forward_batch(self, tokens: np.ndarray, caches: list, starts: list[int]) -> np.ndarray:
+        """One decode step for B independent sequences at once: every weight matrix is applied to the B rows together (M = B on the matrix unit), attention stays per sequence
+        against its own KV cache. tokens [B] (one new token per sequence), caches[b] from new_cache(), starts[b] = cached length. Returns logits [B, vocab]."""
+        c = self.cfg
+        B = len(tokens)
+        pos = np.asarray(starts)
+        x = self.w["model.embed_tokens.weight"][tokens].astype(np.float32)
+        rep = c.heads // c.kv_heads
+        for L in range(c.layers):
+            p = f"model.layers.{L}."
+            h = rmsnorm(x, self.w[p + "input_layernorm.weight"], c.eps)
+            q = self.linear(h, p + "self_attn.q_proj.weight").reshape(B, c.heads, c.head_dim)
+            k = self.linear(h, p + "self_attn.k_proj.weight").reshape(B, c.kv_heads, c.head_dim)
+            v = self.linear(h, p + "self_attn.v_proj.weight").reshape(B, c.kv_heads, c.head_dim)
+            out = np.zeros((B, c.heads, c.head_dim), np.float32)
+            for b in range(B):
+                qb = self.rope(q[b:b + 1], pos[b:b + 1]); kb = self.rope(k[b:b + 1], pos[b:b + 1])
+                caches[b][L]["k"] = np.concatenate([caches[b][L]["k"], kb]); caches[b][L]["v"] = np.concatenate([caches[b][L]["v"], v[b:b + 1]])
+                K, V = caches[b][L]["k"], caches[b][L]["v"]
+                for hh in range(c.heads):
+                    g = hh // rep
+                    sc = self.attn_qk(qb[:, hh], K[:, g]) / np.sqrt(c.head_dim)
+                    out[b, hh] = self.attn_pv(softmax(sc).astype(np.float32), V[:, g])[0]
+            x = x + self.linear(out.reshape(B, c.hidden), p + "self_attn.o_proj.weight")
+            h = rmsnorm(x, self.w[p + "post_attention_layernorm.weight"], c.eps)
+            g = self.linear(h, p + "mlp.gate_proj.weight")
+            u = self.linear(h, p + "mlp.up_proj.weight")
+            x = x + self.linear(silu(g) * u, p + "mlp.down_proj.weight")
+        x = rmsnorm(x, self.w["model.norm.weight"], c.eps)
+        return self.linear(x, "lm_head.weight" if "lm_head.weight" in self.w else "model.embed_tokens.weight")
+
 
 def tokenizer(model_dir: str | Path):
     from tokenizers import Tokenizer

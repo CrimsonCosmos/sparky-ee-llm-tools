@@ -12,7 +12,7 @@ D = "/home/user/data/smollm2"
 ap = argparse.ArgumentParser()
 ap.add_argument("version"); ap.add_argument("--n", type=int, default=16); ap.add_argument("--mmax", type=int, default=64); ap.add_argument("--ktmax", type=int, default=96)
 ap.add_argument("--prefill", type=int, default=32); ap.add_argument("--decode", type=int, default=8)
-ap.add_argument("--bw", default="1/1"); ap.add_argument("--lat", type=int, default=0); ap.add_argument("--out"); ap.add_argument("--alpha", type=float, default=0.5)
+ap.add_argument("--batch", type=int, default=1, help="decode B sequences together (M=B on every weight GEMM)"); ap.add_argument("--bw", default="1/1"); ap.add_argument("--lat", type=int, default=0); ap.add_argument("--out"); ap.add_argument("--alpha", type=float, default=0.5)
 a = ap.parse_args()
 bwn, bwd = (int(v) for v in a.bw.split("/"))
 
@@ -54,27 +54,46 @@ def run(model, tokens, ndecode):
 
 qm = quant.QuantLlama(D, igemm=tpu_igemm); qm.w = wsm
 t0 = time.time()
-cache = qm.new_cache()
-logits = qm.forward(ids, cache, 0)
+B = a.batch
+alltok = np.array(tk.encode(text).ids)
+seqs = [alltok[i * 97: i * 97 + a.prefill] for i in range(B)]
+caches = [qm.new_cache() for _ in range(B)]
+nxt = []
+for b in range(B):
+    lg = qm.forward(seqs[b], caches[b], 0)
+    nxt.append(int(np.argmax(lg[-1])))
 pre_calls = len(sim.calls); pre_cycles = sim.cycles; pre_macs = sim.macs
-gen = [int(np.argmax(logits[-1]))]
+gens = [[t] for t in nxt]
 for i in range(a.decode - 1):
-    logits = qm.forward(np.array([gen[-1]]), cache, len(ids) + i)
-    gen.append(int(np.argmax(logits[-1])))
+    if B == 1:
+        lg = qm.forward(np.array([gens[0][-1]]), caches[0], len(seqs[0]) + i)
+    else:
+        lg = qm.forward_batch(np.array([g[-1] for g in gens]), caches, [len(seqs[0]) + i] * B)
+    for b in range(B):
+        gens[b].append(int(np.argmax(lg[b])))
+gen = gens[0]
 sim.close()
 wall = time.time() - t0
 dec_cycles = sim.cycles - pre_cycles; dec_macs = sim.macs - pre_macs
 ref_model = quant.QuantLlama(D); ref_model.w = wsm
-gen_ref = run(ref_model, ids, a.decode)
 fp = llm.Llama(D)
-gen_fp = run(fp, ids, a.decode)
+gens_ref = [run(ref_model, seqs[b], a.decode) for b in range(B)]
+gens_fp = [run(fp, seqs[b], a.decode) for b in range(B)]
 macs_per_cycle = a.n * a.n
+
+
+def roofline(calls):
+    """Ideal cycles for these GEMM calls: per call max(compute-bound, memory-bound) with UNPADDED operands (weights streamed once per call at N bytes x bw per cycle)."""
+    return sum(max(-(-m * k * n // macs_per_cycle), -(-k * n // int(a.n * bwn / bwd))) for m, k, n, _ in calls)
+
+
+pre_roof = roofline(sim.calls[:pre_calls]); dec_roof = roofline(sim.calls[pre_calls:])
 res = {
     "version": a.version, "N": a.n, "mmax": a.mmax, "bw_beats_per_cycle": bwn / bwd, "mem_latency": a.lat, "prefill_tokens": len(ids), "decode_tokens": a.decode,
-    "gemms_checked": checked["gemms"], "gemms_mismatching": checked["mismatch"], "tpu_tokens_equal_numpy_int_reference": gen == gen_ref,
-    "greedy_agreement_with_float32": float(np.mean([x == y for x, y in zip(gen, gen_fp)])),
-    "prefill": {"cycles": pre_cycles, "macs": pre_macs, "utilization": pre_macs / (pre_cycles * macs_per_cycle)},
-    "decode": {"cycles": dec_cycles, "macs": dec_macs, "utilization": dec_macs / (dec_cycles * macs_per_cycle), "cycles_per_token": dec_cycles / max(1, a.decode - 1)},
+    "gemms_checked": checked["gemms"], "gemms_mismatching": checked["mismatch"], "batch": B, "tpu_tokens_equal_numpy_int_reference": gens == gens_ref,
+    "greedy_agreement_with_float32": float(np.mean([x == y for g, f in zip(gens, gens_fp) for x, y in zip(g, f)])),
+    "prefill": {"cycles": pre_cycles, "macs": pre_macs, "utilization": pre_macs / (pre_cycles * macs_per_cycle), "roofline_cycles": pre_roof, "roofline_fraction": pre_roof / pre_cycles},
+    "decode": {"cycles": dec_cycles, "macs": dec_macs, "utilization": dec_macs / (dec_cycles * macs_per_cycle), "cycles_per_token": dec_cycles / max(1, (a.decode - 1) * B), "roofline_cycles": dec_roof, "roofline_fraction": dec_roof / dec_cycles},
     "wall_s": wall,
 }
 print(json.dumps(res, indent=1))

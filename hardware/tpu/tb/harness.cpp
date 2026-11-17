@@ -16,6 +16,9 @@
 #ifndef ROWREV
 #define ROWREV 1          // 1: tile rows stored in reverse order (v1 shift-chain load); 0: ascending
 #endif
+#ifndef HAS_RREADY
+#define HAS_RREADY 0      // 1: core exports mem_rready (backpressure) and takes ONE request per command for all tiles
+#endif
 #ifndef MMAXV
 #define MMAXV 64
 #endif
@@ -58,7 +61,7 @@ int main() {
     }
     std::vector<int32_t> out((size_t)m * n, 0); long got = 0, want = (long)m * nt;
     d->cmd_m = m; d->cmd_kt = kt; d->cmd_nt = nt; d->cmd_wbase = 0; d->cmd_valid = 1;
-    bool busy = false; int wait_c = 0, credit = 0, sent = 0; uint32_t base = 0; bool cmd_taken = false;
+    bool busy = false; int wait_c = 0, credit = 0, sent = 0; uint32_t base = 0, total = 0; bool cmd_taken = false, have_beat = false, pending_req = false; uint8_t held[NN] = {0};
     int64_t cycles = 0; bool done = false;
     while (!done) {
       // sample pre-edge outputs
@@ -71,11 +74,22 @@ int main() {
       if (d->cmd_done) done = true;
       // memory model (registered outputs for the next cycle)
       int nrvalid = 0, nready = 0; uint8_t beat[NN] = {0};
+#if HAS_RREADY
+      if (have_beat && d->mem_rready) { have_beat = false; }          // beat accepted at the coming edge
+      if (req && !busy && !pending_req) { nready = 1; busy = true; wait_c = lat; credit = 0; sent = 0; base = addr / NN; total = beats; }
+      if (busy && !have_beat) {
+        if (wait_c > 0) wait_c--;
+        else { credit += bwn; if (credit >= bwd) { credit -= bwd; have_beat = true; memcpy(held, &dram[(size_t)(base + sent) * NN], NN); sent++; if ((uint32_t)sent == total) busy = false; } }
+      }
+      if (have_beat) { nrvalid = 1; memcpy(beat, held, NN); }
+      // note: a beat presented for the next cycle stays presented until accepted
+#else
       if (req && !busy) { nready = 1; busy = true; wait_c = lat; credit = 0; sent = 0; base = addr / NN; }
       else if (busy) {
         if (wait_c > 0) wait_c--;
         else { credit += bwn; if (credit >= bwd) { credit -= bwd; nrvalid = 1; memcpy(beat, &dram[(size_t)(base + sent) * NN], NN); sent++; if ((uint32_t)sent == beats) busy = false; } }
       }
+#endif
       if (cmd_taken) d->cmd_valid = 0;
       if (d->cmd_valid && rdy_now) cmd_taken = true;     // taken at the coming edge
       if (!done) cycles++;
