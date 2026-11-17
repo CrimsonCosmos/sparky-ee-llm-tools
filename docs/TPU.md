@@ -60,3 +60,6 @@ PYTHONPATH=src python tools/tpu_cosim.py v3 --n 16 --prefill 16 --decode 3 [--ba
 PYTHONPATH=src python tools/tpu_ppl.py v3 513
 python tools/tpu_flow.py v3 8 16 <workdir> tpu_array 40 0.6
 ```
+
+## End-to-end serving demo (v8, 4 arrays of 16x16, 4 prompts batched, greedy, 24 new tokens each)
+`python tools/tpu_serve.py v8 --n 16 --cores 4 --new 24` runs the real SmolLM2-135M (W8A8 + SmoothQuant) with every matrix product (56,097 GEMMs) on the RTL, bit-exact against the integer reference (0 mismatches). Result (`results/tpu/serve_demo_v8_k4.json`): 572 k cycles per generated token, about 122 tokens/s at an ASSUMED 70 MHz clock (not a closed-timing figure). Completions (greedy, 135M model): "Photosynthesis is the process by which plants convert light energy into chemical energy ..."; "In 1969, the Apollo 11 mission was launched. The mission was a success, and the crew of Neil Armstrong and Buzz Aldrin became the first humans to ..."; one prompt degenerates into repetition ("The capital of France is the capital of the department of the department ..."), which is the 135M model under greedy decoding, not the accelerator (the same tokens are produced by the numpy integer reference, checked in `tools/tpu_cosim.py`).

@@ -1,0 +1,33 @@
+{
+ "version": "v8",
+ "N": 16,
+ "cores": 4,
+ "sequences": 4,
+ "new_tokens_each": 24,
+ "gemms_checked": 56097,
+ "gemms_mismatching": 0,
+ "prefill_cycles": 8520999,
+ "decode_cycles": 52666237,
+ "decode_cycles_per_generated_token": 572459.0978260869,
+ "assumed_clock_mhz": 70.0,
+ "decode_tokens_per_s_at_assumed_clock": 122.27947859650577,
+ "wall_s": 824.3445775508881,
+ "outputs": [
+  {
+   "prompt": "The capital of France is",
+   "completion": " the capital of the department of the department of the department of the department of the department of the department of the department of"
+  },
+  {
+   "prompt": "Photosynthesis is the process by which",
+   "completion": " plants convert light energy into chemical energy. The process is carried out by the chloroplasts in the leaves of plants. The"
+  },
+  {
+   "prompt": "In 1969, the Apollo 11 mission",
+   "completion": " was launched. The mission was a success, and the crew of Neil Armstrong and Buzz Aldrin became the first humans to"
+  },
+  {
+   "prompt": "A systolic array is",
+   "completion": " a collection of cells that are all the same size and shape. The cells are arranged in a regular pattern. The cells"
+  }
+ ]
+}
