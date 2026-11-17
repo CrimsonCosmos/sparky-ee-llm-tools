@@ -8,13 +8,13 @@ pytestmark = pytest.mark.skipif(not toolchain.which("verilator"), reason="NOT RU
 N, MMAX, KTMAX = 8, 64, 8
 
 
-@pytest.mark.parametrize("version,extra", [("v3", -1), ("v4", 0), ("v5", 0)])
-def test_model_equals_rtl(version, extra, tmp_path):
+@pytest.mark.parametrize("version,extra,bubble", [("v3", -1, 1), ("v4", 0, 1), ("v5", 0, 1), ("v6", 0, 0)])
+def test_model_equals_rtl(version, extra, bubble, tmp_path):
     exe = rtl.build_harness(version, N, MMAX, KTMAX, tmp_path)
     rng = np.random.default_rng(7)
     for bw, lat in [((1, 1), 0), ((1, 2), 0), ((1, 1), 17), ((1, 3), 5), ((3, 4), 11), ((1, 4), 0)]:
         sim = rtl.Sim(exe, MMAX, bw, lat)
-        core = perf.Core(n=N, mmax=MMAX, bn=bw[0], bd=bw[1], lat=lat, array_lat_extra=extra)
+        core = perf.Core(n=N, mmax=MMAX, bn=bw[0], bd=bw[1], lat=lat, array_lat_extra=extra, bubble=bubble)
         try:
             for _ in range(12):
                 m, k, n = int(rng.integers(1, 90)), int(rng.integers(1, N * KTMAX)), int(rng.integers(1, 40))
