@@ -1,0 +1,30 @@
+{
+ "version": "v3",
+ "N": 16,
+ "mmax": 64,
+ "bw_beats_per_cycle": 1.0,
+ "mem_latency": 0,
+ "prefill_tokens": 16,
+ "decode_tokens": 3,
+ "gemms_checked": 29718,
+ "gemms_mismatching": 0,
+ "batch": 16,
+ "tpu_tokens_equal_numpy_int_reference": true,
+ "greedy_agreement_with_float32": 0.875,
+ "prefill": {
+  "cycles": 144085200,
+  "macs": 34568404992,
+  "utilization": 0.9371735056758085,
+  "roofline_cycles": 135032832,
+  "roofline_fraction": 0.9371735056758085
+ },
+ "decode": {
+  "cycles": 20854290,
+  "macs": 4322709504,
+  "utilization": 0.809693545069144,
+  "cycles_per_token": 651696.5625,
+  "roofline_cycles": 18019584,
+  "roofline_fraction": 0.8640708458547378
+ },
+ "wall_s": 287.5717318058014
+}
