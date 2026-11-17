@@ -28,10 +28,10 @@ Model flow (`src/tpu/`): own safetensors reader + numpy float32 Llama forward (v
 |---|---|---|---|---|
 | v1 | 24.2 % | 2.0 % | 31.3 % | 27.0 M |
 | v2 | 79.7 % | 5.0 % | 79.5 % | 10.6 M |
-| v3 | 93.7 % | 5.8 % | 93.5 % | 9.1 M |
-| v3, 16 sequences batched | 96.5 %* | 81 % | 86.4 % | 0.65 M per token (41x fewer than v1 single-stream) |
+| v3 | 93.7 % | 5.8 % | 93.5 % | 9.03 M |
+| v3, 16 sequences batched | 93.7 % | 81 % | 86.4 % | 0.65 M per token (41x fewer than v1 single-stream) |
 
-(*prefill row of the batch run is the same M=16 GEMMs; see json.) M=1 decode is inherently memory bound (5.8 % compute utilisation is the roofline, not a defect): serving efficiency comes from batching, which the same hardware does with no change (M=B rows).
+M=1 decode is inherently memory bound (5.8 % compute utilisation is the roofline, not a defect): serving efficiency comes from batching, which the same hardware does with no change (M=B rows).
 
 ## Physical (sky130A, LibreLane/OpenROAD/Magic/KLayout/Netgen), v3 array only, N=8 (64 MACs)
 | run | clock | DRC (Magic, KLayout) | LVS | antenna | tt/ff corners | ss_100C_1v60 corner | verdict |
