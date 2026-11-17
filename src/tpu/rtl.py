@@ -118,3 +118,18 @@ class Sim:
         except Exception:
             pass
         self.p.wait(timeout=30)
+
+
+def build_multi(version: str, n: int, mmax: int, ktmax: int, k: int, workdir: Path) -> Path:
+    """Compile the K-core harness (hardware/tpu/tb/harness_multi.cpp) around hardware/tpu/<version>/tpu_multi."""
+    vl = toolchain.which("verilator")
+    if not vl:
+        raise RuntimeError("NOT RUN: verilator not available")
+    workdir.mkdir(parents=True, exist_ok=True)
+    srcs = [str(p) for p in sorted((HW / version).glob("*.v"))]
+    cmd = [vl, "--cc", "--exe", "--build", "-Wno-fatal", "-Wno-lint", "-Wno-style", "--top-module", "tpu_multi", f"-GN={n}", f"-GMMAX={mmax}", f"-GKTMAX={ktmax}", f"-GK={k}", "-O3",
+           "-CFLAGS", f"-DNN={n} -DKK={k} -DMMAXV={mmax} -DKTMAXV={ktmax} -O2", "--Mdir", str(workdir / "mobj"), "-o", "harness_multi", *srcs, str(HW / "tb" / "harness_multi.cpp")]
+    r = subprocess.run(cmd, capture_output=True, text=True, cwd=workdir, env=toolchain.env())
+    if r.returncode:
+        raise RuntimeError("verilator multi harness build failed:\n" + (r.stderr + r.stdout)[-3000:])
+    return workdir / "mobj" / "harness_multi"

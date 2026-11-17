@@ -12,7 +12,7 @@ D = "/home/user/data/smollm2"
 ap = argparse.ArgumentParser()
 ap.add_argument("version"); ap.add_argument("--n", type=int, default=16); ap.add_argument("--mmax", type=int, default=64); ap.add_argument("--ktmax", type=int, default=96)
 ap.add_argument("--prefill", type=int, default=32); ap.add_argument("--decode", type=int, default=8)
-ap.add_argument("--batch", type=int, default=1, help="decode B sequences together (M=B on every weight GEMM)"); ap.add_argument("--gqa", action="store_true", help="GQA-grouped attention GEMMs"); ap.add_argument("--bw", default="1/1"); ap.add_argument("--lat", type=int, default=0); ap.add_argument("--out"); ap.add_argument("--alpha", type=float, default=0.5)
+ap.add_argument("--batch", type=int, default=1, help="decode B sequences together (M=B on every weight GEMM)"); ap.add_argument("--cores", type=int, default=1, help="K parallel arrays (v8 tpu_multi), each with its own weight port"); ap.add_argument("--gqa", action="store_true", help="GQA-grouped attention GEMMs"); ap.add_argument("--bw", default="1/1"); ap.add_argument("--lat", type=int, default=0); ap.add_argument("--out"); ap.add_argument("--alpha", type=float, default=0.5)
 a = ap.parse_args()
 bwn, bwd = (int(v) for v in a.bw.split("/"))
 
@@ -28,7 +28,7 @@ else:
     np.savez(sm, **wsm)
 
 wd = Path(f"/home/user/data/tpu_build/{a.version}_n{a.n}")
-exe = rtl.build_harness(a.version, a.n, a.mmax, a.ktmax, wd)
+exe = rtl.build_harness(a.version, a.n, a.mmax, a.ktmax, wd) if a.cores == 1 else rtl.build_multi(a.version, a.n, a.mmax, a.ktmax, a.cores, Path(f"{wd}_k{a.cores}"))
 sim = rtl.Sim(exe, a.mmax, (bwn, bwd), a.lat)
 checked = {"gemms": 0, "mismatch": 0}
 
@@ -79,17 +79,17 @@ ref_model = quant.QuantLlama(D); ref_model.w = wsm; ref_model.group_attn = a.gqa
 fp = llm.Llama(D)
 gens_ref = [run(ref_model, seqs[b], a.decode) for b in range(B)]
 gens_fp = [run(fp, seqs[b], a.decode) for b in range(B)]
-macs_per_cycle = a.n * a.n
+macs_per_cycle = a.n * a.n * a.cores
 
 
 def roofline(calls):
     """Ideal cycles for these GEMM calls: per call max(compute-bound, memory-bound) with UNPADDED operands (weights streamed once per call at N bytes x bw per cycle)."""
-    return sum(max(-(-m * k * n // macs_per_cycle), -(-k * n // int(a.n * bwn / bwd))) for m, k, n, _ in calls)
+    return sum(max(-(-m * k * n // macs_per_cycle), -(-k * n // int(a.n * a.cores * bwn / bwd))) for m, k, n, _ in calls)
 
 
 pre_roof = roofline(sim.calls[:pre_calls]); dec_roof = roofline(sim.calls[pre_calls:])
 res = {
-    "version": a.version, "gqa_grouped_attention": a.gqa, "N": a.n, "mmax": a.mmax, "bw_beats_per_cycle": bwn / bwd, "mem_latency": a.lat, "prefill_tokens": len(ids), "decode_tokens": a.decode,
+    "version": a.version, "cores": a.cores, "gqa_grouped_attention": a.gqa, "N": a.n, "mmax": a.mmax, "bw_beats_per_cycle": bwn / bwd, "mem_latency": a.lat, "prefill_tokens": len(ids), "decode_tokens": a.decode,
     "gemms_checked": checked["gemms"], "gemms_mismatching": checked["mismatch"], "batch": B, "tpu_tokens_equal_numpy_int_reference": gens == gens_ref,
     "greedy_agreement_with_float32": float(np.mean([x == y for g, f in zip(gens, gens_fp) for x, y in zip(g, f)])),
     "prefill": {"cycles": pre_cycles, "macs": pre_macs, "utilization": pre_macs / (pre_cycles * macs_per_cycle), "roofline_cycles": pre_roof, "roofline_fraction": pre_roof / pre_cycles},

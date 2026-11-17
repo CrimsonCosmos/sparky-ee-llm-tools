@@ -21,7 +21,10 @@ class Core:
     bubble: int = 1             # idle cycle at each tile hand-over: 1 for v3-v5, 0 for v6 (swap decided in the cycle of the last weight beat)
 
 
-def gemm_cycles(c: Core, m: int, k: int, n_out: int) -> int:
+def gemm_cycles(c: Core, m: int, k: int, n_out: int, cores: int = 1) -> int:
+    """`cores` arrays (tpu_multi) split the output column tiles; the slowest core (largest share, ceil(nt/cores) tiles) sets the time."""
+    if cores > 1:
+        n_out = -(-(-(-n_out // c.n)) // cores) * c.n
     total = 0
     for m0 in range(0, m, c.mmax):
         mm = min(c.mmax, m - m0)

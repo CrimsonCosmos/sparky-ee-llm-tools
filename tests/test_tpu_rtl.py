@@ -88,3 +88,24 @@ def test_scaling_n32_v6(tmp_path):
                 assert s.cycles - c0 == perf.gemm_cycles(core, m, k, n), (bw, lat, m, k, n)
         finally:
             s.close()
+
+
+@pytest.mark.parametrize("cores", [2, 4])
+def test_multi_core_bit_exact_and_model(cores, tmp_path):
+    """K parallel arrays (v8 tpu_multi): bit-exact against numpy and cycle-exact against the closed-form model."""
+    from tpu import perf
+    exe = rtl.build_multi("v8", N, MMAX, KTMAX, cores, tmp_path)
+    rng = np.random.default_rng(cores)
+    for bw, lat in [((1, 1), 0), ((1, 2), 13)]:
+        s = rtl.Sim(exe, MMAX, bw, lat)
+        core = perf.Core(n=N, mmax=MMAX, bn=bw[0], bd=bw[1], lat=lat, bubble=0)
+        try:
+            for _ in range(10):
+                m, k, n = int(rng.integers(1, 70)), int(rng.integers(1, N * KTMAX)), int(rng.integers(1, 90))
+                x = rng.integers(-128, 128, (m, k), dtype=np.int8); w = rng.integers(-128, 128, (k, n), dtype=np.int8)
+                c0 = s.cycles
+                assert np.array_equal(s.gemm(x, w), x.astype(np.int32) @ w.astype(np.int32)), (m, k, n)
+                got, pred = s.cycles - c0, perf.gemm_cycles(core, m, k, n, cores)
+                assert abs(got - pred) <= 1 + (m // MMAX), (cores, bw, lat, m, k, n, got, pred)       # +-1 cycle: multi-core done-pulse alignment
+        finally:
+            s.close()
