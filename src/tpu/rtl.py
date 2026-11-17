@@ -68,3 +68,53 @@ def gemm(sim: Path, workdir: Path, x: np.ndarray, w: np.ndarray, n: int, mmax: i
         got += 1
     assert got == m * nt, f"expected {m*nt} output vectors, got {got}"
     return c[:, :nn], int(cyc.group(1))
+
+
+def build_harness(version: str, n: int, mmax: int, ktmax: int, workdir: Path) -> Path:
+    """Compile the persistent C++ harness (hardware/tpu/tb/harness.cpp) around hardware/tpu/<version>/tpu_core; returns the executable."""
+    vl = toolchain.which("verilator")
+    if not vl:
+        raise RuntimeError("NOT RUN: verilator not available")
+    workdir.mkdir(parents=True, exist_ok=True)
+    srcs = [str(p) for p in sorted((HW / version).glob("*.v"))]
+    cmd = [vl, "--cc", "--exe", "--build", "-Wno-fatal", "-Wno-lint", "-Wno-style", "--top-module", "tpu_core", f"-GN={n}", f"-GMMAX={mmax}", f"-GKTMAX={ktmax}", "-O3",
+           "-CFLAGS", f"-DNN={n} -DMMAXV={mmax} -DKTMAXV={ktmax} -O2", "--Mdir", str(workdir / "hobj"), "-o", "harness", *srcs, str(HW / "tb" / "harness.cpp")]
+    r = subprocess.run(cmd, capture_output=True, text=True, cwd=workdir, env=toolchain.env())
+    if r.returncode:
+        raise RuntimeError("verilator harness build failed:\n" + (r.stderr + r.stdout)[-3000:])
+    return workdir / "hobj" / "harness"
+
+
+class Sim:
+    """Persistent simulator process; `gemm(x, w)` computes x[M,K] @ w[K,N] exactly as the RTL does (M chunked to MMAX) and accumulates cycle statistics."""
+
+    def __init__(self, exe: Path, mmax: int, bw: tuple[int, int] = (1, 1), lat: int = 0):
+        self.p = subprocess.Popen([str(exe)], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+        self.mmax, self.bw, self.lat = mmax, bw, lat
+        self.cycles = 0
+        self.macs = 0
+        self.calls: list[tuple[int, int, int, int]] = []        # (m, k, n, cycles)
+
+    def gemm(self, x: np.ndarray, w: np.ndarray) -> np.ndarray:
+        m, k = x.shape
+        n = w.shape[1]
+        out = np.empty((m, n), np.int32)
+        for m0 in range(0, m, self.mmax):
+            xs = np.ascontiguousarray(x[m0:m0 + self.mmax], dtype=np.int8)
+            mm = xs.shape[0]
+            hdr = np.array([mm, k, n, self.bw[0], self.bw[1], self.lat, 0, 0], np.int32)
+            self.p.stdin.write(hdr.tobytes() + xs.tobytes() + np.ascontiguousarray(w, dtype=np.int8).tobytes())
+            self.p.stdin.flush()
+            cyc = int(np.frombuffer(self.p.stdout.read(8), np.int64)[0])
+            out[m0:m0 + mm] = np.frombuffer(self.p.stdout.read(4 * mm * n), np.int32).reshape(mm, n)
+            self.cycles += cyc
+            self.macs += mm * k * n
+            self.calls.append((mm, k, n, cyc))
+        return out
+
+    def close(self):
+        try:
+            self.p.stdin.write(np.array([-1, 0, 0, 0, 0, 0, 0, 0], np.int32).tobytes()); self.p.stdin.flush()
+        except Exception:
+            pass
+        self.p.wait(timeout=30)
