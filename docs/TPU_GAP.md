@@ -24,7 +24,7 @@ What the gap is NOT: utilisation. On the workloads run here the design reaches 9
 | in-array partial sums only 16+log2 N bits wide instead of 32 (v5) | measured (RTL tests, synthesis) | synthesised area -12 % (326k -> 288k um^2 at N=8), shorter adder |
 | zero-bubble tile hand-over (v6): swap decided in the cycle of the last weight beat | measured | decode 93.5 % -> 99.3 % of roofline, 9.29 M -> 8.74 M cycles/token; with GQA grouping 99.7 %, 8.52 M |
 | GQA-grouped attention (rep query heads become rows of one GEMM) | measured | GEMMs 2253 -> 1173, bit-exact, KV streamed once per group; -2.5 % decode cycles at 128-token context (grows with context) |
-| batching sequences (M = B on every weight GEMM) | measured | decode compute utilisation 5.8 % (B=1) -> 81 % (B=16) |
+| batching sequences (M = B on every weight GEMM) | measured | decode compute utilisation 5.8 % (B=1) -> 81 % (B=16, v3) -> 85.8 % (B=16, v6 + GQA grouping; 23,958 GEMMs bit-exact, 615 k cycles/token, 91.5 % of roofline) |
 | tolerance to memory latency | measured | 100-cycle latency costs 0.8 % of decode; 400 cycles ~3 %: command prefetch is not worth building at this scale |
 | 4-bit weights (RTN, per-group scales) to halve weight bytes | **rejected on quality**: +27 % (group 32) to +45 % (group 128) perplexity on this model (1025 tokens, `tools/tpu_w4.py`); would need GPTQ/AWQ-class calibration, not available here |
 | pipelined commands (hide ~2N+4 fill/drain per GEMM) | projection (cycle-model what-if, `tools/tpu_levers.py`) | ~0.05 % at N=16, 1.24-1.3x at N=128 x4 where thousands of tiny attention GEMMs dominate |

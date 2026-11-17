@@ -30,6 +30,10 @@ Model flow (`src/tpu/`): own safetensors reader + numpy float32 Llama forward (v
 | v2 | 79.7 % | 5.0 % | 79.5 % | 10.6 M |
 | v3 | 93.7 % | 5.8 % | 93.5 % | 9.03 M |
 | v3, 16 sequences batched | 93.7 % | 81 % | 86.4 % | 0.65 M per token (41x fewer than v1 single-stream) |
+| v6 (+GQA), 128-token prefill, 3 decode | 99.9 % | 6.1 % | 99.7 % | 8.52 M |
+| v6 (+GQA), 16 sequences batched | 99.8 % | 85.8 % | 91.5 % | 0.615 M per token |
+
+v4-v6 (registered product, narrow partial sums, zero-bubble tile hand-over) and the gap analysis are in `docs/TPU_GAP.md`; the table above was measured with the versions named.
 
 M=1 decode is inherently memory bound (5.8 % compute utilisation is the roofline, not a defect): serving efficiency comes from batching, which the same hardware does with no change (M=B rows).
 
