@@ -78,7 +78,7 @@ def build_harness(version: str, n: int, mmax: int, ktmax: int, workdir: Path) ->
     workdir.mkdir(parents=True, exist_ok=True)
     srcs = [str(p) for p in sorted((HW / version).glob("*.v"))]
     cmd = [vl, "--cc", "--exe", "--build", "-Wno-fatal", "-Wno-lint", "-Wno-style", "--top-module", "tpu_core", f"-GN={n}", f"-GMMAX={mmax}", f"-GKTMAX={ktmax}", "-O3",
-           "-CFLAGS", f"-DNN={n} -DMMAXV={mmax} -DKTMAXV={ktmax} -O2", "--Mdir", str(workdir / "hobj"), "-o", "harness", *srcs, str(HW / "tb" / "harness.cpp")]
+           "-CFLAGS", f"-DNN={n} -DMMAXV={mmax} -DKTMAXV={ktmax} -DROWREV={0 if version != 'v1' else 1} -O2", "--Mdir", str(workdir / "hobj"), "-o", "harness", *srcs, str(HW / "tb" / "harness.cpp")]
     r = subprocess.run(cmd, capture_output=True, text=True, cwd=workdir, env=toolchain.env())
     if r.returncode:
         raise RuntimeError("verilator harness build failed:\n" + (r.stderr + r.stdout)[-3000:])

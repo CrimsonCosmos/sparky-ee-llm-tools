@@ -13,6 +13,9 @@
 #ifndef NN
 #define NN 16
 #endif
+#ifndef ROWREV
+#define ROWREV 1          // 1: tile rows stored in reverse order (v1 shift-chain load); 0: ascending
+#endif
 #ifndef MMAXV
 #define MMAXV 64
 #endif
@@ -51,7 +54,7 @@ int main() {
     std::vector<uint8_t> dram((size_t)nt * kt * NN * NN, 0);
     for (int j = 0; j < nt; j++) for (int i = 0; i < kt; i++) for (int r = 0; r < NN; r++) for (int c = 0; c < NN; c++) {
       int kk = i * NN + r, nn = j * NN + c; uint8_t v = (kk < k && nn < n) ? (uint8_t)w[(size_t)kk * n + nn] : 0;
-      dram[(((size_t)(j * kt + i) * NN) + (NN - 1 - r)) * NN + c] = v;
+      dram[(((size_t)(j * kt + i) * NN) + (ROWREV ? (NN - 1 - r) : r)) * NN + c] = v;
     }
     std::vector<int32_t> out((size_t)m * n, 0); long got = 0, want = (long)m * nt;
     d->cmd_m = m; d->cmd_kt = kt; d->cmd_nt = nt; d->cmd_wbase = 0; d->cmd_valid = 1;
