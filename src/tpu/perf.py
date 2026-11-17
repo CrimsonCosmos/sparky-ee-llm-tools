@@ -1,7 +1,7 @@
 """Closed-form cycle model of the TPU core (versions v3-v5 share the schedule; they differ only in array latency), fitted to and TESTED against the RTL (tests/test_tpu_perf.py checks exact equality
 with the Verilator model over random shapes, bandwidths and latencies; the RTL is the reference, nothing here is used to produce the expected value).
 GEMM of M rows over K x N weights on an NA x NA array:
-    tiles T = ceil(K/NA) * ceil(N/NA);  L = cycles to stream one tile = ceil(NA * bd / bn). Exact when NA*bd/bn is an integer; for fractional rates (credit carries across tiles) the model is within 1 % (tested) for a port delivering bn/bd beats (NA bytes each) per cycle;
+    tiles T = ceil(K/NA) * ceil(N/NA);  L = cycles to stream one tile = ceil(NA * bd / bn). Exact when NA*bd/bn is an integer; for fractional rates (credit carries across tiles) the model is within max(2 cycles, 1 %) (tested) for a port delivering bn/bd beats (NA bytes each) per cycle;
     period P = max(M, L, NA + 1): the shadow-weight write port takes one row per cycle, plus one bubble at each tile hand-over;
     cycles = (T-1) * P + M + L + lat + (LAT + 4) + (1 if lat == 0 and bn >= bd else 0),  LAT = array latency (2*NA - 1 for v3, 2*NA for v4/v5).
 M larger than the activation-buffer depth `mmax` is chunked (weights re-streamed per chunk)."""

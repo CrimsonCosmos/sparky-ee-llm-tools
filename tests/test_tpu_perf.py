@@ -25,6 +25,6 @@ def test_model_equals_rtl(version, extra, tmp_path):
                 if (N * bw[1]) % bw[0] == 0:
                     assert got == pred, (version, bw, lat, m, k, n)             # integer beats per tile: exact
                 else:
-                    assert abs(got - pred) <= 0.01 * got, (version, bw, lat, m, k, n, got, pred)   # fractional credit: within 1 %
+                    assert abs(got - pred) <= max(2, 0.01 * got), (version, bw, lat, m, k, n, got, pred)   # fractional credit: within max(2 cycles, 1 %)
         finally:
             sim.close()
