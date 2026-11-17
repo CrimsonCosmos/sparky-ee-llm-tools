@@ -69,3 +69,22 @@ def test_harness_random_shapes_throttled_memory(hsim, bw, lat):
             assert np.array_equal(s.gemm(x, w), x.astype(np.int32) @ w.astype(np.int32)), (m, k, n)
     finally:
         s.close()
+
+
+def test_scaling_n32_v6(tmp_path):
+    """The design is parametric in N: bit-exact at N=32 (1024 MACs) with throttled memory, and the cycle model still matches."""
+    from tpu import perf
+    exe = rtl.build_harness("v6", 32, 64, 4, tmp_path)
+    rng = np.random.default_rng(32)
+    for bw, lat in [((1, 1), 0), ((1, 2), 9)]:
+        s = rtl.Sim(exe, 64, bw, lat)
+        core = perf.Core(n=32, mmax=64, bn=bw[0], bd=bw[1], lat=lat, bubble=0)
+        try:
+            for _ in range(6):
+                m, k, n = int(rng.integers(1, 70)), int(rng.integers(1, 32 * 4)), int(rng.integers(1, 100))
+                x = rng.integers(-128, 128, (m, k), dtype=np.int8); w = rng.integers(-128, 128, (k, n), dtype=np.int8)
+                c0 = s.cycles
+                assert np.array_equal(s.gemm(x, w), x.astype(np.int32) @ w.astype(np.int32)), (m, k, n)
+                assert s.cycles - c0 == perf.gemm_cycles(core, m, k, n), (bw, lat, m, k, n)
+        finally:
+            s.close()
