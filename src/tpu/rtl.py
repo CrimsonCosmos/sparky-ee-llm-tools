@@ -78,7 +78,7 @@ def build_harness(version: str, n: int, mmax: int, ktmax: int, workdir: Path) ->
     workdir.mkdir(parents=True, exist_ok=True)
     srcs = [str(p) for p in sorted((HW / version).glob("*.v"))]
     cmd = [vl, "--cc", "--exe", "--build", "-Wno-fatal", "-Wno-lint", "-Wno-style", "--top-module", "tpu_core", f"-GN={n}", f"-GMMAX={mmax}", f"-GKTMAX={ktmax}", "-O3",
-           "-CFLAGS", f"-DNN={n} -DMMAXV={mmax} -DKTMAXV={ktmax} -DROWREV={0 if version != 'v1' else 1} -DHAS_RREADY={1 if version not in ('v1', 'v2') else 0} -O2", "--Mdir", str(workdir / "hobj"), "-o", "harness", *srcs, str(HW / "tb" / "harness.cpp")]
+           "-CFLAGS", f"-DNN={n} -DMMAXV={mmax} -DKTMAXV={ktmax} -DROWREV={0 if version != 'v1' else 1} -DHAS_RREADY={1 if version not in ('v1', 'v2') else 0} -DHAS_GROUP={1 if version >= 'v9' else 0} -O2", "--Mdir", str(workdir / "hobj"), "-o", "harness", *srcs, str(HW / "tb" / "harness.cpp")]
     r = subprocess.run(cmd, capture_output=True, text=True, cwd=workdir, env=toolchain.env())
     if r.returncode:
         raise RuntimeError("verilator harness build failed:\n" + (r.stderr + r.stdout)[-3000:])
@@ -96,23 +96,26 @@ class Sim:
         self.macs = 0
         self.calls: list[tuple[int, int, int, int]] = []        # (m, k, n, cycles)
 
-    def gemm(self, x: np.ndarray, w: np.ndarray) -> np.ndarray:
+    def gemm(self, x: np.ndarray, w: np.ndarray, group_tiles: int = 0) -> np.ndarray:
+        """x[M,K] @ w[K,N] -> int32 [M,N]. With group_tiles > 0 (v9+ only) the core returns one partial sum per group of `group_tiles` K tiles: int32 [groups, M, N]."""
         m, k = x.shape
         n = w.shape[1]
-        out = np.empty((m, n), np.int32)
+        ng = -(-(-(-k // self.n)) // group_tiles) if group_tiles else 1
+        parts = []
         for m0 in range(0, m, self.mmax):
             xs = np.ascontiguousarray(x[m0:m0 + self.mmax], dtype=np.int8)
             mm = xs.shape[0]
-            hdr = np.array([mm, k, n, self.bw[0], self.bw[1], self.lat, 0, 0], np.int32)
+            hdr = np.array([mm, k, n, self.bw[0], self.bw[1], self.lat, group_tiles, 0], np.int32)
             self.p.stdin.write(hdr.tobytes() + xs.tobytes() + np.ascontiguousarray(w, dtype=np.int8).tobytes())
             self.p.stdin.flush()
             cyc = int(np.frombuffer(self.p.stdout.read(8), np.int64)[0])
-            out[m0:m0 + mm] = np.frombuffer(self.p.stdout.read(4 * mm * n), np.int32).reshape(mm, n)
+            parts.append(np.frombuffer(self.p.stdout.read(4 * ng * mm * n), np.int32).reshape(ng, mm, n))
             self.cycles += cyc
             self.abuf_cycles += mm * (-(-k // self.n)) if getattr(self, 'n', None) else 0
             self.macs += mm * k * n
             self.calls.append((mm, k, n, cyc))
-        return out
+        out = np.concatenate(parts, axis=1)
+        return out if group_tiles else out[0]
 
     def close(self):
         try:
@@ -130,7 +133,7 @@ def build_multi(version: str, n: int, mmax: int, ktmax: int, k: int, workdir: Pa
     workdir.mkdir(parents=True, exist_ok=True)
     srcs = [str(p) for p in sorted((HW / version).glob("*.v"))]
     cmd = [vl, "--cc", "--exe", "--build", "-Wno-fatal", "-Wno-lint", "-Wno-style", "--top-module", "tpu_multi", f"-GN={n}", f"-GMMAX={mmax}", f"-GKTMAX={ktmax}", f"-GK={k}", "-O3",
-           "-CFLAGS", f"-DNN={n} -DKK={k} -DMMAXV={mmax} -DKTMAXV={ktmax} -O2", "--Mdir", str(workdir / "mobj"), "-o", "harness_multi", *srcs, str(HW / "tb" / "harness_multi.cpp")]
+           "-CFLAGS", f"-DNN={n} -DKK={k} -DMMAXV={mmax} -DKTMAXV={ktmax} -DHAS_GROUP={1 if version >= 'v9' else 0} -O2", "--Mdir", str(workdir / "mobj"), "-o", "harness_multi", *srcs, str(HW / "tb" / "harness_multi.cpp")]
     r = subprocess.run(cmd, capture_output=True, text=True, cwd=workdir, env=toolchain.env())
     if r.returncode:
         raise RuntimeError("verilator multi harness build failed:\n" + (r.stderr + r.stdout)[-3000:])

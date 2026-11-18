@@ -15,6 +15,9 @@
 #ifndef KK
 #define KK 2
 #endif
+#ifndef HAS_GROUP
+#define HAS_GROUP 0
+#endif
 #ifndef MMAXV
 #define MMAXV 64
 #endif
@@ -38,6 +41,7 @@ int main() {
     int m = h[0], k = h[1], n = h[2], bwn = h[3], bwd = h[4], lat = h[5];
     if (m < 0) break;
     int kt = (k + NN - 1) / NN, nt = (n + NN - 1) / NN;
+    int gk = HAS_GROUP ? h[6] : 0, ng = (gk > 0) ? (kt + gk - 1) / gk : 1;
     std::vector<int8_t> x(m * k), w(k * n);
     if (fread(x.data(), 1, x.size(), stdin) != x.size() || fread(w.data(), 1, w.size(), stdin) != w.size()) return 2;
     if (m > MMAXV || kt > KTMAXV) { fprintf(stderr, "shape exceeds build limits\n"); return 3; }
@@ -59,8 +63,11 @@ int main() {
         dram[c][(((size_t)(j * kt + i) * NN) + r) * NN + cc] = v;
       }
     }
-    std::vector<int32_t> out((size_t)m * n, 0);
+    std::vector<int32_t> out((size_t)ng * m * n, 0);
     d->cmd_m = m; d->cmd_kt = kt;
+#if HAS_GROUP
+    d->cmd_gk = gk; d->cmd_ng = ng;
+#endif
     for (int c = 0; c < KK; c++) { setbits(d->cmd_nt_vec, 16 * c, 16, nt_c[c] ? nt_c[c] : 1); setbits(d->cmd_wbase_vec, 32 * c, 32, 0); }
     d->cmd_valid = 1;
     struct Mem { bool busy = false, have = false; int wait_c = 0, credit = 0, sent = 0; uint32_t base = 0, total = 0; uint8_t held[NN] = {0}; };
@@ -73,7 +80,12 @@ int main() {
         Mem& M = mem[c];
         if ((d->out_valid >> c) & 1) {
           int nti = (int)getbits(d->out_nt, 16 * c, 16), mi = (int)getbits(d->out_m, 16 * c, 16);
-          if (nt_c[c]) for (int cc = 0; cc < NN; cc++) { int col = (off_c[c] + nti) * NN + cc; if (col < n && mi < m) out[(size_t)mi * n + col] = (int32_t)getbits(d->out_data, (c * NN + cc) * 32, 32); }
+#if HAS_GROUP
+          int gi = (int)getbits(d->out_g, 16 * c, 16);
+#else
+          int gi = 0;
+#endif
+          if (nt_c[c]) for (int cc = 0; cc < NN; cc++) { int col = (off_c[c] + nti) * NN + cc; if (col < n && mi < m) out[((size_t)gi * m + mi) * n + col] = (int32_t)getbits(d->out_data, (c * NN + cc) * 32, 32); }
         }
         bool req = (d->mem_req_valid >> c) & 1; uint32_t addr = (uint32_t)getbits(d->mem_req_addr, 32 * c, 32), beats = (uint32_t)getbits(d->mem_req_beats, 32 * c, 32);
         bool rr = (d->mem_rready >> c) & 1;

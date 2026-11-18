@@ -19,6 +19,9 @@
 #ifndef HAS_RREADY
 #define HAS_RREADY 0      // 1: core exports mem_rready (backpressure) and takes ONE request per command for all tiles
 #endif
+#ifndef HAS_GROUP
+#define HAS_GROUP 0       // 1: core has cmd_gk/cmd_ng/out_g (K-group partial sums); header[6] = K tiles per group
+#endif
 #ifndef MMAXV
 #define MMAXV 64
 #endif
@@ -44,6 +47,7 @@ int main() {
     int m = h[0], k = h[1], n = h[2], bwn = h[3], bwd = h[4], lat = h[5];
     if (m < 0) break;
     int kt = (k + NN - 1) / NN, nt = (n + NN - 1) / NN;
+    int gk = HAS_GROUP ? h[6] : 0, ng = (gk > 0) ? (kt + gk - 1) / gk : 1;
     std::vector<int8_t> x(m * k), w(k * n);
     if (fread(x.data(), 1, x.size(), stdin) != x.size() || fread(w.data(), 1, w.size(), stdin) != w.size()) return 2;
     if (m > MMAXV || kt > KTMAXV) { fprintf(stderr, "shape exceeds build limits m=%d kt=%d\n", m, kt); return 3; }
@@ -59,8 +63,12 @@ int main() {
       int kk = i * NN + r, nn = j * NN + c; uint8_t v = (kk < k && nn < n) ? (uint8_t)w[(size_t)kk * n + nn] : 0;
       dram[(((size_t)(j * kt + i) * NN) + (ROWREV ? (NN - 1 - r) : r)) * NN + c] = v;
     }
-    std::vector<int32_t> out((size_t)m * n, 0); long got = 0, want = (long)m * nt;
-    d->cmd_m = m; d->cmd_kt = kt; d->cmd_nt = nt; d->cmd_wbase = 0; d->cmd_valid = 1;
+    std::vector<int32_t> out((size_t)ng * m * n, 0); long got = 0, want = (long)m * nt;
+    d->cmd_m = m; d->cmd_kt = kt; d->cmd_nt = nt; d->cmd_wbase = 0;
+#if HAS_GROUP
+    d->cmd_gk = gk; d->cmd_ng = ng;
+#endif
+    d->cmd_valid = 1;
     bool busy = false; int wait_c = 0, credit = 0, sent = 0; uint32_t base = 0, total = 0; bool cmd_taken = false, have_beat = false, pending_req = false; uint8_t held[NN] = {0};
     int64_t cycles = 0; bool done = false;
     while (!done) {
@@ -68,7 +76,12 @@ int main() {
       bool req = d->mem_req_valid; uint32_t addr = d->mem_req_addr; uint32_t beats = d->mem_req_beats; bool rdy_now = d->cmd_ready;
       if (d->out_valid) {
         int nti = d->out_nt, mi = d->out_m;
-        for (int c = 0; c < NN; c++) { int col = nti * NN + c; if (col < n && mi < m) out[(size_t)mi * n + col] = (int32_t)word(d->out_data, c); }
+#if HAS_GROUP
+        int gi = d->out_g;
+#else
+        int gi = 0;
+#endif
+        for (int c = 0; c < NN; c++) { int col = nti * NN + c; if (col < n && mi < m) out[((size_t)gi * m + mi) * n + col] = (int32_t)word(d->out_data, c); }
         got++;
       }
       if (d->cmd_done) done = true;
@@ -97,6 +110,7 @@ int main() {
       d->mem_req_ready = nready; d->mem_rvalid = nrvalid; if (nrvalid) setb(d->mem_rdata, beat); d->eval();
       if (cycles > 2000000000LL) return 4;
     }
+    want *= ng;
     if (got != want) { fprintf(stderr, "outputs %ld != %ld\n", got, want); return 5; }
     fwrite(&cycles, 8, 1, stdout); fwrite(out.data(), 4, out.size(), stdout); fflush(stdout);
     tick();

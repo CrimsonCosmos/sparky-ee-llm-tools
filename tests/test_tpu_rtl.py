@@ -8,7 +8,7 @@ pytestmark = pytest.mark.skipif(not toolchain.which("verilator"), reason="NOT RU
 N, MMAX, KTMAX = 8, 16, 4
 
 
-VERSIONS = ["v1", "v2", "v3", "v4", "v5", "v6", "v7"]
+VERSIONS = ["v1", "v2", "v3", "v4", "v5", "v6", "v7", "v9"]
 
 
 @pytest.fixture(scope="module", params=VERSIONS)
@@ -109,3 +109,24 @@ def test_multi_core_bit_exact_and_model(cores, tmp_path):
                 assert abs(got - pred) <= 1 + (m // MMAX), (cores, bw, lat, m, k, n, got, pred)       # +-1 cycle: multi-core done-pulse alignment
         finally:
             s.close()
+
+
+@pytest.mark.parametrize("gk", [1, 2, 3, 5])
+def test_k_group_partial_sums_v9(gk, tmp_path):
+    """v9: with K-groups the core returns one exact int32 partial sum per group of gk K-tiles; their sum is the full GEMM, each equals numpy's partial matmul."""
+    exe = rtl.build_harness("v9", N, MMAX, KTMAX, tmp_path)
+    rng = np.random.default_rng(gk)
+    s = rtl.Sim(exe, MMAX, (1, 1), 0, n=N)
+    try:
+        for _ in range(10):
+            m, k, n = int(rng.integers(1, 70)), int(rng.integers(1, N * KTMAX)), int(rng.integers(1, 40))
+            x = rng.integers(-128, 128, (m, k), dtype=np.int8); w = rng.integers(-128, 128, (k, n), dtype=np.int8)
+            out = s.gemm(x, w, group_tiles=gk)
+            kt = -(-k // N)
+            assert out.shape[0] == -(-kt // gk)
+            for g in range(out.shape[0]):
+                k0, k1 = g * gk * N, min(k, (g + 1) * gk * N)
+                assert np.array_equal(out[g], x[:, k0:k1].astype(np.int32) @ w[k0:k1].astype(np.int32)), (m, k, n, g)
+            assert np.array_equal(out.sum(axis=0), x.astype(np.int32) @ w.astype(np.int32))
+    finally:
+        s.close()
