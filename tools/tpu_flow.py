@@ -29,9 +29,10 @@ endmodule
 """
     (work / "wrap.v").write_text(wrap); files.append(work / "wrap.v"); top = "tpu_array_top"
 if top == "tpu_core":    # whole core with small on-chip buffers (flop-based here; SRAM macros in a real build): controller, accumulators, fetch/compute engines + the array
-    mmax, ktmax = 8, 4
-    has_g = version >= "v9"
-    GK_IN = "input [15:0] cmd_gk, input [15:0] cmd_ng, " if has_g else ""
+    import os
+    mmax, ktmax = int(os.environ.get("TPU_MMAX", 8)), int(os.environ.get("TPU_KTMAX", 4))     # on-chip buffer depth (flop based here)
+    has_g = int(version[1:]) >= 9
+    GK_IN = "input [15:0] cmd_gk, input [15:0] cmd_ng, " + ("input [31:0] cmd_tiles, input [31:0] cmd_outs, " if int(version[1:]) >= 10 else "") if has_g else ""
     G_OUT = "output [15:0] out_g, " if has_g else ""
     wrap = f"""module tpu_core_top(input clk, input rst_n, input cmd_valid, output cmd_ready, input [15:0] cmd_m, input [15:0] cmd_kt, input [15:0] cmd_nt, {GK_IN}input [31:0] cmd_wbase, output cmd_done,
   input abuf_we, input [15:0] abuf_waddr, input [{n * 8 - 1}:0] abuf_wdata, output mem_req_valid, input mem_req_ready, output [31:0] mem_req_addr, output [31:0] mem_req_beats,

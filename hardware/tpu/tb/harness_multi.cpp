@@ -18,6 +18,9 @@
 #ifndef HAS_GROUP
 #define HAS_GROUP 0
 #endif
+#ifndef HAS_COUNTS
+#define HAS_COUNTS 0
+#endif
 #ifndef MMAXV
 #define MMAXV 64
 #endif
@@ -68,7 +71,13 @@ int main() {
 #if HAS_GROUP
     d->cmd_gk = gk; d->cmd_ng = ng;
 #endif
-    for (int c = 0; c < KK; c++) { setbits(d->cmd_nt_vec, 16 * c, 16, nt_c[c] ? nt_c[c] : 1); setbits(d->cmd_wbase_vec, 32 * c, 32, 0); }
+    for (int c = 0; c < KK; c++) {
+      int ntc = nt_c[c] ? nt_c[c] : 1;
+      setbits(d->cmd_nt_vec, 16 * c, 16, ntc); setbits(d->cmd_wbase_vec, 32 * c, 32, 0);
+#if HAS_COUNTS
+      setbits(d->cmd_tiles_vec, 32 * c, 32, (uint64_t)kt * ntc); setbits(d->cmd_outs_vec, 32 * c, 32, (uint64_t)m * ntc * ng);
+#endif
+    }
     d->cmd_valid = 1;
     struct Mem { bool busy = false, have = false; int wait_c = 0, credit = 0, sent = 0; uint32_t base = 0, total = 0; uint8_t held[NN] = {0}; };
     std::vector<Mem> mem(KK);

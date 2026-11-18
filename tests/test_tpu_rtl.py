@@ -8,10 +8,10 @@ pytestmark = pytest.mark.skipif(not toolchain.which("verilator"), reason="NOT RU
 N, MMAX, KTMAX = 8, 16, 4
 
 
-VERSIONS = ["v1", "v2", "v3", "v4", "v5", "v6", "v7", "v9"]
+VERSIONS = ["v1", "v2", "v3", "v4", "v5", "v6", "v7", "v9", "v10"]
 
 
-@pytest.fixture(scope="module", params=VERSIONS)
+@pytest.fixture(scope="module", params=[v for v in VERSIONS if int(v[1:]) < 9])      # the SystemVerilog testbench knows the v1-v8 command interface only
 def sim(request, tmp_path_factory):
     wd = tmp_path_factory.mktemp("tpu_" + request.param)
     return wd, rtl.build(request.param, N, MMAX, KTMAX, wd)
@@ -114,7 +114,7 @@ def test_multi_core_bit_exact_and_model(version, cores, tmp_path):
 @pytest.mark.parametrize("gk", [1, 2, 3, 5])
 def test_k_group_partial_sums_v9(gk, tmp_path):
     """v9: with K-groups the core returns one exact int32 partial sum per group of gk K-tiles; their sum is the full GEMM, each equals numpy's partial matmul."""
-    exe = rtl.build_harness("v9", N, MMAX, KTMAX, tmp_path)
+    exe = rtl.build_harness("v10", N, MMAX, KTMAX, tmp_path)
     rng = np.random.default_rng(gk)
     s = rtl.Sim(exe, MMAX, (1, 1), 0, n=N)
     try:
@@ -134,7 +134,7 @@ def test_k_group_partial_sums_v9(gk, tmp_path):
 
 def test_multi_core_k_groups_v9(tmp_path):
     """v9 tpu_multi: K-group partial sums are exact per group on every core."""
-    exe = rtl.build_multi("v9", N, MMAX, KTMAX, 2, tmp_path)
+    exe = rtl.build_multi("v10", N, MMAX, KTMAX, 2, tmp_path)
     rng = np.random.default_rng(99)
     s = rtl.Sim(exe, MMAX, (1, 1), 0, n=N)
     try:

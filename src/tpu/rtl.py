@@ -78,7 +78,7 @@ def build_harness(version: str, n: int, mmax: int, ktmax: int, workdir: Path) ->
     workdir.mkdir(parents=True, exist_ok=True)
     srcs = [str(p) for p in sorted((HW / version).glob("*.v"))]
     cmd = [vl, "--cc", "--exe", "--build", "-Wno-fatal", "-Wno-lint", "-Wno-style", "--top-module", "tpu_core", f"-GN={n}", f"-GMMAX={mmax}", f"-GKTMAX={ktmax}", "-O3",
-           "-CFLAGS", f"-DNN={n} -DMMAXV={mmax} -DKTMAXV={ktmax} -DROWREV={0 if version != 'v1' else 1} -DHAS_RREADY={1 if version not in ('v1', 'v2') else 0} -DHAS_GROUP={1 if version >= 'v9' else 0} -O2", "--Mdir", str(workdir / "hobj"), "-o", "harness", *srcs, str(HW / "tb" / "harness.cpp")]
+           "-CFLAGS", f"-DNN={n} -DMMAXV={mmax} -DKTMAXV={ktmax} -DROWREV={0 if version != 'v1' else 1} -DHAS_RREADY={1 if version not in ('v1', 'v2') else 0} -DHAS_GROUP={1 if int(version[1:]) >= 9 else 0} -DHAS_COUNTS={1 if int(version[1:]) >= 10 else 0} -O2", "--Mdir", str(workdir / "hobj"), "-o", "harness", *srcs, str(HW / "tb" / "harness.cpp")]
     r = subprocess.run(cmd, capture_output=True, text=True, cwd=workdir, env=toolchain.env())
     if r.returncode:
         raise RuntimeError("verilator harness build failed:\n" + (r.stderr + r.stdout)[-3000:])
@@ -133,7 +133,7 @@ def build_multi(version: str, n: int, mmax: int, ktmax: int, k: int, workdir: Pa
     workdir.mkdir(parents=True, exist_ok=True)
     srcs = [str(p) for p in sorted((HW / version).glob("*.v"))]
     cmd = [vl, "--cc", "--exe", "--build", "-Wno-fatal", "-Wno-lint", "-Wno-style", "--top-module", "tpu_multi", f"-GN={n}", f"-GMMAX={mmax}", f"-GKTMAX={ktmax}", f"-GK={k}", "-O3",
-           "-CFLAGS", f"-DNN={n} -DKK={k} -DMMAXV={mmax} -DKTMAXV={ktmax} -DHAS_GROUP={1 if version >= 'v9' else 0} -O2", "--Mdir", str(workdir / "mobj"), "-o", "harness_multi", *srcs, str(HW / "tb" / "harness_multi.cpp")]
+           "-CFLAGS", f"-DNN={n} -DKK={k} -DMMAXV={mmax} -DKTMAXV={ktmax} -DHAS_GROUP={1 if int(version[1:]) >= 9 else 0} -DHAS_COUNTS={1 if int(version[1:]) >= 10 else 0} -O2", "--Mdir", str(workdir / "mobj"), "-o", "harness_multi", *srcs, str(HW / "tb" / "harness_multi.cpp")]
     r = subprocess.run(cmd, capture_output=True, text=True, cwd=workdir, env=toolchain.env())
     if r.returncode:
         raise RuntimeError("verilator multi harness build failed:\n" + (r.stderr + r.stdout)[-3000:])

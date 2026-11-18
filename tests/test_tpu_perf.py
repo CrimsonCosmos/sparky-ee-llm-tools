@@ -8,7 +8,7 @@ pytestmark = pytest.mark.skipif(not toolchain.which("verilator"), reason="NOT RU
 N, MMAX, KTMAX = 8, 64, 8
 
 
-@pytest.mark.parametrize("version,extra,bubble", [("v3", -1, 1), ("v4", 0, 1), ("v5", 0, 1), ("v6", 0, 0)])
+@pytest.mark.parametrize("version,extra,bubble", [("v3", -1, 1), ("v4", 0, 1), ("v5", 0, 1), ("v6", 0, 0), ("v9", 0, 0), ("v10", 1, 0)])
 def test_model_equals_rtl(version, extra, bubble, tmp_path):
     exe = rtl.build_harness(version, N, MMAX, KTMAX, tmp_path)
     rng = np.random.default_rng(7)

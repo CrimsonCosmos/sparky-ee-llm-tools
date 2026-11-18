@@ -22,6 +22,9 @@
 #ifndef HAS_GROUP
 #define HAS_GROUP 0       // 1: core has cmd_gk/cmd_ng/out_g (K-group partial sums); header[6] = K tiles per group
 #endif
+#ifndef HAS_COUNTS
+#define HAS_COUNTS 0      // 1 (v10+): host supplies cmd_tiles = kt*nt and cmd_outs = m*nt*groups
+#endif
 #ifndef MMAXV
 #define MMAXV 64
 #endif
@@ -67,6 +70,9 @@ int main() {
     d->cmd_m = m; d->cmd_kt = kt; d->cmd_nt = nt; d->cmd_wbase = 0;
 #if HAS_GROUP
     d->cmd_gk = gk; d->cmd_ng = ng;
+#endif
+#if HAS_COUNTS
+    d->cmd_tiles = kt * nt; d->cmd_outs = m * nt * ng;
 #endif
     d->cmd_valid = 1;
     bool busy = false; int wait_c = 0, credit = 0, sent = 0; uint32_t base = 0, total = 0; bool cmd_taken = false, have_beat = false, pending_req = false; uint8_t held[NN] = {0};

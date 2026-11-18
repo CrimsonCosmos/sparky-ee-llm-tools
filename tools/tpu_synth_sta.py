@@ -10,13 +10,25 @@ hw = Path(__file__).resolve().parents[1] / "hardware" / "tpu" / version
 lib = next(Path("/home/user/tools/pdk/ciel/sky130/versions").glob(f"*/sky130A/libs.ref/sky130_fd_sc_hd/lib/sky130_fd_sc_hd__{corner}.lib"))
 lg = max(1, math.ceil(math.log2(n)))
 d = Path(tempfile.mkdtemp(prefix="tsta_"))
-(d / "wrap.v").write_text(f"""module top(input clk, input rst_n, input wload, input [{lg-1}:0] wl_idx, input [{n*8-1}:0] w_row, input [{n*8-1}:0] a_vec, input a_valid, input a_first, output [{n*32-1}:0] y_vec, output y_valid);
+core = "core" in sys.argv
+if core:
+    has_g = int(version[1:]) >= 9
+    gk = "input [15:0] cmd_gk, input [15:0] cmd_ng, " + ("input [31:0] cmd_tiles, input [31:0] cmd_outs, " if int(version[1:]) >= 10 else "") if has_g else ""
+    go = "output [15:0] out_g, " if has_g else ""
+    (d / "wrap.v").write_text(f"""module top(input clk, input rst_n, input cmd_valid, output cmd_ready, input [15:0] cmd_m, input [15:0] cmd_kt, input [15:0] cmd_nt, {gk}input [31:0] cmd_wbase, output cmd_done,
+  input abuf_we, input [15:0] abuf_waddr, input [{n * 8 - 1}:0] abuf_wdata, output mem_req_valid, input mem_req_ready, output [31:0] mem_req_addr, output [31:0] mem_req_beats,
+  input mem_rvalid, output mem_rready, input [{n * 8 - 1}:0] mem_rdata, output out_valid, output [15:0] out_nt, output [15:0] out_m, {go}output [{n * 32 - 1}:0] out_data);
+  tpu_core #(.N({n}), .MMAX(8), .KTMAX(4)) u(.*);
+endmodule
+""")
+else:
+  (d / "wrap.v").write_text(f"""module top(input clk, input rst_n, input wload, input [{lg-1}:0] wl_idx, input [{n*8-1}:0] w_row, input [{n*8-1}:0] a_vec, input a_valid, input a_first, output [{n*32-1}:0] y_vec, output y_valid);
   tpu_array #(.N({n})) u(.*);
 endmodule
 """)
 env = toolchain.env()
 booth = "-booth" if "booth" in sys.argv else ""
-ys = f"""read_verilog -sv {hw}/tpu_pe.v {hw}/tpu_array.v {d}/wrap.v
+ys = f"""read_verilog -sv {hw}/tpu_pe.v {hw}/tpu_array.v {hw}/tpu_core.v {d}/wrap.v
 hierarchy -top top
 synth -flatten -top top {booth}
 dfflibmap -liberty {lib}
