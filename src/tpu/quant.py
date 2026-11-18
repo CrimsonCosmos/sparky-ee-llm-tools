@@ -10,12 +10,27 @@ from .llm import Llama
 QMAX = 127
 
 
-def quant_rows(x: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Per-row symmetric int8: returns (int8 [M,K], float32 scale [M])."""
-    s = np.abs(x).max(axis=-1) / QMAX
+def quant_rows(x: np.ndarray, clip_q: float | None = None) -> tuple[np.ndarray, np.ndarray]:
+    """Per-row symmetric int8: returns (int8 [M,K], float32 scale [M]). `clip_q` (optional): the scale covers that quantile of |x| instead of the maximum (values beyond it saturate)."""
+    s = (np.abs(x).max(axis=-1) if clip_q is None else np.quantile(np.abs(x), clip_q, axis=-1)) / QMAX
     s = np.where(s == 0, 1.0, s).astype(np.float32)
     q = np.clip(np.rint(x / s[..., None]), -QMAX, QMAX).astype(np.int8)
     return q, s
+
+
+def quant_rows_mse(w: np.ndarray, ratios=(1.0, 0.95, 0.9, 0.85, 0.8, 0.75, 0.7)) -> tuple[np.ndarray, np.ndarray]:
+    """Per-row symmetric int8 with the clipping ratio (of absmax) that minimises the row's squared quantisation error."""
+    amax = np.abs(w).max(axis=-1)
+    best_err = np.full(w.shape[0], np.inf); best_s = None
+    for r in ratios:
+        s = np.where(amax == 0, 1.0, amax * r / QMAX).astype(np.float32)
+        err = ((np.clip(np.rint(w / s[:, None]), -QMAX, QMAX) * s[:, None] - w) ** 2).sum(axis=-1)
+        if best_s is None:
+            best_s = s.copy()
+        m = err < best_err
+        best_err = np.where(m, err, best_err); best_s = np.where(m, s, best_s)
+    q = np.clip(np.rint(w / best_s[:, None]), -QMAX, QMAX).astype(np.int8)
+    return q, best_s.astype(np.float32)
 
 
 def igemm_reference(xq: np.ndarray, wq: np.ndarray) -> np.ndarray:
@@ -28,16 +43,18 @@ class QuantLlama(Llama):
         super().__init__(model_dir)
         self.igemm = igemm
         self._wq: dict[str, tuple[np.ndarray, np.ndarray]] = {}
+        self.act_clip: float | None = None                      # activation scale quantile (None = absmax)
+        self.w_mse = False                                      # per-output-channel weight scale chosen to minimise squared error instead of absmax
         self.log: list[tuple[str, int, int, int]] = []          # (name, M, K, N) of every GEMM issued
 
     def qweight(self, name: str) -> tuple[np.ndarray, np.ndarray]:
         if name not in self._wq:
-            self._wq[name] = quant_rows(self.w[name])         # per output channel = per row of [out, in]
+            self._wq[name] = quant_rows_mse(self.w[name]) if self.w_mse else quant_rows(self.w[name])         # per output channel = per row of [out, in]
         return self._wq[name]
 
     def linear(self, x, name):
         wq, sw = self.qweight(name)
-        xq, sx = quant_rows(x)
+        xq, sx = quant_rows(x, self.act_clip)
         self.log.append((name, x.shape[0], x.shape[1], wq.shape[0]))
         return (self.igemm(xq, wq).astype(np.float32) * sx[:, None]) * sw[None, :]
 
