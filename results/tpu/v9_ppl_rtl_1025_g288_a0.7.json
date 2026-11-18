@@ -1,0 +1,13 @@
+{
+ "group_cols": 288,
+ "version": "v9",
+ "tokens": 1025,
+ "ppl_float32": 25.664926528930664,
+ "ppl_tpu_rtl_w8a8_smoothquant": 25.735109329223633,
+ "degradation_pct": 0.2734580214514004,
+ "gemms_checked": 1564,
+ "gemms_mismatching": 0,
+ "cycles": 573933760,
+ "macs": 146767085568,
+ "utilization": 0.9989113168739194
+}
