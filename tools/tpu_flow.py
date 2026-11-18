@@ -1,5 +1,5 @@
 """Run a TPU RTL module (default: the systolic array) through the sky130A silicon flow and print sign-off verdicts + metrics, saving them as JSON.
-usage: python tools/tpu_flow.py <version> <N> <clock_ns> <workdir> [top=tpu_array] [util_pct=40] [hold_margin_ns]
+usage: python tools/tpu_flow.py <version> <N> <clock_ns> <workdir> [top=tpu_array] [util_pct=40] [hold_margin_ns] [pnr_corners comma list]
 Parameters (N) are applied by wrapping the top in a generated one-line module (no RTL edit). Needs the silicon tools (docs/SILICON_DEPENDENCIES.md)."""
 import json
 import sys
@@ -13,7 +13,8 @@ from silicon.spec import SiliconSpec
 version, n, clk, work = sys.argv[1], int(sys.argv[2]), float(sys.argv[3]), Path(sys.argv[4])
 top = sys.argv[5] if len(sys.argv) > 5 else "tpu_array"
 util = int(sys.argv[6]) if len(sys.argv) > 6 else 40
-hold_margin = float(sys.argv[7]) if len(sys.argv) > 7 else None      # flow knob: extra hold slack the resizer must reach (ns)
+hold_margin = float(sys.argv[7]) if len(sys.argv) > 7 else None
+pnr_corners = sys.argv[8].split(',') if len(sys.argv) > 8 else None      # corners the resizer optimises (default: the nominal corner only, so the slow corner is merely checked)      # flow knob: extra hold slack the resizer must reach (ns)
 hw = Path(__file__).resolve().parents[1] / "hardware" / "tpu" / version
 work.mkdir(parents=True, exist_ok=True)
 files = [hw / "tpu_pe.v", hw / "tpu_array.v"] if top == "tpu_array" else sorted(hw.glob("*.v"))
@@ -36,7 +37,7 @@ endmodule
 """
     (work / "wrap.v").write_text(wrap); files = sorted(hw.glob("*.v")); files = [f for f in files if f.name != "tpu_multi.v"] + [work / "wrap.v"]; top = "tpu_core_top"
 spec = SiliconSpec(design_name=top, verilog_files=files, clock_port="clk", clock_period_ns=clk, pdk="sky130A", core_utilization_pct=util, reset_port="rst_n", reset_active_low=True,
-                   extra={"USE_SLANG": True, **({"PL_RESIZER_HOLD_SLACK_MARGIN": hold_margin, "GRT_RESIZER_HOLD_SLACK_MARGIN": hold_margin} if hold_margin is not None else {})})
+                   extra={"USE_SLANG": True, **({"PNR_CORNERS": pnr_corners} if pnr_corners else {}), **({"PL_RESIZER_HOLD_SLACK_MARGIN": hold_margin, "GRT_RESIZER_HOLD_SLACK_MARGIN": hold_margin} if hold_margin is not None else {})})
 t = time.time()
 r = flow.run_flow(spec, work, tag=f"{version}_n{n}", timeout=14400)
 out = {"version": version, "N": n, "top": top, "clock_ns": clk, "flow_ok": r.ok, "seconds": round(time.time() - t), "failed_step": r.failed_step}
