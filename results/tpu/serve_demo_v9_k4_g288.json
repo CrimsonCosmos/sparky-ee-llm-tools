@@ -1,0 +1,36 @@
+{
+ "version": "v9",
+ "group_cols": 288,
+ "N": 16,
+ "cores": 4,
+ "sequences": 4,
+ "new_tokens_each": 24,
+ "gemms_checked": 56097,
+ "gemms_mismatching": 0,
+ "prefill_cycles": 8520999,
+ "decode_cycles": 52666237,
+ "decode_abuf_fill_cycles_not_overlapped": 1005102,
+ "decode_cycles_per_generated_token_incl_abuf_fill": 583384.1195652174,
+ "decode_cycles_per_generated_token": 572459.0978260869,
+ "assumed_clock_mhz": 70.0,
+ "decode_tokens_per_s_at_assumed_clock": 122.27947859650577,
+ "wall_s": 720.1224122047424,
+ "outputs": [
+  {
+   "prompt": "The capital of France is",
+   "completion": " the capital of the country. The capital of France is Paris.\n\nThe capital of France is Paris.\n\n"
+  },
+  {
+   "prompt": "Photosynthesis is the process by which",
+   "completion": " plants convert light energy into chemical energy. The process is called photosynthesis.\n\nThe process of photosynthesis is a complex process"
+  },
+  {
+   "prompt": "In 1969, the Apollo 11 mission",
+   "completion": " was launched. The mission was a joint effort between NASA and the Soviet Union. The mission was to land on the moon"
+  },
+  {
+   "prompt": "A systolic array is",
+   "completion": " a collection of cells that are all the same size and shape. The cells are arranged in a regular pattern, and the"
+  }
+ ]
+}
