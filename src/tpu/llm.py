@@ -93,6 +93,10 @@ class Llama:
     def linear(self, x: np.ndarray, name: str) -> np.ndarray:
         return x @ self.weight(name).T
 
+    def linear_multi(self, x: np.ndarray, names: list[str]) -> list[np.ndarray]:
+        """Several projections of the same input (q/k/v, gate/up). The default applies them one by one; backends may fuse them into one wider GEMM."""
+        return [self.linear(x, n) for n in names]
+
     def attn_qk(self, q: np.ndarray, k: np.ndarray) -> np.ndarray:        # q [T, hd], k [S, hd] -> [T, S]
         return q @ k.T
 
@@ -120,9 +124,8 @@ class Llama:
         for L in range(c.layers):
             p = f"model.layers.{L}."
             h = rmsnorm(x, self.w[p + "input_layernorm.weight"], c.eps)
-            q = self.linear(h, p + "self_attn.q_proj.weight").reshape(T, c.heads, c.head_dim)
-            k = self.linear(h, p + "self_attn.k_proj.weight").reshape(T, c.kv_heads, c.head_dim)
-            v = self.linear(h, p + "self_attn.v_proj.weight").reshape(T, c.kv_heads, c.head_dim)
+            q, k, v = self.linear_multi(h, [p + "self_attn.q_proj.weight", p + "self_attn.k_proj.weight", p + "self_attn.v_proj.weight"])
+            q, k, v = q.reshape(T, c.heads, c.head_dim), k.reshape(T, c.kv_heads, c.head_dim), v.reshape(T, c.kv_heads, c.head_dim)
             q, k = self.rope(q, pos), self.rope(k, pos)
             if cache is not None:
                 cache[L]["k"] = np.concatenate([cache[L]["k"], k]); cache[L]["v"] = np.concatenate([cache[L]["v"], v])
@@ -149,8 +152,7 @@ class Llama:
                     out[:, hh] = self.attn_pv(softmax(sc).astype(np.float32), V[:, g])
             x = x + self.linear(out.reshape(T, c.hidden), p + "self_attn.o_proj.weight")
             h = rmsnorm(x, self.w[p + "post_attention_layernorm.weight"], c.eps)
-            g = self.linear(h, p + "mlp.gate_proj.weight")
-            u = self.linear(h, p + "mlp.up_proj.weight")
+            g, u = self.linear_multi(h, [p + "mlp.gate_proj.weight", p + "mlp.up_proj.weight"])
             x = x + self.linear(silu(g) * u, p + "mlp.down_proj.weight")
         x = rmsnorm(x, self.w["model.norm.weight"], c.eps)
         return self.linear(x, "lm_head.weight" if "lm_head.weight" in self.w else "model.embed_tokens.weight")
@@ -166,9 +168,8 @@ class Llama:
         for L in range(c.layers):
             p = f"model.layers.{L}."
             h = rmsnorm(x, self.w[p + "input_layernorm.weight"], c.eps)
-            q = self.linear(h, p + "self_attn.q_proj.weight").reshape(B, c.heads, c.head_dim)
-            k = self.linear(h, p + "self_attn.k_proj.weight").reshape(B, c.kv_heads, c.head_dim)
-            v = self.linear(h, p + "self_attn.v_proj.weight").reshape(B, c.kv_heads, c.head_dim)
+            q, k, v = self.linear_multi(h, [p + "self_attn.q_proj.weight", p + "self_attn.k_proj.weight", p + "self_attn.v_proj.weight"])
+            q, k, v = q.reshape(B, c.heads, c.head_dim), k.reshape(B, c.kv_heads, c.head_dim), v.reshape(B, c.kv_heads, c.head_dim)
             out = np.zeros((B, c.heads, c.head_dim), np.float32)
             for b in range(B):
                 qb = self.rope(q[b:b + 1], pos[b:b + 1]); kb = self.rope(k[b:b + 1], pos[b:b + 1])
@@ -180,8 +181,7 @@ class Llama:
                     out[b, hh] = self.attn_pv(softmax(sc).astype(np.float32), V[:, g])[0]
             x = x + self.linear(out.reshape(B, c.hidden), p + "self_attn.o_proj.weight")
             h = rmsnorm(x, self.w[p + "post_attention_layernorm.weight"], c.eps)
-            g = self.linear(h, p + "mlp.gate_proj.weight")
-            u = self.linear(h, p + "mlp.up_proj.weight")
+            g, u = self.linear_multi(h, [p + "mlp.gate_proj.weight", p + "mlp.up_proj.weight"])
             x = x + self.linear(silu(g) * u, p + "mlp.down_proj.weight")
         x = rmsnorm(x, self.w["model.norm.weight"], c.eps)
         return self.linear(x, "lm_head.weight" if "lm_head.weight" in self.w else "model.embed_tokens.weight")

@@ -77,6 +77,21 @@ class QuantLlama(Llama):
         self.log.append((name, x.shape[0], x.shape[1], wq.shape[0]))
         return (self.igemm(xq, wq).astype(np.float32) * sx[:, None]) * sw[None, :]
 
+    fuse = True                                                 # fuse projections sharing an input into one GEMM (bit-identical: scales are per output channel)
+
+    def linear_multi(self, x, names):
+        if not self.fuse or len(names) == 1:
+            return [self.linear(x, n) for n in names]
+        key = "fused:" + "|".join(names)
+        if key not in self.w:
+            self.w[key] = np.concatenate([np.asarray(self.w[n]) for n in names], axis=0)
+        y = self.linear(x, key)
+        out, o = [], 0
+        for n in names:
+            w = self.w[n].shape[0]
+            out.append(y[:, o:o + w]); o += w
+        return out
+
     def _linear_grouped(self, x, name):
         g = self.group_cols
         key = (name, g)
