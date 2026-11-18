@@ -1,0 +1,12 @@
+{
+ "version": "v8",
+ "tokens": 1025,
+ "ppl_float32": 25.664926528930664,
+ "ppl_tpu_rtl_w8a8_smoothquant": 26.074508666992188,
+ "degradation_pct": 1.595882760855849,
+ "gemms_checked": 3004,
+ "gemms_mismatching": 0,
+ "cycles": 573933760,
+ "macs": 146767085568,
+ "utilization": 0.9989113168739194
+}
