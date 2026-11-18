@@ -2,6 +2,7 @@
 usage: python tools/tpu_flow.py <version> <N> <clock_ns> <workdir> [top=tpu_array] [util_pct=40] [hold_margin_ns] [pnr_corners comma list or -] [setup_margin_ns]
 Parameters (N) are applied by wrapping the top in a generated one-line module (no RTL edit). Needs the silicon tools (docs/SILICON_DEPENDENCIES.md)."""
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -42,7 +43,7 @@ endmodule
 """
     (work / "wrap.v").write_text(wrap.replace("{GK_IN}", GK_IN).replace("{G_OUT}", G_OUT)); files = sorted(hw.glob("*.v")); files = [f for f in files if f.name != "tpu_multi.v"] + [work / "wrap.v"]; top = "tpu_core_top"
 spec = SiliconSpec(design_name=top, verilog_files=files, clock_port="clk", clock_period_ns=clk, pdk="sky130A", core_utilization_pct=util, reset_port="rst_n", reset_active_low=True,
-                   extra={"USE_SLANG": True, **({"PNR_CORNERS": pnr_corners} if pnr_corners else {}), **({"PL_RESIZER_SETUP_SLACK_MARGIN": setup_margin, "GRT_RESIZER_SETUP_SLACK_MARGIN": setup_margin} if setup_margin is not None else {}), **({"PL_RESIZER_HOLD_SLACK_MARGIN": hold_margin, "GRT_RESIZER_HOLD_SLACK_MARGIN": hold_margin} if hold_margin is not None else {})})
+                   extra={"USE_SLANG": True, **json.loads(os.environ.get("TPU_FLOW_EXTRA", "{}")), **({"PNR_CORNERS": pnr_corners} if pnr_corners else {}), **({"PL_RESIZER_SETUP_SLACK_MARGIN": setup_margin, "GRT_RESIZER_SETUP_SLACK_MARGIN": setup_margin} if setup_margin is not None else {}), **({"PL_RESIZER_HOLD_SLACK_MARGIN": hold_margin, "GRT_RESIZER_HOLD_SLACK_MARGIN": hold_margin} if hold_margin is not None else {})})
 t = time.time()
 r = flow.run_flow(spec, work, tag=f"{version}_n{n}", timeout=14400)
 out = {"version": version, "N": n, "top": top, "clock_ns": clk, "flow_ok": r.ok, "seconds": round(time.time() - t), "failed_step": r.failed_step}
