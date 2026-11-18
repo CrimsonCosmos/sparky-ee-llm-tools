@@ -10,6 +10,12 @@ Weight-stationary INT8 systolic array (N x N, N=16 simulated) with int32 accumul
 | v1 | `hardware/tpu/v1` | baseline: single-buffered weights loaded by column shift, no overlap of load / stream / drain, one memory request per tile |
 | v2 | `hardware/tpu/v2` | shadow weight registers per PE; the swap tag travels on the activation wavefront, so tile t+1 loads while tile t computes; decoupled fetch and compute engines |
 | v3 | `hardware/tpu/v3` | one streaming memory request per GEMM with valid/ready backpressure (removes the per-tile request handshake) |
+| v4 | `hardware/tpu/v4` | product registered before the accumulate add (multiplier and adder in separate stages; array latency +1) |
+| v5 | `hardware/tpu/v5` | in-array partial sums 16+log2 N bits wide instead of 32 (area -12 %) |
+| v6 | `hardware/tpu/v6` | zero-bubble tile hand-over: the swap is decided in the cycle of the last weight beat (decode 93.5 % -> 99.3 % of roofline) |
+| v7 | `hardware/tpu/v7` | reset hygiene: no reset on data-path flops, local registered reset (post-route slow-corner path no longer dominated by the reset fanout) |
+| v8 | `hardware/tpu/v8` | `tpu_multi`: K arrays with their own weight ports splitting the output columns (decode 8.44 M -> 4.23 M -> 2.13 M cycles/token for K = 1, 2, 4) |
+| v9 | `hardware/tpu/v9` | K-group partial sums (`cmd_gk`, `out_g`): per-group activation/weight scales on the host (perplexity degradation +1.60 % -> +0.27 %) |
 
 Model flow (`src/tpu/`): own safetensors reader + numpy float32 Llama forward (validated by perplexity, coherence, KV-cache equality); W8A8 with per-output-channel weight scales, dynamic per-token activation scales, SmoothQuant folding (alpha 0.5). Every matrix product (q/k/v/o, gate/up/down, tied lm_head, attention QK and PV) goes through one integer GEMM hook that is executed on the Verilator model of the RTL (`hardware/tpu/tb/harness.cpp`, persistent process) and compared to an independent numpy int32 matmul.
 
