@@ -8,6 +8,7 @@ from tpu import llm, quant, rtl
 
 D = "/home/user/data/smollm2"
 version, ntok = sys.argv[1], int(sys.argv[2])
+group_cols = int(sys.argv[sys.argv.index('--group-cols') + 1]) if '--group-cols' in sys.argv else 0
 out = sys.argv[sys.argv.index("--out") + 1] if "--out" in sys.argv else None
 tk = llm.tokenizer(D)
 test = np.array(tk.encode(open("/home/user/data/wikitext2/test.txt").read()[:max(60000, ntok * 30)]).ids)[:ntok]
@@ -17,17 +18,23 @@ sim = rtl.Sim(exe, 64, n=16)
 bad = [0, 0]
 
 
+def tpu_igemm_groups(xq, wq, g):
+    c = sim.gemm(xq, np.ascontiguousarray(wq.T), group_tiles=g // 16); bad[0] += 1
+    bad[1] += int(not np.array_equal(c, quant.igemm_groups_reference(xq, wq, g)))
+    return c
+
+
 def tpu_igemm(xq, wq):
     c = sim.gemm(xq, np.ascontiguousarray(wq.T)); bad[0] += 1
     bad[1] += int(not np.array_equal(c, quant.igemm_reference(xq, wq)))
     return c
 
 
-q = quant.QuantLlama(D, igemm=tpu_igemm); q.w = wsm
+q = quant.QuantLlama(D, igemm=tpu_igemm, igemm_groups=tpu_igemm_groups); q.w = wsm; q.group_cols = group_cols; q.group_attn = True
 p_tpu = llm.perplexity(q, test, 256)
 sim.close()
 p_fp = llm.perplexity(llm.Llama(D), test, 256)
-res = {"version": version, "tokens": int(len(test)), "ppl_float32": p_fp, "ppl_tpu_rtl_w8a8_smoothquant": p_tpu, "degradation_pct": 100 * (p_tpu / p_fp - 1), "gemms_checked": bad[0], "gemms_mismatching": bad[1],
+res = {"group_cols": group_cols, "version": version, "tokens": int(len(test)), "ppl_float32": p_fp, "ppl_tpu_rtl_w8a8_smoothquant": p_tpu, "degradation_pct": 100 * (p_tpu / p_fp - 1), "gemms_checked": bad[0], "gemms_mismatching": bad[1],
        "cycles": sim.cycles, "macs": sim.macs, "utilization": sim.macs / (sim.cycles * 256)}
 print(json.dumps(res, indent=1))
 if out:

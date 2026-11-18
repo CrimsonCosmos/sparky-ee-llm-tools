@@ -12,7 +12,7 @@ D = "/home/user/data/smollm2"
 ap = argparse.ArgumentParser()
 ap.add_argument("version"); ap.add_argument("--n", type=int, default=16); ap.add_argument("--mmax", type=int, default=64); ap.add_argument("--ktmax", type=int, default=96)
 ap.add_argument("--prefill", type=int, default=32); ap.add_argument("--decode", type=int, default=8)
-ap.add_argument("--batch", type=int, default=1, help="decode B sequences together (M=B on every weight GEMM)"); ap.add_argument("--cores", type=int, default=1, help="K parallel arrays (v8 tpu_multi), each with its own weight port"); ap.add_argument("--gqa", action="store_true", help="GQA-grouped attention GEMMs"); ap.add_argument("--bw", default="1/1"); ap.add_argument("--lat", type=int, default=0); ap.add_argument("--out"); ap.add_argument("--alpha", type=float, default=quant.DEFAULT_ALPHA)
+ap.add_argument("--batch", type=int, default=1, help="decode B sequences together (M=B on every weight GEMM)"); ap.add_argument("--cores", type=int, default=1, help="K parallel arrays (v8 tpu_multi), each with its own weight port"); ap.add_argument("--group-cols", type=int, default=0, help="K-group quantisation: columns per group (multiple of N; v9 core)"); ap.add_argument("--gqa", action="store_true", help="GQA-grouped attention GEMMs"); ap.add_argument("--bw", default="1/1"); ap.add_argument("--lat", type=int, default=0); ap.add_argument("--out"); ap.add_argument("--alpha", type=float, default=quant.DEFAULT_ALPHA)
 a = ap.parse_args()
 bwn, bwd = (int(v) for v in a.bw.split("/"))
 
@@ -25,6 +25,15 @@ wd = Path(f"/home/user/data/tpu_build/{a.version}_n{a.n}")
 exe = rtl.build_harness(a.version, a.n, a.mmax, a.ktmax, wd) if a.cores == 1 else rtl.build_multi(a.version, a.n, a.mmax, a.ktmax, a.cores, Path(f"{wd}_k{a.cores}"))
 sim = rtl.Sim(exe, a.mmax, (bwn, bwd), a.lat, n=a.n)
 checked = {"gemms": 0, "mismatch": 0}
+
+
+def tpu_igemm_groups(xq, wq, group_cols):
+    c = sim.gemm(xq, np.ascontiguousarray(wq.T), group_tiles=group_cols // a.n)
+    ref = quant.igemm_groups_reference(xq, wq, group_cols)
+    checked["gemms"] += 1
+    if not np.array_equal(c, ref):
+        checked["mismatch"] += 1
+    return c
 
 
 def tpu_igemm(xq, wq):                            # xq [M,K] int8, wq [N,K] int8
@@ -46,7 +55,7 @@ def run(model, tokens, ndecode):
     return out
 
 
-qm = quant.QuantLlama(D, igemm=tpu_igemm); qm.w = wsm; qm.group_attn = a.gqa
+qm = quant.QuantLlama(D, igemm=tpu_igemm, igemm_groups=tpu_igemm_groups); qm.w = wsm; qm.group_attn = a.gqa; qm.group_cols = a.group_cols
 t0 = time.time()
 B = a.batch
 alltok = np.array(tk.encode(text).ids)
@@ -69,7 +78,7 @@ gen = gens[0]
 sim.close()
 wall = time.time() - t0
 dec_cycles = sim.cycles - pre_cycles; dec_macs = sim.macs - pre_macs; dec_abuf = sim.abuf_cycles - pre_abuf
-ref_model = quant.QuantLlama(D); ref_model.w = wsm; ref_model.group_attn = a.gqa
+ref_model = quant.QuantLlama(D); ref_model.w = wsm; ref_model.group_attn = a.gqa; ref_model.group_cols = a.group_cols
 fp = llm.Llama(D)
 gens_ref = [run(ref_model, seqs[b], a.decode) for b in range(B)]
 gens_fp = [run(fp, seqs[b], a.decode) for b in range(B)]
@@ -83,7 +92,7 @@ def roofline(calls):
 
 pre_roof = roofline(sim.calls[:pre_calls]); dec_roof = roofline(sim.calls[pre_calls:])
 res = {
-    "version": a.version, "cores": a.cores, "gqa_grouped_attention": a.gqa, "N": a.n, "mmax": a.mmax, "bw_beats_per_cycle": bwn / bwd, "mem_latency": a.lat, "prefill_tokens": len(ids), "decode_tokens": a.decode,
+    "version": a.version, "cores": a.cores, "group_cols": a.group_cols, "gqa_grouped_attention": a.gqa, "N": a.n, "mmax": a.mmax, "bw_beats_per_cycle": bwn / bwd, "mem_latency": a.lat, "prefill_tokens": len(ids), "decode_tokens": a.decode,
     "gemms_checked": checked["gemms"], "gemms_mismatching": checked["mismatch"], "batch": B, "tpu_tokens_equal_numpy_int_reference": gens == gens_ref,
     "greedy_agreement_with_float32": float(np.mean([x == y for g, f in zip(gens, gens_fp) for x, y in zip(g, f)])),
     "prefill": {"cycles": pre_cycles, "macs": pre_macs, "utilization": pre_macs / (pre_cycles * macs_per_cycle), "roofline_cycles": pre_roof, "roofline_fraction": pre_roof / pre_cycles},

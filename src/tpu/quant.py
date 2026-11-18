@@ -33,15 +33,32 @@ def quant_rows_mse(w: np.ndarray, ratios=(1.0, 0.95, 0.9, 0.85, 0.8, 0.75, 0.7))
     return q, best_s.astype(np.float32)
 
 
+def quant_rows_grouped(x: np.ndarray, g: int) -> tuple[np.ndarray, np.ndarray]:
+    """Per-row, per-K-group symmetric int8: returns (int8 [M,K], float32 scales [M, groups])."""
+    K = x.shape[-1]
+    q = np.empty(x.shape, np.int8); ss = []
+    for k0 in range(0, K, g):
+        qq, s = quant_rows(x[..., k0:k0 + g]); q[..., k0:k0 + g] = qq; ss.append(s)
+    return q, np.stack(ss, axis=-1)
+
+
+def igemm_groups_reference(xq: np.ndarray, wq: np.ndarray, group_cols: int) -> np.ndarray:
+    """One exact int32 partial sum per group of `group_cols` K columns: [groups, M, N] (the contract of the v9 core)."""
+    K = xq.shape[1]
+    return np.stack([xq[:, k0:k0 + group_cols].astype(np.int32) @ wq[:, k0:k0 + group_cols].astype(np.int32).T for k0 in range(0, K, group_cols)])
+
+
 def igemm_reference(xq: np.ndarray, wq: np.ndarray) -> np.ndarray:
     """int8 x int8 -> int32 with exact integer arithmetic (the specification every backend must match bit for bit)."""
     return (xq.astype(np.int32) @ wq.astype(np.int32).T)
 
 
 class QuantLlama(Llama):
-    def __init__(self, model_dir, igemm=igemm_reference):
+    def __init__(self, model_dir, igemm=igemm_reference, igemm_groups=igemm_groups_reference):
         super().__init__(model_dir)
         self.igemm = igemm
+        self.igemm_groups = igemm_groups                          # (xq, wq, group_cols) -> int32 [groups, M, N]
+        self.group_cols = 0                                       # 0: one scale pair per GEMM; >0: K-group quantisation of the big linears (activations and weights)
         self._wq: dict[str, tuple[np.ndarray, np.ndarray]] = {}
         self.act_clip: float | None = None                      # activation scale quantile (None = absmax)
         self.w_mse = False                                      # per-output-channel weight scale chosen to minimise squared error instead of absmax
@@ -53,10 +70,23 @@ class QuantLlama(Llama):
         return self._wq[name]
 
     def linear(self, x, name):
+        if self.group_cols and x.shape[1] > self.group_cols:
+            return self._linear_grouped(x, name)
         wq, sw = self.qweight(name)
         xq, sx = quant_rows(x, self.act_clip)
         self.log.append((name, x.shape[0], x.shape[1], wq.shape[0]))
         return (self.igemm(xq, wq).astype(np.float32) * sx[:, None]) * sw[None, :]
+
+    def _linear_grouped(self, x, name):
+        g = self.group_cols
+        key = (name, g)
+        if key not in self._wq:
+            self._wq[key] = quant_rows_grouped(self.w[name], g)     # wq [N,K] int8, sw [N, groups]
+        wq, sw = self._wq[key]
+        xq, sx = quant_rows_grouped(x, g)
+        self.log.append((name, x.shape[0], x.shape[1], wq.shape[0]))
+        parts = self.igemm_groups(xq, wq, g).astype(np.float32)      # [groups, M, N]
+        return np.einsum("gmn,mg,ng->mn", parts, sx, sw, optimize=True).astype(np.float32)
 
     def attn_qk(self, q, k):                                   # [T,hd] x [S,hd]^T: K rows are the "weights" (N = S)
         qq, sq = quant_rows(q)
