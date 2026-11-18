@@ -30,13 +30,16 @@ endmodule
     (work / "wrap.v").write_text(wrap); files.append(work / "wrap.v"); top = "tpu_array_top"
 if top == "tpu_core":    # whole core with small on-chip buffers (flop-based here; SRAM macros in a real build): controller, accumulators, fetch/compute engines + the array
     mmax, ktmax = 8, 4
-    wrap = f"""module tpu_core_top(input clk, input rst_n, input cmd_valid, output cmd_ready, input [15:0] cmd_m, input [15:0] cmd_kt, input [15:0] cmd_nt, input [31:0] cmd_wbase, output cmd_done,
+    has_g = version >= "v9"
+    GK_IN = "input [15:0] cmd_gk, input [15:0] cmd_ng, " if has_g else ""
+    G_OUT = "output [15:0] out_g, " if has_g else ""
+    wrap = f"""module tpu_core_top(input clk, input rst_n, input cmd_valid, output cmd_ready, input [15:0] cmd_m, input [15:0] cmd_kt, input [15:0] cmd_nt, {GK_IN}input [31:0] cmd_wbase, output cmd_done,
   input abuf_we, input [15:0] abuf_waddr, input [{n * 8 - 1}:0] abuf_wdata, output mem_req_valid, input mem_req_ready, output [31:0] mem_req_addr, output [31:0] mem_req_beats,
-  input mem_rvalid, output mem_rready, input [{n * 8 - 1}:0] mem_rdata, output out_valid, output [15:0] out_nt, output [15:0] out_m, output [{n * 32 - 1}:0] out_data);
+  input mem_rvalid, output mem_rready, input [{n * 8 - 1}:0] mem_rdata, output out_valid, output [15:0] out_nt, output [15:0] out_m, {G_OUT}output [{n * 32 - 1}:0] out_data);
   tpu_core #(.N({n}), .MMAX({mmax}), .KTMAX({ktmax})) u(.*);
 endmodule
 """
-    (work / "wrap.v").write_text(wrap); files = sorted(hw.glob("*.v")); files = [f for f in files if f.name != "tpu_multi.v"] + [work / "wrap.v"]; top = "tpu_core_top"
+    (work / "wrap.v").write_text(wrap.replace("{GK_IN}", GK_IN).replace("{G_OUT}", G_OUT)); files = sorted(hw.glob("*.v")); files = [f for f in files if f.name != "tpu_multi.v"] + [work / "wrap.v"]; top = "tpu_core_top"
 spec = SiliconSpec(design_name=top, verilog_files=files, clock_port="clk", clock_period_ns=clk, pdk="sky130A", core_utilization_pct=util, reset_port="rst_n", reset_active_low=True,
                    extra={"USE_SLANG": True, **({"PNR_CORNERS": pnr_corners} if pnr_corners else {}), **({"PL_RESIZER_SETUP_SLACK_MARGIN": setup_margin, "GRT_RESIZER_SETUP_SLACK_MARGIN": setup_margin} if setup_margin is not None else {}), **({"PL_RESIZER_HOLD_SLACK_MARGIN": hold_margin, "GRT_RESIZER_HOLD_SLACK_MARGIN": hold_margin} if hold_margin is not None else {})})
 t = time.time()
