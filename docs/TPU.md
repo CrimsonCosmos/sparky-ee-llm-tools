@@ -44,14 +44,17 @@ v4-v6 (registered product, narrow partial sums, zero-bubble tile hand-over) and 
 
 M=1 decode is inherently memory bound (5.8 % compute utilisation is the roofline, not a defect): serving efficiency comes from batching, which the same hardware does with no change (M=B rows).
 
-## Physical (sky130A, LibreLane/OpenROAD/Magic/KLayout/Netgen), v3 array only, N=8 (64 MACs)
-| run | clock | DRC (Magic, KLayout) | LVS | antenna | tt/ff corners | ss_100C_1v60 corner | verdict |
-|---|---|---|---|---|---|---|---|
-| 1 | 12 ns | 0 / 0 | clean | 0 | setup +3.4 ns, hold +0.1 ns | setup -2.95 ns, hold -0.62 ns, 7589 slew violations | flow check **failed** |
-| 2 | 16 ns (hold margin 0.6) | 0 / 0 | clean | 0 | setup +5.5 ns, hold +0.4 ns | setup -1.78 ns, hold -0.44 ns, 12365 slew violations | flow check **failed** |
+## Physical (sky130A, LibreLane/OpenROAD/Magic/KLayout/Netgen), array only, N=8 (64 MACs)
+| version / run | clock target | DRC (Magic, KLayout) | LVS | antenna | tt / ff corners (setup) | ss_100C_1v60 corner | hold | flow verdict |
+|---|---|---|---|---|---|---|---|---|
+| v3, 12 ns | 12 ns | 0 / 0 | clean | 0 | +3.4 ns | setup -2.95 ns | ss -0.62 ns | failed (hold, ss) |
+| v3, 16 ns | 16 ns | 0 / 0 | clean | 0 | +5.5 ns | setup -1.78 ns | ss -0.44 ns | failed (hold) |
+| v5, 14 ns | 14 ns | 0 / 0 | clean | 0 | +4.6 ns | setup -1.41 ns | ss -0.28 ns | failed (hold); worst ss path was the `rst_n` fanout |
+| v7, 12 ns | 12 ns | 0 / 0 | clean | 0 | +4.8 / +6.5 ns | setup -1.16 ns | ss -0.12 ns | failed (hold in one corner) |
+| **v7, 14 ns (util 35 %, hold margin 0.8)** | 14 ns | **0 / 0** | **clean** | **0** | **+5.8 / +7.7 ns** | setup -1.76 ns | **+0.21 ns in all 9 corners** | **flow ok** |
 
-So the layout is physically clean (DRC/LVS/antenna/route) and meets timing at typical and fast corners, but is **not sign-off clean at the slow corner**: the single-cycle 8x8 multiply plus 32-bit add needs about 18-19 ns there. Not claimed as clean.
-Estimates (labelled): standard-cell area 0.67-0.74 mm^2 for the 64-MAC array including 4813 flops (about 10-11 k um^2 per MAC; the timing-driven mapping is not area-optimised); vectorless total power 0.10-0.125 W -> about 24 pJ per MAC-cycle at the flow clocks (activity is the tool default, so treat as order of magnitude only). Not done: the core (activation buffer and accumulators, which would be SRAM macros) and the N=16 array through the flow.
+The v7 14 ns run passed the flow and then the independent sign-off re-runs (`results/tpu/v7_array_n8_flow_14ns.json`): KLayout DRC with a separate rule deck, Magic DRC, Netgen LVS, OpenSTA at the nominal corner all agree with the flow (setup 5.763 ns and hold 0.707 ns match to the picosecond). What is NOT clean: the slow corner (ss_100C_1v60) setup is -1.76 ns with max-slew violations because the resizer repairs only the nominal corner; read as a slow-corner minimum period of about 15.8 ns (v7 synthesised for 12 ns reached about 13.2 ns), i.e. roughly 63-76 MHz worst case and about 120 MHz typical at N=8. The datapath change history is visible in the table: removing reset fanout (v7) is what brought the slow-corner need down from about 15.4 ns (v5) / 15 ns (v3).
+Estimates (labelled): standard-cell area 0.56-0.58 mm^2 for the 64-MAC array including about 4,750 flops (v3: 0.67-0.74 mm^2); vectorless power estimate 0.06-0.12 W depending on run (the tool's default activity; order of magnitude only). Not done: the whole core with SRAM macros and the N=16 array through the flow.
 
 ## Honest limits
 - The array, not the whole core, went through the physical flow, and its slow-corner timing failed; closing it needs either a ~20 ns clock (re-run with `python tools/tpu_flow.py v3 8 20 <dir> tpu_array 40 1.0`; blocked here by disk space, the old 16 ns run directory `/home/user/data/tpu_flow/v3_array_n8_16ns/runs` can be deleted to make room) or a pipelined MAC.
