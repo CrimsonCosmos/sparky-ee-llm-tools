@@ -90,11 +90,11 @@ def test_scaling_n32_v6(tmp_path):
             s.close()
 
 
-@pytest.mark.parametrize("cores", [2, 4])
-def test_multi_core_bit_exact_and_model(cores, tmp_path):
+@pytest.mark.parametrize("version,cores", [("v8", 2), ("v8", 4), ("v9", 3)])
+def test_multi_core_bit_exact_and_model(version, cores, tmp_path):
     """K parallel arrays (v8 tpu_multi): bit-exact against numpy and cycle-exact against the closed-form model."""
     from tpu import perf
-    exe = rtl.build_multi("v8", N, MMAX, KTMAX, cores, tmp_path)
+    exe = rtl.build_multi(version, N, MMAX, KTMAX, cores, tmp_path)
     rng = np.random.default_rng(cores)
     for bw, lat in [((1, 1), 0), ((1, 2), 13)]:
         s = rtl.Sim(exe, MMAX, bw, lat)
@@ -128,5 +128,22 @@ def test_k_group_partial_sums_v9(gk, tmp_path):
                 k0, k1 = g * gk * N, min(k, (g + 1) * gk * N)
                 assert np.array_equal(out[g], x[:, k0:k1].astype(np.int32) @ w[k0:k1].astype(np.int32)), (m, k, n, g)
             assert np.array_equal(out.sum(axis=0), x.astype(np.int32) @ w.astype(np.int32))
+    finally:
+        s.close()
+
+
+def test_multi_core_k_groups_v9(tmp_path):
+    """v9 tpu_multi: K-group partial sums are exact per group on every core."""
+    exe = rtl.build_multi("v9", N, MMAX, KTMAX, 2, tmp_path)
+    rng = np.random.default_rng(99)
+    s = rtl.Sim(exe, MMAX, (1, 1), 0, n=N)
+    try:
+        for _ in range(8):
+            m, k, n = int(rng.integers(1, 70)), int(rng.integers(N, N * KTMAX)), int(rng.integers(1, 90))
+            x = rng.integers(-128, 128, (m, k), dtype=np.int8); w = rng.integers(-128, 128, (k, n), dtype=np.int8)
+            out = s.gemm(x, w, group_tiles=2)
+            for g in range(out.shape[0]):
+                k0, k1 = g * 2 * N, min(k, (g + 1) * 2 * N)
+                assert np.array_equal(out[g], x[:, k0:k1].astype(np.int32) @ w[k0:k1].astype(np.int32)), (m, k, n, g)
     finally:
         s.close()
