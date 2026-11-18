@@ -12,7 +12,7 @@ group_cols = int(sys.argv[sys.argv.index('--group-cols') + 1]) if '--group-cols'
 out = sys.argv[sys.argv.index("--out") + 1] if "--out" in sys.argv else None
 tk = llm.tokenizer(D)
 test = np.array(tk.encode(open("/home/user/data/wikitext2/test.txt").read()[:max(60000, ntok * 30)]).ids)[:ntok]
-wsm = quant.load_smooth(D)
+wsm = quant.load_smooth(D, quant.default_alpha(group_cols))
 exe = rtl.build_harness(version, 16, 64, 96, Path(f"/home/user/data/tpu_build/{version}_n16"))
 sim = rtl.Sim(exe, 64, n=16)
 bad = [0, 0]

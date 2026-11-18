@@ -12,14 +12,14 @@ D = "/home/user/data/smollm2"
 ap = argparse.ArgumentParser()
 ap.add_argument("version"); ap.add_argument("--n", type=int, default=16); ap.add_argument("--mmax", type=int, default=64); ap.add_argument("--ktmax", type=int, default=96)
 ap.add_argument("--prefill", type=int, default=32); ap.add_argument("--decode", type=int, default=8)
-ap.add_argument("--batch", type=int, default=1, help="decode B sequences together (M=B on every weight GEMM)"); ap.add_argument("--cores", type=int, default=1, help="K parallel arrays (v8 tpu_multi), each with its own weight port"); ap.add_argument("--group-cols", type=int, default=0, help="K-group quantisation: columns per group (multiple of N; v9 core)"); ap.add_argument("--gqa", action="store_true", help="GQA-grouped attention GEMMs"); ap.add_argument("--bw", default="1/1"); ap.add_argument("--lat", type=int, default=0); ap.add_argument("--out"); ap.add_argument("--alpha", type=float, default=quant.DEFAULT_ALPHA)
+ap.add_argument("--batch", type=int, default=1, help="decode B sequences together (M=B on every weight GEMM)"); ap.add_argument("--cores", type=int, default=1, help="K parallel arrays (v8 tpu_multi), each with its own weight port"); ap.add_argument("--group-cols", type=int, default=0, help="K-group quantisation: columns per group (multiple of N; v9 core)"); ap.add_argument("--gqa", action="store_true", help="GQA-grouped attention GEMMs"); ap.add_argument("--bw", default="1/1"); ap.add_argument("--lat", type=int, default=0); ap.add_argument("--out"); ap.add_argument("--alpha", type=float, default=None)
 a = ap.parse_args()
 bwn, bwd = (int(v) for v in a.bw.split("/"))
 
 tk = llm.tokenizer(D)
 text = open("/home/user/data/wikitext2/test.txt").read()[:20000]
 ids = np.array(tk.encode(text).ids)[:a.prefill]
-wsm = quant.load_smooth(D, a.alpha)
+wsm = quant.load_smooth(D, a.alpha if a.alpha is not None else quant.default_alpha(a.group_cols))
 
 wd = Path(f"/home/user/data/tpu_build/{a.version}_n{a.n}")
 exe = rtl.build_harness(a.version, a.n, a.mmax, a.ktmax, wd) if a.cores == 1 else rtl.build_multi(a.version, a.n, a.mmax, a.ktmax, a.cores, Path(f"{wd}_k{a.cores}"))

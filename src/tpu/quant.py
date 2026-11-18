@@ -151,6 +151,13 @@ def smooth_weights(model: Llama, calib_ids: np.ndarray, alpha: float = 0.5, wind
 DEFAULT_ALPHA = 0.6        # chosen on HELD-OUT validation text (tools/tpu_alpha_select.py: 0.4 +4.51 %, 0.5 +2.00 %, 0.6 +1.17 %, 0.7 +2.63 %); test-set result reported separately
 
 
+DEFAULT_ALPHA_GROUPED = 0.7   # with K-group quantisation (288 columns) the held-out optimum moves: 0.5 +1.77 %, 0.6 +1.11 %, 0.7 +0.75 %, 0.8 +0.83 %, 0.9 +1.83 % (results/tpu/alpha_select_group288_*.txt)
+
+
+def default_alpha(group_cols: int = 0) -> float:
+    return DEFAULT_ALPHA_GROUPED if group_cols else DEFAULT_ALPHA
+
+
 def load_smooth(model_dir, alpha: float = DEFAULT_ALPHA, calib_text_file: str = "/home/user/data/wikitext2/validation.txt") -> dict:
     """SmoothQuant-folded weight dict for `alpha`, cached next to the model (calibration: first 1537 tokens of the validation split)."""
     from pathlib import Path
