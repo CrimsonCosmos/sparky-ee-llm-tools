@@ -14,7 +14,7 @@ ap.add_argument("--clock-mhz", type=float, default=70.0); ap.add_argument("--out
 a = ap.parse_args()
 prompts = a.prompts or ["The capital of France is", "Photosynthesis is the process by which", "In 1969, the Apollo 11 mission", "A systolic array is"]
 tk = llm.tokenizer(D)
-wsm = dict(np.load(Path(D) / "smooth_a0.5.npz"))
+wsm = quant.load_smooth(D)
 wd = Path(f"/home/user/data/tpu_build/{a.version}_n{a.n}")
 exe = rtl.build_harness(a.version, a.n, 64, 96, wd) if a.cores == 1 else rtl.build_multi(a.version, a.n, 64, 96, a.cores, Path(f"{wd}_k{a.cores}"))
 sim = rtl.Sim(exe, 64, n=a.n)

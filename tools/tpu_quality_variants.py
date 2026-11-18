@@ -10,7 +10,7 @@ D = "/home/user/data/smollm2"
 n = int(sys.argv[1])
 tk = llm.tokenizer(D)
 test = np.array(tk.encode(open("/home/user/data/wikitext2/test.txt").read()[:max(60000, n * 30)]).ids)[:n]
-wsm = dict(np.load(Path(D) / "smooth_a0.5.npz"))
+wsm = quant.load_smooth(D, 0.5)
 pf = llm.perplexity(llm.Llama(D), test, 256)
 print(f"float32 ppl {pf:.3f} ({len(test)} tokens)", flush=True)
 for name, clip, mse in (("baseline", None, False), ("weights MSE scale", None, True), ("act clip q=0.9999", 0.9999, False), ("act clip q=0.999", 0.999, False), ("both: w MSE + act q=0.9999", 0.9999, True)):

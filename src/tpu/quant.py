@@ -116,3 +116,20 @@ def smooth_weights(model: Llama, calib_ids: np.ndarray, alpha: float = 0.5, wind
         w[p + "mlp.up_proj.weight"] = w[p + "mlp.up_proj.weight"] / s[:, None]      # u' = u / s  (rows of up_proj)
         w[p + "mlp.down_proj.weight"] = w[p + "mlp.down_proj.weight"] * s[None, :]
     return w
+
+
+DEFAULT_ALPHA = 0.6        # chosen on HELD-OUT validation text (tools/tpu_alpha_select.py: 0.4 +4.51 %, 0.5 +2.00 %, 0.6 +1.17 %, 0.7 +2.63 %); test-set result reported separately
+
+
+def load_smooth(model_dir, alpha: float = DEFAULT_ALPHA, calib_text_file: str = "/home/user/data/wikitext2/validation.txt") -> dict:
+    """SmoothQuant-folded weight dict for `alpha`, cached next to the model (calibration: first 1537 tokens of the validation split)."""
+    from pathlib import Path
+    from . import llm
+    f = Path(model_dir) / f"smooth_a{alpha}.npz"
+    if f.exists():
+        return dict(np.load(f))
+    tk = llm.tokenizer(model_dir)
+    calib = np.array(tk.encode(open(calib_text_file).read()[:60000]).ids)[:1537]
+    w = smooth_weights(llm.Llama(model_dir), calib, alpha)
+    np.savez(f, **w)
+    return w
