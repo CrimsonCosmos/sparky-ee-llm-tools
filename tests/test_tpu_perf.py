@@ -28,3 +28,14 @@ def test_model_equals_rtl(version, extra, bubble, tmp_path):
                     assert abs(got - pred) <= max(2, 0.01 * got), (version, bw, lat, m, k, n, got, pred)   # fractional credit: within max(2 cycles, 1 %)
         finally:
             sim.close()
+
+
+def test_decode_projection_matches_measured_cosim():
+    """perf.decode_step_cycles reproduces the cycles/token of the full-network RTL co-simulations (reference = the measured json, not the model)."""
+    import json
+    from pathlib import Path
+    res = Path(__file__).resolve().parents[1] / "results" / "tpu"
+    for f, bubble, extra in (("v5_cosim_p128_gqa.json", 1, 0), ("v6_cosim_p128_gqa.json", 0, 0)):
+        meas = json.loads((res / f).read_text())["decode"]["cycles_per_token"]
+        core = perf.Core(n=16, mmax=64, bn=1, bd=1, lat=0, bubble=bubble, array_lat_extra=extra)
+        assert perf.decode_step_cycles(core, 1, perf.MODELS["smollm2-135m"], 1, 129) == meas, f

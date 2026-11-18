@@ -131,6 +131,14 @@ def _doctor_silicon():
         print(f"{'silicon: ' + k:<24} {v or 'MISSING (tools/silicon_setup.sh; docs/SILICON_DEPENDENCIES.md)'}")
 
 
+def cmd_tpu_perf(a):
+    from tpu import perf
+    r = perf.project(a.model, a.n, a.cores, a.clock_mhz * 1e6, a.batch, a.ctx, bubble=0)
+    print(f"{r['model']}: {r['cores']} x {r['n']}x{r['n']} arrays at {a.clock_mhz:g} MHz (ASSUMED clock), batch {r['batch']}, context {r['ctx']}")
+    print(f"  {r['cycles_per_step']/1e6:.3f} Mcycles per decode step -> {r['steps_per_s']:.2f} steps/s, {r['tokens_per_s']:.1f} tokens/s; weight port {r['weight_port_gb_per_s']:.2f} GB/s, peak {r['peak_tops']:.3f} TOPS")
+    print("  (cycle model validated against the RTL: tests/test_tpu_perf.py; clock and memory are inputs, not results)")
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="sparky", description="Claude Code + deterministic EDA: system description -> KiCad boards -> fab files -> shopping list")
     ap.add_argument("--offline", action="store_true", help="never call an LLM")
@@ -155,6 +163,9 @@ def main(argv=None):
     s.add_argument("need"); s.add_argument("args", nargs="*", help="key=value requirement parameters"); s.add_argument("--qty", type=int, default=1)
     s.add_argument("--limit", type=int, default=5); s.set_defaults(fn=cmd_pick)
     s = sub.add_parser("download-parts", help="download the parts catalogue (~400 MB, resumable)"); s.set_defaults(fn=cmd_download_parts)
+    s = sub.add_parser("tpu-perf", help="decode-throughput projection of the sparky TPU (RTL-validated cycle model) for an open-weight LLM")
+    s.add_argument("--model", default="smollm2-135m", choices=["smollm2-135m", "llama-3-8b"]); s.add_argument("--n", type=int, default=16); s.add_argument("--cores", type=int, default=1)
+    s.add_argument("--clock-mhz", type=float, default=70.0); s.add_argument("--batch", type=int, default=1); s.add_argument("--ctx", type=int, default=128); s.set_defaults(fn=cmd_tpu_perf)
     s = sub.add_parser("mcp"); s.set_defaults(fn=cmd_mcp)
     s = sub.add_parser("doctor"); s.set_defaults(fn=cmd_doctor)
     a = ap.parse_args(argv)

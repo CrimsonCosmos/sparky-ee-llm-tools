@@ -59,7 +59,8 @@ Estimates (labelled): standard-cell area 0.67-0.74 mm^2 for the 64-MAC array inc
 python tools/tpu_fetch_model.py ; PYTHONPATH=src python -m pytest tests/test_tpu_rtl.py
 PYTHONPATH=src python tools/tpu_cosim.py v3 --n 16 --prefill 16 --decode 3 [--batch 16]
 PYTHONPATH=src python tools/tpu_ppl.py v3 513
-python tools/tpu_flow.py v3 8 16 <workdir> tpu_array 40 0.6
+python tools/tpu_flow.py v7 8 14 <workdir> tpu_array 35 0.8
+python -m sparky.cli tpu-perf --model llama-3-8b --n 128 --cores 4 --clock-mhz 1000 --batch 64 --ctx 1024   # projection from the RTL-validated cycle model
 ```
 
 ## End-to-end serving demo (v8, 4 arrays of 16x16, 4 prompts batched, greedy, 24 new tokens each)

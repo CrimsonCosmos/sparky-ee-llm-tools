@@ -55,3 +55,22 @@ def workload_gemms(layers: int, hidden: int, heads: int, kv_heads: int, head_dim
 
 def workload_cycles(c: Core, gemms: list[tuple[int, int, int]]) -> int:
     return sum(gemm_cycles(c, *x) for x in gemms)
+
+
+MODELS = {   # published architecture shapes (config.json of the open-weight models)
+    "smollm2-135m": dict(layers=30, hidden=576, heads=9, kv_heads=3, head_dim=64, ffn=1536, vocab=49152),
+    "llama-3-8b": dict(layers=32, hidden=4096, heads=32, kv_heads=8, head_dim=128, ffn=14336, vocab=128256),
+}
+
+
+def decode_step_cycles(core: Core, cores: int, model: dict, batch: int, ctx: int, gqa_group: bool = True) -> int:
+    """Cycles of one batched decode step: batch sequences, each with ctx cached positions, `cores` arrays splitting the output columns of every GEMM."""
+    return sum(gemm_cycles(core, m, k, n, cores) for m, k, n in workload_gemms(m=batch, ctx=ctx, gqa_group=gqa_group, **model))
+
+
+def project(model: str, n: int, cores: int, clock_hz: float, batch: int, ctx: int, bubble: int = 0, mem_beats: tuple[int, int] = (1, 1), lat: int = 0) -> dict:
+    """Throughput projection with the RTL-validated schedule; clock and memory rate are inputs (assumptions), not results."""
+    core = Core(n=n, mmax=max(64, batch), bn=mem_beats[0], bd=mem_beats[1], lat=lat, bubble=bubble)
+    cyc = decode_step_cycles(core, cores, MODELS[model], batch, ctx)
+    return {"model": model, "n": n, "cores": cores, "clock_hz": clock_hz, "batch": batch, "ctx": ctx, "cycles_per_step": cyc, "steps_per_s": clock_hz / cyc, "tokens_per_s": batch * clock_hz / cyc,
+            "weight_port_gb_per_s": n * cores * mem_beats[0] / mem_beats[1] * clock_hz / 1e9, "peak_tops": 2 * n * n * cores * clock_hz / 1e12}
