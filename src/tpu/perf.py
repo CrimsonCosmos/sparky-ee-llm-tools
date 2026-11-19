@@ -74,3 +74,13 @@ def project(model: str, n: int, cores: int, clock_hz: float, batch: int, ctx: in
     cyc = decode_step_cycles(core, cores, MODELS[model], batch, ctx)
     return {"model": model, "n": n, "cores": cores, "clock_hz": clock_hz, "batch": batch, "ctx": ctx, "cycles_per_step": cyc, "steps_per_s": clock_hz / cyc, "tokens_per_s": batch * clock_hz / cyc,
             "weight_port_gb_per_s": n * cores * mem_beats[0] / mem_beats[1] * clock_hz / 1e9, "peak_tops": 2 * n * n * cores * clock_hz / 1e12}
+
+
+def ring_allgather_cycles(chips: int, nbytes: int, link_bytes_per_cycle: int) -> int:
+    """Cycles of the RTL ring all-gather (hardware/tpu/v11/tpu_ring.v): every chip contributes `nbytes`; beats = ceil(nbytes / link width); the link of every node carries (chips-1)*beats beats
+    back to back (own vector first, then cut-through forwarding), plus one cycle of delivery; with very short vectors the C-1 hop latency (twice: out and back around) dominates.
+    Exact against the RTL (tests/test_tpu_ring.py)."""
+    if chips <= 1:
+        return 0
+    nb = -(-nbytes // link_bytes_per_cycle)
+    return max((chips - 1) * nb + 1, 2 * (chips - 1))

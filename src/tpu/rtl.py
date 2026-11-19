@@ -138,3 +138,32 @@ def build_multi(version: str, n: int, mmax: int, ktmax: int, k: int, workdir: Pa
     if r.returncode:
         raise RuntimeError("verilator multi harness build failed:\n" + (r.stderr + r.stdout)[-3000:])
     return workdir / "mobj" / "harness_multi"
+
+
+def build_ring(c: int, w: int, depth: int, workdir: Path) -> Path:
+    """Compile the ring all-gather harness (hardware/tpu/tb/harness_ring.cpp) around hardware/tpu/v11/tpu_ring.v for c chips and w-byte links."""
+    vl = toolchain.which("verilator")
+    if not vl:
+        raise RuntimeError("NOT RUN: verilator not available")
+    workdir.mkdir(parents=True, exist_ok=True)
+    cmd = [vl, "--cc", "--exe", "--build", "-Wno-fatal", "-Wno-lint", "-Wno-style", "--top-module", "tpu_ring", f"-GC={c}", f"-GW={w}", f"-GDEPTH={depth}", "-O3",
+           "-CFLAGS", f"-DCC={c} -DWW={w} -O2", "--Mdir", str(workdir / "robj"), "-o", "harness_ring", str(HW / "v11" / "tpu_ring.v"), str(HW / "tb" / "harness_ring.cpp")]
+    r = subprocess.run(cmd, capture_output=True, text=True, cwd=workdir, env=toolchain.env())
+    if r.returncode:
+        raise RuntimeError("verilator ring harness build failed:\n" + (r.stderr + r.stdout)[-3000:])
+    return workdir / "robj" / "harness_ring"
+
+
+def ring_allgather(exe: Path, vectors: list[np.ndarray], w: int):
+    """All-gather `vectors` (one uint8 array per chip, equal length, multiple of w) around the ring on the RTL. Returns (gathered[chip] = list of the other chips' vectors in ascending source order, cycles)."""
+    c = len(vectors)
+    nb = len(vectors[0]) // w
+    p = subprocess.Popen([str(exe)], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+    p.stdin.write(np.array([nb, 0, 0, 0, 0, 0, 0, 0], np.int32).tobytes() + b"".join(np.ascontiguousarray(v, np.uint8).tobytes() for v in vectors))
+    p.stdin.flush()
+    cyc = int(np.frombuffer(p.stdout.read(8), np.int64)[0])
+    gathered = []
+    for _chip in range(c):
+        gathered.append([np.frombuffer(p.stdout.read(nb * w), np.uint8).copy() for _ in range(c - 1)])
+    p.stdin.write(np.array([-1, 0, 0, 0, 0, 0, 0, 0], np.int32).tobytes()); p.stdin.flush(); p.wait(timeout=30)
+    return gathered, cyc
