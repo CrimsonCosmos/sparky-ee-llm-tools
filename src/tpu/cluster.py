@@ -241,14 +241,15 @@ class ClusterModel(llm.Llama):
         """All-rows logits [T, vocab] (llm.perplexity interface; uses fresh caches)."""
         return self.forward_cluster(np.asarray(tokens), self.new_caches(), 0, all_rows=True)
 
-    def generate(self, prompt: np.ndarray, n_new: int):
+    def generate(self, prompt: np.ndarray, n_new: int, forced: list[int] | None = None):
+        """Greedy decode. With `forced` (token ids), the model is fed THOSE tokens instead of its own argmax (teacher forcing) so that logits of different implementations are compared on identical contexts."""
         caches = self.new_caches()
         self._reset_stats()
         lg = self.forward_cluster(prompt, caches, 0)
         pre = {"cycles": self.cyc_total, "collective": self.cyc_collective}
         out, logits = [int(np.argmax(lg))], [lg]
         for i in range(n_new - 1):
-            lg = self.forward_cluster(np.array([out[-1]]), caches, len(prompt) + i)
+            lg = self.forward_cluster(np.array([forced[i] if forced is not None else out[-1]]), caches, len(prompt) + i)
             out.append(int(np.argmax(lg))); logits.append(lg)
         dec = {"cycles": self.cyc_total - pre["cycles"], "collective": self.cyc_collective - pre["collective"]}
         return out, np.stack(logits), pre, dec

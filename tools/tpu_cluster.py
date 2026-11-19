@@ -41,15 +41,15 @@ ref = cluster.ClusterModel(D, 1, [cluster.RefBackend()], wsm, group_tp=a.tp, lin
 tok_ref, lg_ref, _, _ = ref.generate(prompt, a.decode)
 # numpy-sharded (exact reference of the sharded computation)
 nsh = cluster.ClusterModel(D, a.tp, [cluster.RefBackend() for _ in range(a.tp)], wsm, link_bytes_per_cycle=a.link, reduce=a.reduce)
-tok_ns, lg_ns, _, _ = nsh.generate(prompt, a.decode)
+tok_ns, lg_ns, _, _ = nsh.generate(prompt, a.decode, forced=tok_ref)
 # RTL single chip (baseline cycles)
 b1 = rtl_backends(1)
 one = cluster.ClusterModel(D, 1, b1, wsm, group_tp=a.tp, link_bytes_per_cycle=a.link)
-tok1, lg1, pre1, dec1 = one.generate(prompt, a.decode)
+tok1, lg1, pre1, dec1 = one.generate(prompt, a.decode, forced=tok_ref)
 # RTL cluster
 bs = rtl_backends(a.tp)
 cl = cluster.ClusterModel(D, a.tp, bs, wsm, link_bytes_per_cycle=a.link, reduce=a.reduce, ring_fn=ring_fn)
-tokc, lgc, prec, decc = cl.generate(prompt, a.decode)
+tokc, lgc, prec, decc = cl.generate(prompt, a.decode, forced=tok_ref)
 for b in b1 + bs:
     b.sim.close()
 res.update({
@@ -58,6 +58,8 @@ res.update({
     "gemms_checked_single": b1[0].calls, "gemms_mismatching_single": b1[0].mismatches,
     "rtl_cluster_logits_equal_numpy_sharded_exactly": bool(np.array_equal(lgc, lg_ns)), "rtl_cluster_tokens_equal_numpy_sharded": tokc == tok_ns,
     "sharded_vs_unsharded_max_abs_logit_diff": float(np.abs(lgc - lg_ref).max()), "sharded_vs_unsharded_logit_scale": float(np.abs(lg_ref).max()),
+    "comparison": "teacher forced: every model is fed the reference tokens, so logits are compared on identical contexts", "reference_tokens": tok_ref,
+    "sharded_argmax_equals_unsharded_argmax_per_step": [int(x == y) for x, y in zip(tokc, tok_ref)], "reference_top1_top2_logit_margin_per_step": [float(np.sort(l)[-1] - np.sort(l)[-2]) for l in lg_ref],
     "sharded_tokens_equal_unsharded": tokc == tok_ref, "tokens": tokc,
     "single_chip": {"prefill_cycles": pre1["cycles"], "decode_cycles": dec1["cycles"], "decode_cycles_per_token": dec1["cycles"] / max(1, a.decode - 1)},
     "cluster": {"prefill_cycles": prec["cycles"], "prefill_collective_cycles": prec["collective"], "decode_cycles": decc["cycles"], "decode_collective_cycles": decc["collective"],
