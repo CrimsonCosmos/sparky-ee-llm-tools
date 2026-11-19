@@ -1,0 +1,35 @@
+{
+ "version": "v10",
+ "cores": 1,
+ "group_cols": 320,
+ "gqa_grouped_attention": true,
+ "N": 16,
+ "mmax": 64,
+ "bw_beats_per_cycle": 1.0,
+ "mem_latency": 0,
+ "prefill_tokens": 16,
+ "decode_tokens": 3,
+ "gemms_checked": 1347,
+ "gemms_mismatching": 0,
+ "batch": 1,
+ "tpu_tokens_equal_numpy_int_reference": true,
+ "greedy_agreement_with_float32": 0.6666666666666666,
+ "prefill": {
+  "cycles": 22695157,
+  "macs": 5803868160,
+  "utilization": 0.9989514503028113,
+  "roofline_cycles": 22671360,
+  "roofline_fraction": 0.9989514503028113
+ },
+ "decode": {
+  "cycles": 45337164,
+  "macs": 725667840,
+  "utilization": 0.06252354029025724,
+  "cycles_per_token": 22668582.0,
+  "roofline_cycles": 45264640,
+  "roofline_fraction": 0.9984003410535339,
+  "abuf_fill_cycles_not_overlapped": 27640,
+  "roofline_fraction_incl_abuf_fill": 0.9977920327838296
+ },
+ "wall_s": 135.64414978027344
+}

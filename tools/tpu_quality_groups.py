@@ -6,11 +6,12 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from tpu import llm, quant
 
-D = "/home/user/data/smollm2"
+import os
+D = os.environ.get("TPU_MODEL_DIR", "/home/user/data/smollm2")
 n = int(sys.argv[1]); groups = [int(g) for g in sys.argv[2:]]
 tk = llm.tokenizer(D)
 test = np.array(tk.encode(open("/home/user/data/wikitext2/test.txt").read()[:max(60000, n * 30)]).ids)[:n]
-wsm = quant.load_smooth(D)
+wsm = quant.load_smooth(D, quant.default_alpha(288))
 
 
 class GroupQ(quant.QuantLlama):
