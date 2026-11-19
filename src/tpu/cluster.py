@@ -79,11 +79,14 @@ class _QW:
 
 
 class ClusterModel(llm.Llama):
-    def __init__(self, model_dir, tp: int, backends: list, weights: dict[str, np.ndarray], group_tp: int | None = None, link_bytes_per_cycle: int = 16, group_target: int = quant.DEFAULT_GROUP_COLS):
+    def __init__(self, model_dir, tp: int, backends: list, weights: dict[str, np.ndarray], group_tp: int | None = None, link_bytes_per_cycle: int = 16, group_target: int = quant.DEFAULT_GROUP_COLS,
+                 reduce: str = "gather", ring_fn=None):
         super().__init__(model_dir)
         self.w = weights                                    # SmoothQuant-folded float weights (quant.load_smooth)
         c = self.cfg
         self.tp, self.backends, self.link = tp, backends, link_bytes_per_cycle
+        self.reduce = reduce                                 # "gather": ring all-gather of the partials + ordered sum (rank 0..C-1); "allreduce": ring all-reduce (fixed ring order, fp32 adders in the ring)
+        self.ring_fn = ring_fn                               # optional callable(list of C float32 vectors) -> list of C results: the REAL RTL ring replaces the numpy emulation
         assert len(backends) == tp
         gt = group_tp or tp                                  # sharding the group sizes are derived from (tp=1 with group_tp=C is the unsharded reference with identical groups)
         assert c.heads % gt == 0 and c.kv_heads % gt == 0 and c.inter % gt == 0
@@ -129,11 +132,36 @@ class ClusterModel(llm.Llama):
         """A synchronisation point: chips ran in parallel since the last one; then an all-gather of `nbytes` per chip."""
         now = [b.cycles for b in self.backends]
         seg = max(n - l for n, l in zip(now, self._last))
-        coll = perf.ring_allgather_cycles(self.tp, nbytes, self.link)
+        coll = perf.ring_allgather_cycles(self.tp, nbytes, self.link) if self.reduce == "gather" else perf.ring_allreduce_cycles(self.tp, nbytes, self.link)
         self.cyc_total += seg + coll
         self.cyc_collective += coll
         self.collectives += 1 if self.tp > 1 else 0
         self._last = now
+
+    def _reduce(self, partials: list[np.ndarray]) -> np.ndarray:
+        """Combine the row-parallel partial outputs of the chips."""
+        if self.tp == 1:
+            return partials[0]
+        if self.reduce == "gather":
+            y = partials[0]
+            for pt in partials[1:]:
+                y = y + pt                                       # ordered sum, rank 0..C-1
+            return y
+        shape = partials[0].shape
+        lanes = max(1, self.link // 4)
+        n = partials[0].size
+        npad = -(-n // (self.tp * lanes)) * self.tp * lanes      # the ring moves C equal chunks of whole beats
+        vecs = []
+        for pt in partials:
+            v = np.zeros(npad, np.float32); v[:n] = pt.ravel(); vecs.append(v)
+        if self.ring_fn is not None:
+            res = self.ring_fn(vecs)
+            assert all(np.array_equal(r.view(np.uint32), res[0].view(np.uint32)) for r in res), "ring all-reduce results differ between chips"
+            out = res[0]
+        else:
+            from . import rtl
+            out = rtl.ring_allreduce_reference(vecs)
+        return out[:n].reshape(shape)
 
     # ------------------------------------------------------------------ attention on one chip (GQA grouped: the query heads of a KV group are rows of one GEMM)
     def _attn_qk(self, ch, q, k):
@@ -191,10 +219,7 @@ class ClusterModel(llm.Llama):
                 aq, sa = quant.quant_rows_grouped(a, self.g_o)
                 partials.append(self._grouped(ch, aq, sa, sh_["o"]))
             self._barrier(T * c.hidden * 4)
-            y = partials[0]
-            for pt in partials[1:]:
-                y = y + pt                                   # ordered sum, rank 0..C-1
-            x = x + y
+            x = x + self._reduce(partials)
             h = llm.rmsnorm(x, self.w[p + "post_attention_layernorm.weight"], c.eps)
             hq, sh = quant.quant_rows_grouped(h, self.g_h)
             partials = []
@@ -205,10 +230,7 @@ class ClusterModel(llm.Llama):
                 aq, sa = quant.quant_rows_grouped(act, self.g_d)
                 partials.append(self._grouped(ch, aq, sa, sh_["down"]))
             self._barrier(T * c.hidden * 4)
-            y = partials[0]
-            for pt in partials[1:]:
-                y = y + pt
-            x = x + y
+            x = x + self._reduce(partials)
         x = llm.rmsnorm(x if all_rows else x[-1:], self.w["model.norm.weight"], c.eps)
         xq, sx = quant.quant_rows_grouped(x, self.g_h)
         logits = np.concatenate([self._grouped(ch, xq, sx, self.shards[ch]["lm"]) for ch in range(self.tp)], axis=1)

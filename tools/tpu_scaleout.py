@@ -9,12 +9,12 @@ from tpu import scaleout
 ap = argparse.ArgumentParser()
 ap.add_argument("--n", type=int, default=128); ap.add_argument("--cores", type=int, default=4); ap.add_argument("--clock-mhz", type=float, default=1000.0)
 ap.add_argument("--mem-gb", type=float, default=32.0); ap.add_argument("--link", type=int, default=64, help="link bytes per core cycle"); ap.add_argument("--batch", type=int, default=64)
-ap.add_argument("--ctx", type=int, default=1024)
+ap.add_argument("--ctx", type=int, default=1024); ap.add_argument("--reduce", choices=["allreduce", "gather"], default="allreduce")
 a = ap.parse_args()
 chip = scaleout.Chip(n=a.n, cores=a.cores, clock_hz=a.clock_mhz * 1e6, mem_bytes=a.mem_gb * 1e9)
-link = scaleout.Link(bytes_per_cycle=a.link)
+link = scaleout.Link(bytes_per_cycle=a.link, reduce=a.reduce)
 print(f"ASSUMED inputs: chip = {a.cores} arrays of {a.n}x{a.n} at {a.clock_mhz:g} MHz ({2 * a.n * a.n * a.cores * chip.clock_hz / 1e12:.1f} TOPS peak, weight port {a.n * a.cores * chip.clock_hz / 1e9:.0f} GB/s), "
-      f"{a.mem_gb:g} GB per chip, link {a.link} B/cycle ({a.link * chip.clock_hz / 1e9:.0f} GB/s per direction); decode batch {a.batch}, context {a.ctx}; int8 weights and KV.\n")
+      f"{a.mem_gb:g} GB per chip, link {a.link} B/cycle ({a.link * chip.clock_hz / 1e9:.0f} GB/s per direction), collective = ring {a.reduce}; decode batch {a.batch}, context {a.ctx}; int8 weights and KV.\n")
 
 
 def best(model, tp, pp, batch):

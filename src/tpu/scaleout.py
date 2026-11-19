@@ -26,6 +26,7 @@ class Chip:
 class Link:
     bytes_per_cycle: int = 16   # inter-chip link width per core cycle (input)
     hop_cycles: int = 0         # extra per-collective fixed latency (input; the RTL ring has 1 cycle per hop built into ring_allgather_cycles)
+    reduce: str = "allreduce"   # "allreduce" (ring reduce-scatter + all-gather with fp32 adders, hardware/tpu/v12_ring_allreduce.v) or "gather" (ring all-gather of the partials, no adders)
 
 
 def _core(chip: Chip, rows: int) -> perf.Core:
@@ -55,7 +56,8 @@ def lm_head_cycles(chip: Chip, model: dict, tp: int, rows: int) -> int:
 
 
 def collective_cycles(link: Link, tp: int, rows: int, hidden: int) -> int:
-    return perf.ring_allgather_cycles(tp, rows * hidden * 4, link.bytes_per_cycle) + (link.hop_cycles if tp > 1 else 0)
+    f = perf.ring_allreduce_cycles if link.reduce == "allreduce" else perf.ring_allgather_cycles
+    return f(tp, rows * hidden * 4, link.bytes_per_cycle) + (link.hop_cycles if tp > 1 else 0)
 
 
 def decode_step(chip: Chip, link: Link, model: dict, tp: int, pp: int, batch: int, ctx: int, microbatches: int = 1) -> dict:

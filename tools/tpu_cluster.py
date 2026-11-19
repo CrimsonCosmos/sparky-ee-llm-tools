@@ -11,7 +11,8 @@ from tpu import cluster, llm, quant, rtl
 D = os.environ.get("TPU_MODEL_DIR", "/home/user/data/smollm2")
 ap = argparse.ArgumentParser()
 ap.add_argument("--tp", type=int, required=True); ap.add_argument("--cores", type=int, default=1); ap.add_argument("--prefill", type=int, default=16); ap.add_argument("--decode", type=int, default=4)
-ap.add_argument("--link", type=int, default=16, help="inter-chip link width in bytes per core cycle"); ap.add_argument("--version", default="v10"); ap.add_argument("--out")
+ap.add_argument("--link", type=int, default=16, help="inter-chip link width in bytes per core cycle"); ap.add_argument("--version", default="v10"); ap.add_argument("--reduce", choices=["gather", "allreduce"], default="gather")
+ap.add_argument("--rtl-ring", action="store_true", help="with --reduce allreduce: run every all-reduce on the RTL ring (float32 adders) instead of the numpy emulation of its order"); ap.add_argument("--out")
 a = ap.parse_args()
 
 tk = llm.tokenizer(D)
@@ -27,13 +28,19 @@ def rtl_backends(n):
     return [cluster.RtlBackend(rtl.Sim(exe, 64, n=16)) for _ in range(n)]
 
 
+ring_fn = None
+if a.rtl_ring:
+    assert a.reduce == "allreduce"
+    ring_exe = rtl.build_ring_ar(a.tp, 16, 4096, Path(f"/home/user/data/tpu_build/ring_ar_c{a.tp}"))
+    ring_fn = lambda vecs: rtl.ring_allreduce(ring_exe, vecs, 16)[0]
+
 t0 = time.time()
-res = {"model": Path(D).name, "tp": a.tp, "cores_per_chip": a.cores, "link_bytes_per_cycle": a.link, "prefill": len(prompt), "decode_tokens": a.decode, "version": a.version}
+res = {"reduce": a.reduce, "ring_on_rtl": a.rtl_ring, "model": Path(D).name, "tp": a.tp, "cores_per_chip": a.cores, "link_bytes_per_cycle": a.link, "prefill": len(prompt), "decode_tokens": a.decode, "version": a.version}
 # reference: unsharded (tp=1) with the groups of the tp-sharded layout, numpy integer backend
 ref = cluster.ClusterModel(D, 1, [cluster.RefBackend()], wsm, group_tp=a.tp, link_bytes_per_cycle=a.link)
 tok_ref, lg_ref, _, _ = ref.generate(prompt, a.decode)
 # numpy-sharded (exact reference of the sharded computation)
-nsh = cluster.ClusterModel(D, a.tp, [cluster.RefBackend() for _ in range(a.tp)], wsm, link_bytes_per_cycle=a.link)
+nsh = cluster.ClusterModel(D, a.tp, [cluster.RefBackend() for _ in range(a.tp)], wsm, link_bytes_per_cycle=a.link, reduce=a.reduce)
 tok_ns, lg_ns, _, _ = nsh.generate(prompt, a.decode)
 # RTL single chip (baseline cycles)
 b1 = rtl_backends(1)
@@ -41,7 +48,7 @@ one = cluster.ClusterModel(D, 1, b1, wsm, group_tp=a.tp, link_bytes_per_cycle=a.
 tok1, lg1, pre1, dec1 = one.generate(prompt, a.decode)
 # RTL cluster
 bs = rtl_backends(a.tp)
-cl = cluster.ClusterModel(D, a.tp, bs, wsm, link_bytes_per_cycle=a.link)
+cl = cluster.ClusterModel(D, a.tp, bs, wsm, link_bytes_per_cycle=a.link, reduce=a.reduce, ring_fn=ring_fn)
 tokc, lgc, prec, decc = cl.generate(prompt, a.decode)
 for b in b1 + bs:
     b.sim.close()
