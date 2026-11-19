@@ -86,11 +86,12 @@ def ring_allgather_cycles(chips: int, nbytes: int, link_bytes_per_cycle: int) ->
     return max((chips - 1) * nb + 1, 2 * (chips - 1))
 
 
-def ring_allreduce_cycles(chips: int, nbytes: int, link_bytes_per_cycle: int) -> int:
+def ring_allreduce_cycles(chips: int, nbytes: int, link_bytes_per_cycle: int, version: str = "v13") -> int:
     """Cycles of the RTL ring all-reduce (hardware/tpu/v12_ring_allreduce.v): the vector (nbytes of float32) is padded to C chunks of nbc beats (beat = link width); 2 (C-1) steps (reduce-scatter then all-gather)
-    of nbc + 1 cycles, plus one cycle for the start pulse. Exact against the RTL (tests/test_tpu_ring.py)."""
+    of nbc + 5 cycles (v13, pipelined adder; nbc + 1 for the v12 combinational-adder node), plus one cycle for the start pulse. Exact against the RTL (tests/test_tpu_ring.py)."""
     if chips <= 1:
         return 0
     beats = -(-nbytes // link_bytes_per_cycle)
     nbc = -(-beats // chips)
-    return 2 * (chips - 1) * (nbc + 1) + 1
+    step = nbc + (5 if version == "v13" else 1)      # v13: receive capture + 3-stage float adder + write-back; v12: combinational adder
+    return 2 * (chips - 1) * step + 1

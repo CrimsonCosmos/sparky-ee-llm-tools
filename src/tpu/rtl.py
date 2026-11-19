@@ -192,18 +192,19 @@ def fp_add(exe: Path, a: np.ndarray, b: np.ndarray) -> np.ndarray:
     return np.frombuffer(out, np.uint32).view(np.float32).reshape(a.shape)
 
 
-def build_ring_ar(c: int, w: int, nbc_max: int, workdir: Path) -> Path:
+def build_ring_ar(c: int, w: int, nbc_max: int, workdir: Path, version: str = "v13") -> Path:
     """Compile the ring all-reduce harness (hardware/tpu/v12_ring_allreduce.v + v12_fp32_add.v) for c chips, w-byte beats, chunks of up to nbc_max beats."""
     vl = toolchain.which("verilator")
     if not vl:
         raise RuntimeError("NOT RUN: verilator not available")
     workdir.mkdir(parents=True, exist_ok=True)
-    cmd = [vl, "--cc", "--exe", "--build", "-Wno-fatal", "-Wno-lint", "-Wno-style", "--top-module", "tpu_ring_ar", f"-GC={c}", f"-GW={w}", f"-GNBC={nbc_max}", "-O3",
-           "-CFLAGS", f"-DCC={c} -DWW={w} -DNBCMAX={nbc_max} -O2", "--Mdir", str(workdir / "arobj"), "-o", "harness_ring_ar", str(HW / "v12_ring_allreduce.v"), str(HW / "v12_fp32_add.v"), str(HW / "tb" / "harness_ring_ar.cpp")]
+    cmd = [vl, "--cc", "--exe", "--build", "-Wno-fatal", "-Wno-lint", "-Wno-style", "--top-module", "tpu_ring_ar", f"-GC={c}", f"-GW={w}", *( [f"-GNBCL2={max(1, (nbc_max - 1).bit_length())}"] if version == "v13" else [f"-GNBC={nbc_max}"] ), "-O3",
+           "-CFLAGS", f"-DCC={c} -DWW={w} -DNBCMAX={(1 << max(1, (nbc_max - 1).bit_length())) if version == 'v13' else nbc_max} -O2", "--Mdir", str(workdir / f"arobj_{version}"), "-o", "harness_ring_ar",
+           *( [str(HW / "v13_ring_allreduce.v"), str(HW / "v13_fp32_add_p.v")] if version == "v13" else [str(HW / "v12_ring_allreduce.v"), str(HW / "v12_fp32_add.v")] ), str(HW / "tb" / "harness_ring_ar.cpp")]
     r = subprocess.run(cmd, capture_output=True, text=True, cwd=workdir, env=toolchain.env())
     if r.returncode:
         raise RuntimeError("verilator ring all-reduce harness build failed:\n" + (r.stderr + r.stdout)[-3000:])
-    return workdir / "arobj" / "harness_ring_ar"
+    return workdir / f"arobj_{version}" / "harness_ring_ar"
 
 
 def ring_allreduce_reference(vectors: list[np.ndarray]) -> np.ndarray:
