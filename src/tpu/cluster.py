@@ -171,7 +171,7 @@ class ClusterModel(llm.Llama):
         return _combine(self.backends[ch].igemm_groups(x_q, qw.wq, qw.g), sx, qw.sw)
 
     # ------------------------------------------------------------------ forward (last-row logits only)
-    def forward_cluster(self, tokens, caches, start: int) -> np.ndarray:
+    def forward_cluster(self, tokens, caches, start: int, all_rows: bool = False) -> np.ndarray:
         c, hd = self.cfg, self.hd
         T = len(tokens)
         pos = np.arange(start, start + T)
@@ -209,11 +209,15 @@ class ClusterModel(llm.Llama):
             for pt in partials[1:]:
                 y = y + pt
             x = x + y
-        x = llm.rmsnorm(x[-1:], self.w["model.norm.weight"], c.eps)
+        x = llm.rmsnorm(x if all_rows else x[-1:], self.w["model.norm.weight"], c.eps)
         xq, sx = quant.quant_rows_grouped(x, self.g_h)
         logits = np.concatenate([self._grouped(ch, xq, sx, self.shards[ch]["lm"]) for ch in range(self.tp)], axis=1)
         self._barrier(2 * 4)                                 # per-chip (max, argmax) pair gathered; modelled as 8 bytes per chip
-        return logits[0]
+        return logits if all_rows else logits[0]
+
+    def forward(self, tokens, cache=None, start: int = 0):
+        """All-rows logits [T, vocab] (llm.perplexity interface; uses fresh caches)."""
+        return self.forward_cluster(np.asarray(tokens), self.new_caches(), 0, all_rows=True)
 
     def generate(self, prompt: np.ndarray, n_new: int):
         caches = self.new_caches()
