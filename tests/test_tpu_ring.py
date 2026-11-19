@@ -27,3 +27,18 @@ def test_ring_checker_can_fail(tmp_path):
     gathered, _ = rtl.ring_allgather(exe, vecs, 8)
     wrong = vecs[1].copy(); wrong[3] ^= 1
     assert not np.array_equal(gathered[0][0], wrong)        # chip 0 receives chip 1's vector; a one-bit change must be detected
+
+
+@pytest.mark.parametrize("chips,w", [(2, 16), (3, 16), (4, 16), (5, 8), (8, 16)])
+def test_ring_allreduce_matches_reference_order_and_cycles(chips, w, tmp_path):
+    exe = rtl.build_ring_ar(chips, w, 64, tmp_path)
+    rng = np.random.default_rng(chips * 10 + w)
+    for nbc in (1, 2, 5, 16):
+        n = chips * nbc * (w // 4)
+        vecs = [(rng.standard_normal(n) * rng.choice([1.0, 1e3, 1e-3], n)).astype(np.float32) for _ in range(chips)]
+        res, cyc = rtl.ring_allreduce(exe, vecs, w)
+        ref = rtl.ring_allreduce_reference(vecs)
+        for r in res:
+            assert np.array_equal(r.view(np.uint32), ref.view(np.uint32)), (chips, w, nbc)       # every chip holds the identical, order-exact result
+        assert cyc == perf.ring_allreduce_cycles(chips, n * 4, w), (chips, w, nbc, cyc)
+        assert np.allclose(res[0], np.sum(vecs, axis=0, dtype=np.float64), rtol=1e-5, atol=1e-3 * np.abs(vecs).max())    # and it IS the sum (independent float64 check)

@@ -167,3 +167,69 @@ def ring_allgather(exe: Path, vectors: list[np.ndarray], w: int):
         gathered.append([np.frombuffer(p.stdout.read(nb * w), np.uint8).copy() for _ in range(c - 1)])
     p.stdin.write(np.array([-1, 0, 0, 0, 0, 0, 0, 0], np.int32).tobytes()); p.stdin.flush(); p.wait(timeout=30)
     return gathered, cyc
+
+
+def build_fp_add(workdir: Path) -> Path:
+    """Compile the float32 adder harness (hardware/tpu/v12_fp32_add.v, hardware/tpu/tb/harness_fp.cpp)."""
+    vl = toolchain.which("verilator")
+    if not vl:
+        raise RuntimeError("NOT RUN: verilator not available")
+    workdir.mkdir(parents=True, exist_ok=True)
+    cmd = [vl, "--cc", "--exe", "--build", "-Wno-fatal", "-Wno-lint", "-Wno-style", "--top-module", "fp32_add", "-O3", "--Mdir", str(workdir / "fobj"), "-o", "harness_fp",
+           str(HW / "v12_fp32_add.v"), str(HW / "tb" / "harness_fp.cpp")]
+    r = subprocess.run(cmd, capture_output=True, text=True, cwd=workdir, env=toolchain.env())
+    if r.returncode:
+        raise RuntimeError("verilator fp harness build failed:\n" + (r.stderr + r.stdout)[-3000:])
+    return workdir / "fobj" / "harness_fp"
+
+
+def fp_add(exe: Path, a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    """float32 a + b on the RTL adder (elementwise)."""
+    a = np.ascontiguousarray(a, np.float32); b = np.ascontiguousarray(b, np.float32)
+    inter = np.empty(2 * a.size, np.uint32)
+    inter[0::2] = a.view(np.uint32).ravel(); inter[1::2] = b.view(np.uint32).ravel()
+    out = subprocess.run([str(exe)], input=np.uint32(a.size).tobytes() + inter.tobytes(), capture_output=True, check=True).stdout
+    return np.frombuffer(out, np.uint32).view(np.float32).reshape(a.shape)
+
+
+def build_ring_ar(c: int, w: int, nbc_max: int, workdir: Path) -> Path:
+    """Compile the ring all-reduce harness (hardware/tpu/v12_ring_allreduce.v + v12_fp32_add.v) for c chips, w-byte beats, chunks of up to nbc_max beats."""
+    vl = toolchain.which("verilator")
+    if not vl:
+        raise RuntimeError("NOT RUN: verilator not available")
+    workdir.mkdir(parents=True, exist_ok=True)
+    cmd = [vl, "--cc", "--exe", "--build", "-Wno-fatal", "-Wno-lint", "-Wno-style", "--top-module", "tpu_ring_ar", f"-GC={c}", f"-GW={w}", f"-GNBC={nbc_max}", "-O3",
+           "-CFLAGS", f"-DCC={c} -DWW={w} -DNBCMAX={nbc_max} -O2", "--Mdir", str(workdir / "arobj"), "-o", "harness_ring_ar", str(HW / "v12_ring_allreduce.v"), str(HW / "v12_fp32_add.v"), str(HW / "tb" / "harness_ring_ar.cpp")]
+    r = subprocess.run(cmd, capture_output=True, text=True, cwd=workdir, env=toolchain.env())
+    if r.returncode:
+        raise RuntimeError("verilator ring all-reduce harness build failed:\n" + (r.stderr + r.stdout)[-3000:])
+    return workdir / "arobj" / "harness_ring_ar"
+
+
+def ring_allreduce_reference(vectors: list[np.ndarray]) -> np.ndarray:
+    """What the ring computes (independent numpy emulation of its fixed order): chunk j = ((x_j + x_{j+1}) + x_{j+2}) + ... + x_{j-1} (mod C), float32."""
+    c = len(vectors)
+    n = len(vectors[0]) // c
+    out = np.empty(len(vectors[0]), np.float32)
+    for j in range(c):
+        acc = np.asarray(vectors[j][j * n:(j + 1) * n], np.float32).copy()
+        for t in range(1, c):
+            acc = (acc + np.asarray(vectors[(j + t) % c][j * n:(j + 1) * n], np.float32)).astype(np.float32)
+        out[j * n:(j + 1) * n] = acc
+    return out
+
+
+def ring_allreduce(exe: Path, vectors: list[np.ndarray], w: int):
+    """All-reduce (float32 sum) of one vector per chip on the RTL ring. len(vector) must be a multiple of chips * (w/4). Returns (result per chip, cycles)."""
+    c = len(vectors)
+    lanes = w // 4
+    n = len(vectors[0])
+    assert n % (c * lanes) == 0
+    nbc = n // (c * lanes)
+    p = subprocess.Popen([str(exe)], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+    p.stdin.write(np.array([nbc, 0, 0, 0, 0, 0, 0, 0], np.int32).tobytes() + b"".join(np.ascontiguousarray(v, np.float32).tobytes() for v in vectors))
+    p.stdin.flush()
+    cyc = int(np.frombuffer(p.stdout.read(8), np.int64)[0])
+    res = [np.frombuffer(p.stdout.read(4 * n), np.float32).copy() for _ in range(c)]
+    p.stdin.write(np.array([-1, 0, 0, 0, 0, 0, 0, 0], np.int32).tobytes()); p.stdin.flush(); p.wait(timeout=30)
+    return res, cyc
