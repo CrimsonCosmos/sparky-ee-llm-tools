@@ -1,6 +1,6 @@
-// v13: timing-oriented ring all-reduce node (same algorithm and result as v12_ring_allreduce.v). Changes for a credible clock: the float adder is a 3-stage pipeline (fp32_add_p); chunk indices are
+// v13: timing-oriented ring all-reduce node (same algorithm and result as v12_ring_allreduce.v). Changes for a credible clock: the float adder is a 4-stage pipeline (fp32_add_p); chunk indices are
 // registers updated incrementally (no modulo logic); memory addresses are {chunk, beat} concatenations (NBC must be a power of two); local data is read in the cycle before it is needed (registered).
-// A step now lasts nbc + 4 cycles instead of nbc + 1 (receive latency 1 + adder pipeline 3), validated by the RTL test (perf.ring_allreduce_cycles with pipe=3).
+// A step now lasts nbc + 6 cycles instead of nbc + 1 (receive latency 1 + adder pipeline 4 + write-back), validated by the RTL test (perf.ring_allreduce_cycles with pipe=3).
 module tpu_ring_ar_node #(parameter C = 4, parameter RANK = 0, parameter W = 16, parameter NBCL2 = 6) (
   input  wire                  clk,
   input  wire                  rst_n,
@@ -36,7 +36,7 @@ module tpu_ring_ar_node #(parameter C = 4, parameter RANK = 0, parameter W = 16,
   wire [W*8-1:0] sbuf_beat = cur ? buf1[sbi] : buf0[sbi];
   wire [W*8-1:0] loc_cs = loc[{cs, sbi}];
 
-  // ---- receive pipeline: r0 capture (+ local read), 3 adder stages ----
+  // ---- receive pipeline: r0 capture (+ local read), 4 adder stages ----
   reg          v0;  reg [W*8-1:0] d0, l0;  reg [15:0] b0;  reg [CW-1:0] c0;  reg ph0;      // ph0: 1 = reduce-scatter
   wire [W*8-1:0] sumbeat;
   genvar k;
@@ -45,10 +45,10 @@ module tpu_ring_ar_node #(parameter C = 4, parameter RANK = 0, parameter W = 16,
       fp32_add_p add (.clk(clk), .a(l0[k*32 +: 32]), .b(d0[k*32 +: 32]), .y(sumbeat[k*32 +: 32]));
     end
   endgenerate
-  reg [W*8-1:0] dd1, dd2, dd3;                       // raw incoming beat delayed to match the adder latency (all-gather path)
-  reg v1, v2, v3;  reg [15:0] b1, b2, b3;  reg [CW-1:0] c1, c2, c3;  reg p1, p2, p3;
-  wire [W*8-1:0] wdata = p3 ? sumbeat : dd3;
-  wire step_end = v3 && (b3 == nbc_r - 1);
+  reg [W*8-1:0] dd1, dd2, dd3, dd4;                  // raw incoming beat delayed to match the adder latency (all-gather path)
+  reg v1, v2, v3, v4;  reg [15:0] b1, b2, b3, b4;  reg [CW-1:0] c1, c2, c3, c4;  reg p1, p2, p3, p4;
+  wire [W*8-1:0] wdata = p4 ? sumbeat : dd4;
+  wire step_end = v4 && (b4 == nbc_r - 1);
   wire last_step = (step == C - 2);
   localparam [CW-1:0] CS0 = RANK % C;
   localparam [CW-1:0] CR0 = (RANK + C - 1) % C;
@@ -59,10 +59,10 @@ module tpu_ring_ar_node #(parameter C = 4, parameter RANK = 0, parameter W = 16,
   always @(posedge clk) begin
     rout_valid <= 1'b0;
     done <= 1'b0;
-    v0 <= 1'b0; v1 <= v0; v2 <= v1; v3 <= v2;
-    b1 <= b0; b2 <= b1; b3 <= b2; c1 <= c0; c2 <= c1; c3 <= c2; p1 <= ph0; p2 <= p1; p3 <= p2;
-    dd1 <= d0; dd2 <= dd1; dd3 <= dd2;
-    if (!rst_n) begin phase <= 2'd0; v0 <= 1'b0; v1 <= 1'b0; v2 <= 1'b0; v3 <= 1'b0; end
+    v0 <= 1'b0; v1 <= v0; v2 <= v1; v3 <= v2; v4 <= v3;
+    b1 <= b0; b2 <= b1; b3 <= b2; b4 <= b3; c1 <= c0; c2 <= c1; c3 <= c2; c4 <= c3; p1 <= ph0; p2 <= p1; p3 <= p2; p4 <= p3;
+    dd1 <= d0; dd2 <= dd1; dd3 <= dd2; dd4 <= dd3;
+    if (!rst_n) begin phase <= 2'd0; v0 <= 1'b0; v1 <= 1'b0; v2 <= 1'b0; v3 <= 1'b0; v4 <= 1'b0; end
     else if (start && phase == 2'd0) begin phase <= 2'd1; step <= 0; sb <= 0; rb <= 0; cur <= 1'b0; nbc_r <= nbc; cs <= CS0; cr <= CR0; end
     else if (phase != 2'd0) begin
       if (sending) begin
@@ -75,11 +75,9 @@ module tpu_ring_ar_node #(parameter C = 4, parameter RANK = 0, parameter W = 16,
         v0 <= 1'b1; d0 <= rin_data; l0 <= loc[{cr, rb[NBCL2-1:0]}]; b0 <= rb; c0 <= cr; ph0 <= (phase == 2'd1);
         rb <= rb + 1;
       end
-      if (v3) begin                                                             // write-back (reduce-scatter: the sum; all-gather: the raw data, also kept as the result)
-        if (c3 == c3) begin
-          if (cur) buf0[b3[NBCL2-1:0]] <= wdata; else buf1[b3[NBCL2-1:0]] <= wdata;
-          if (!p3) res[{c3, b3[NBCL2-1:0]}] <= dd3;
-        end
+      if (v4) begin                                                             // write-back (reduce-scatter: the sum; all-gather: the raw data, also kept as the result)
+        if (cur) buf0[b4[NBCL2-1:0]] <= wdata; else buf1[b4[NBCL2-1:0]] <= wdata;
+        if (!p4) res[{c4, b4[NBCL2-1:0]}] <= dd4;
       end
       if (step_end) begin
         cur <= ~cur; sb <= 0; rb <= 0;

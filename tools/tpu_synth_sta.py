@@ -10,11 +10,14 @@ hw = Path(__file__).resolve().parents[1] / "hardware" / "tpu" / version
 lib = next(Path("/home/user/tools/pdk/ciel/sky130/versions").glob(f"*/sky130A/libs.ref/sky130_fd_sc_hd/lib/sky130_fd_sc_hd__{corner}.lib"))
 lg = max(1, math.ceil(math.log2(n)))
 d = Path(tempfile.mkdtemp(prefix="tsta_"))
+fpadd = "fpadd" in sys.argv
 ring = "ring" in sys.argv
 core = "core" in sys.argv
-if ring:
+if fpadd:
+    (d / "wrap.v").write_text("module top(input clk, input [31:0] a, input [31:0] b, output [31:0] y);\n  fp32_add_p u(.*);\nendmodule\n")
+elif ring:
     (d / "wrap.v").write_text(f"""module top(input clk, input rst_n, input lwe, input [{max(1,math.ceil(math.log2(4*16)))-1}:0] laddr, input [127:0] ldata, input [{max(1,math.ceil(math.log2(4*16)))-1}:0] raddr, output [127:0] rdata, input start, input [15:0] nbc, output done, input rin_valid, input [127:0] rin_data, output rout_valid, output [127:0] rout_data);
-  tpu_ring_ar_node #(.C(4), .RANK(1), .W(16), .NBC(16)) u(.*);
+  tpu_ring_ar_node #(.C(4), .RANK(1), .W(16), .NBCL2(4)) u(.*);
 endmodule
 """)
 elif core:
@@ -34,7 +37,7 @@ endmodule
 """)
 env = toolchain.env()
 booth = "-booth" if "booth" in sys.argv else ""
-files = f"{hw.parent}/v12_ring_allreduce.v {hw.parent}/v12_fp32_add.v" if ring else f"{hw}/tpu_pe.v {hw}/tpu_array.v {hw}/tpu_core.v"
+files = f"{hw.parent}/v13_fp32_add_p.v" if fpadd else f"{hw.parent}/v13_ring_allreduce.v {hw.parent}/v13_fp32_add_p.v" if ring else f"{hw}/tpu_pe.v {hw}/tpu_array.v {hw}/tpu_core.v"
 ys = f"""read_verilog -sv {files} {d}/wrap.v
 hierarchy -top top
 synth -flatten -top top {booth}
