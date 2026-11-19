@@ -6,53 +6,57 @@
  "cores_per_chip": 1,
  "link_bytes_per_cycle": 16,
  "prefill": 16,
- "decode_tokens": 3,
+ "decode_tokens": 4,
  "version": "v10",
  "groups": {
   "hidden": 160,
   "o_proj_shard": 96,
   "down_proj_shard": 128
  },
- "gemms_checked_cluster": 2895,
+ "gemms_checked_cluster": 3860,
  "gemms_mismatching_cluster": 0,
- "gemms_checked_single": 1347,
+ "gemms_checked_single": 1796,
  "gemms_mismatching_single": 0,
  "rtl_cluster_logits_equal_numpy_sharded_exactly": true,
  "rtl_cluster_tokens_equal_numpy_sharded": true,
- "sharded_vs_unsharded_max_abs_logit_diff": 0.9469499588012695,
+ "sharded_vs_unsharded_max_abs_logit_diff": 0.9713468551635742,
  "sharded_vs_unsharded_logit_scale": 23.14052963256836,
  "comparison": "teacher forced: every model is fed the reference tokens, so logits are compared on identical contexts",
  "reference_tokens": [
   8552,
   284,
-  5171
+  5171,
+  17523
  ],
  "sharded_argmax_equals_unsharded_argmax_per_step": [
   1,
   0,
-  0
+  0,
+  1
  ],
  "reference_top1_top2_logit_margin_per_step": [
   0.9874267578125,
   0.085693359375,
-  0.015165328979492188
+  0.015165328979492188,
+  1.2878684997558594
  ],
  "sharded_tokens_equal_unsharded": false,
  "tokens": [
   8552,
   3297,
-  3632
+  3632,
+  17523
  ],
  "single_chip": {
   "prefill_cycles": 22695142,
-  "decode_cycles": 45337164,
+  "decode_cycles": 68005746,
   "decode_cycles_per_token": 22668582.0
  },
  "cluster": {
   "prefill_cycles": 4941471,
   "prefill_collective_cycles": 396409,
-  "decode_cycles": 9131966,
-  "decode_collective_cycles": 55538,
+  "decode_cycles": 13697949,
+  "decode_collective_cycles": 83307,
   "decode_cycles_per_token": 4565983.0
  },
  "decode_speedup": 4.964666316103235,
@@ -60,5 +64,5 @@
  "prefill_speedup": 4.592790689250226,
  "prefill_scaling_efficiency": 0.9185581378500451,
  "collectives_per_token": 65,
- "wall_s": 455.45452189445496
+ "wall_s": 593.7465484142303
 }

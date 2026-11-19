@@ -2,6 +2,8 @@
 
 Criteria C1-C6 were fixed beforehand in `docs/TPU_PLAN.md`. Everything below is reproducible from files in this repo; raw numbers are in `results/tpu/*.json`.
 
+Scale-out beyond one chip (multi-chip tensor parallelism on real models, RTL ring all-gather / float32-adder / ring all-reduce, projections to 8B/70B-class clusters): see `docs/TPU_SCALEOUT.md`.
+
 ## What was built
 Weight-stationary INT8 systolic array (N x N, N=16 simulated) with int32 accumulation, K/N tiling in a core with activation buffer + accumulators, streaming weight fetch, three iterated versions kept side by side:
 

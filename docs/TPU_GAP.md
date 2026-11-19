@@ -41,6 +41,7 @@ Llama-3-8B-class int8, batch 64, 1024-token context, validated-model schedule: t
 
 ## 4. Status of the levers and what is left, ranked
 Done and measured (RTL, bit-exact): v2 shadow weights, v3 streaming fetch, v4 registered product, v5 narrow partial sums, v6 zero-bubble hand-over, v7 reset hygiene, v8 multi-array scale-out, v9 K-group partial sums (quality), v10 pipelined accumulator (whole-core timing), GQA grouping, fused projections; two open-weight models run (SmolLM2-135M and -360M). Rejected on evidence: 4-bit RTN weights, activation clipping, MSE weight scales, memory-latency hiding at this scale.
+Scale-out beyond one chip is documented in `docs/TPU_SCALEOUT.md` (measured on 3 and 5 RTL chips, projected beyond).
 Open, in order of expected value:
 1. Multi-row weight write plus matching memory bandwidth. Projected 1.12x at N=16 with 16 sequences, 1.4-1.7x at N=128 x4. The simple version fails the swap-hazard check (the new tile cannot be written ahead of the old tile's swap wavefront), so it needs a third weight register per PE (about +13 % PE area) or a skewed write; not built.
 2. Pipelined command queue with a double-buffered activation buffer: removes about 3 % of per-command overhead and activation-fill cycles at N=16 (1.2-1.3x only at N=128 with thousands of tiny attention GEMMs). Not built.
