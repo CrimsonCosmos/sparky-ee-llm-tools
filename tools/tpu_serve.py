@@ -7,7 +7,8 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from tpu import llm, quant, rtl
 
-D = "/home/user/data/smollm2"
+import os
+D = os.environ.get("TPU_MODEL_DIR", "/home/user/data/smollm2")     # any Llama-architecture model directory (config.json + safetensors + tokenizer.json)
 ap = argparse.ArgumentParser()
 ap.add_argument("version"); ap.add_argument("--n", type=int, default=16); ap.add_argument("--cores", type=int, default=4); ap.add_argument("--new", type=int, default=24)
 ap.add_argument("--clock-mhz", type=float, default=70.0); ap.add_argument("--out"); ap.add_argument("--group-cols", type=int, default=0); ap.add_argument("prompts", nargs="*")

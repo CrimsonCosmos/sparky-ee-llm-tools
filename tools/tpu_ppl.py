@@ -6,7 +6,8 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from tpu import llm, quant, rtl
 
-D = "/home/user/data/smollm2"
+import os
+D = os.environ.get("TPU_MODEL_DIR", "/home/user/data/smollm2")     # any Llama-architecture model directory (config.json + safetensors + tokenizer.json)
 version, ntok = sys.argv[1], int(sys.argv[2])
 group_cols = int(sys.argv[sys.argv.index('--group-cols') + 1]) if '--group-cols' in sys.argv else 0
 out = sys.argv[sys.argv.index("--out") + 1] if "--out" in sys.argv else None

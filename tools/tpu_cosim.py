@@ -8,7 +8,8 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from tpu import llm, quant, rtl
 
-D = "/home/user/data/smollm2"
+import os
+D = os.environ.get("TPU_MODEL_DIR", "/home/user/data/smollm2")     # any Llama-architecture model directory (config.json + safetensors + tokenizer.json)
 ap = argparse.ArgumentParser()
 ap.add_argument("version"); ap.add_argument("--n", type=int, default=16); ap.add_argument("--mmax", type=int, default=64); ap.add_argument("--ktmax", type=int, default=96)
 ap.add_argument("--prefill", type=int, default=32); ap.add_argument("--decode", type=int, default=8)
