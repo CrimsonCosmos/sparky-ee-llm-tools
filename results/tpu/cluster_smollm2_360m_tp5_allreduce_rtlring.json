@@ -1,0 +1,48 @@
+{
+ "reduce": "allreduce",
+ "ring_on_rtl": true,
+ "model": "smollm2_360m",
+ "tp": 5,
+ "cores_per_chip": 1,
+ "link_bytes_per_cycle": 16,
+ "prefill": 16,
+ "decode_tokens": 3,
+ "version": "v10",
+ "groups": {
+  "hidden": 160,
+  "o_proj_shard": 96,
+  "down_proj_shard": 128
+ },
+ "gemms_checked_cluster": 2895,
+ "gemms_mismatching_cluster": 0,
+ "gemms_checked_single": 1347,
+ "gemms_mismatching_single": 0,
+ "rtl_cluster_logits_equal_numpy_sharded_exactly": true,
+ "rtl_cluster_tokens_equal_numpy_sharded": true,
+ "sharded_vs_unsharded_max_abs_logit_diff": 7.411157608032227,
+ "sharded_vs_unsharded_logit_scale": 23.14052963256836,
+ "sharded_tokens_equal_unsharded": false,
+ "tokens": [
+  8552,
+  3297,
+  284
+ ],
+ "single_chip": {
+  "prefill_cycles": 22695142,
+  "decode_cycles": 45337164,
+  "decode_cycles_per_token": 22668582.0
+ },
+ "cluster": {
+  "prefill_cycles": 4938871,
+  "prefill_collective_cycles": 393809,
+  "decode_cycles": 9126766,
+  "decode_collective_cycles": 50338,
+  "decode_cycles_per_token": 4563383.0
+ },
+ "decode_speedup": 4.967494948374923,
+ "decode_scaling_efficiency": 0.9934989896749846,
+ "prefill_speedup": 4.595208500080282,
+ "prefill_scaling_efficiency": 0.9190417000160563,
+ "collectives_per_token": 65,
+ "wall_s": 478.8230450153351
+}
