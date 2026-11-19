@@ -166,6 +166,7 @@ def smooth_weights(model: Llama, calib_ids: np.ndarray, alpha: float = 0.5, wind
 DEFAULT_ALPHA = 0.6        # chosen on HELD-OUT validation text (tools/tpu_alpha_select.py: 0.4 +4.51 %, 0.5 +2.00 %, 0.6 +1.17 %, 0.7 +2.63 %); test-set result reported separately
 
 
+DEFAULT_GROUP_COLS = 160      # recommended K-group size (10 tiles at N=16): 135M +0.82 %/+0.91 % (alpha 0.6/0.7), 360M +1.16 % (alpha 0.7) test perplexity; costs no array cycles, only more partial-sum vectors
 DEFAULT_ALPHA_GROUPED = 0.7   # with K-group quantisation (288 columns) the held-out optimum moves: 0.5 +1.77 %, 0.6 +1.11 %, 0.7 +0.75 %, 0.8 +0.83 %, 0.9 +1.83 % (results/tpu/alpha_select_group288_*.txt)
 
 

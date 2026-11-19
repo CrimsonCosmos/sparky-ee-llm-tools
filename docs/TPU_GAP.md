@@ -39,13 +39,15 @@ The cycle model (`src/tpu/perf.py`) reproduces the RTL cycle counts exactly for 
 ## 3. Scaled projections (assumptions are inputs; `tools/tpu_gap.py`)
 Llama-3-8B-class int8, batch 64, 1024-token context, validated-model schedule: the as-built design would need ~31 s per decode step (2 tokens/s); N=128 x4 arrays at an ASSUMED 1 GHz and 512 GB/s gives ~45 ms/step (~1,400 tokens/s); a v5e-class chip is bounded by HBM at <= ~100 steps/s for 8 GB of weights (published bandwidth), i.e. a few thousand tokens/s at batch 64 before KV traffic. At scale the schedule is limited by (i) tile weight load of N cycles vs batch rows and (ii) KV-cache streaming in attention, which is matrix-vector work that a weight-stationary array uses at 4/128 row occupancy.
 
-## 4. Remaining possibilities, ranked
-1. Wider/multi-row weight load + matching memory bandwidth (projection 1.4-1.7x at scale). Needs r parallel row buses in the array; not built.
-2. Pipelined command queue + double-buffered activation buffer (1.2-1.3x at scale, negligible at N=16). Not built.
-3. KV-cache handling for long context (int8 KV with the scale per row is already what the datapath uses; int4 KV and sliding-window/MLA-type schemes are model-level and unvalidated here).
-4. On-chip requantisation/dequantisation and SiLU/softmax units: removes int32 output traffic (4 bytes per element) and host work; not built; host cost is currently not in the cycle counts.
-5. Multiplier structure (Booth/Wallace) for clock: synthesis with Yosys `-booth` cut area 14 % but not slow-corner slack in the crude pre-layout check, so not adopted; the real flow result for v5 is in `docs/TPU.md`.
-6. Sparsity, fp8, int4 with calibrated quantisation: need accuracy validation not possible with the available tooling.
+## 4. Status of the levers and what is left, ranked
+Done and measured (RTL, bit-exact): v2 shadow weights, v3 streaming fetch, v4 registered product, v5 narrow partial sums, v6 zero-bubble hand-over, v7 reset hygiene, v8 multi-array scale-out, v9 K-group partial sums (quality), v10 pipelined accumulator (whole-core timing), GQA grouping, fused projections; two open-weight models run (SmolLM2-135M and -360M). Rejected on evidence: 4-bit RTN weights, activation clipping, MSE weight scales, memory-latency hiding at this scale.
+Open, in order of expected value:
+1. Multi-row weight write plus matching memory bandwidth. Projected 1.12x at N=16 with 16 sequences, 1.4-1.7x at N=128 x4. The simple version fails the swap-hazard check (the new tile cannot be written ahead of the old tile's swap wavefront), so it needs a third weight register per PE (about +13 % PE area) or a skewed write; not built.
+2. Pipelined command queue with a double-buffered activation buffer: removes about 3 % of per-command overhead and activation-fill cycles at N=16 (1.2-1.3x only at N=128 with thousands of tiny attention GEMMs). Not built.
+3. SRAM macros for the activation buffer and accumulators (OpenRAM), and the N=16 core through the flow; the flop-based buffers dominate area now (about 8,200 flops at N=8 with tiny buffers).
+4. On-chip requantisation/dequantisation and the vector work (SiLU, RMSNorm, softmax): removes int32 output traffic and host work; not built, host work is not in the cycle counts.
+5. Hold residue of -0.02 ns in the ff corners of the core (flop-to-flop skew chains) and a clean independent re-run of the whole core.
+6. Long-context KV handling (int4 KV, MLA/windowing are model-level and need accuracy validation), sparsity, fp8, calibrated int4 weights (GPTQ/AWQ-class tooling not available here).
 
 ## Sources
 - [TPU v5e specifications (Google Cloud)](https://docs.cloud.google.com/tpu/docs/v5e): 393 TOPS int8, 197 TFLOPs bf16, 16 GB HBM; bandwidth 819 GB/s on one Google page and 800 GB/s on another.
