@@ -6,7 +6,8 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from tpu import llm, quant
 
-D = "/home/user/data/smollm2"
+import os
+D = os.environ.get("TPU_MODEL_DIR", "/home/user/data/smollm2")
 args = sys.argv[1:]
 group = int(args[args.index('--group') + 1]) if '--group' in args else 0
 if '--group' in args:

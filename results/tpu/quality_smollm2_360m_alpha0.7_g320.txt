@@ -1,0 +1,3 @@
+float32 ppl 20.293 (1025 tokens)
+K-group  full: ppl 21.452 (+5.71 %)  partial-sum streams per GEMM = K/K
+K-group   320: ppl 20.750 (+2.25 %)  partial-sum streams per GEMM = K/320
