@@ -1,0 +1,3 @@
+alpha 0.5: held-out val 14.869 (+4.65 %)   test 20.811 (+2.55 %)
+alpha 0.6: held-out val 14.507 (+2.10 %)   test 20.612 (+1.57 %)
+alpha 0.8: held-out val 14.488 (+1.97 %)   test 20.776 (+2.38 %)
